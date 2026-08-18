@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QEvent, QSize, QTimer, Qt, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,9 +19,12 @@ from PySide6.QtWidgets import (
 )
 
 from app.ai.chat.models import ChatMessage, ChatRole
+from app.overlay.context_menu import symbol_icon
 
 
 MESSAGE_COPY_FEEDBACK_MILLISECONDS = 1200
+CHAT_WHEEL_SCROLL_STEP = 54
+MESSAGE_COPY_ICON_SIZE = 17
 
 
 class ChatInput(QPlainTextEdit):
@@ -51,6 +54,7 @@ class OverlayChatPanel(QWidget):
         self.setMaximumHeight(430)
         self._message_rows: list[QWidget] = []
         self._context_expanded = False
+        self._palette: dict[str, str] = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(2, 2, 2, 2)
@@ -108,6 +112,7 @@ class OverlayChatPanel(QWidget):
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
         self.messages_scroll.setMinimumHeight(140)
+        self.messages_scroll.verticalScrollBar().setSingleStep(CHAT_WHEEL_SCROLL_STEP)
 
         self.messages_content = QWidget()
         self.messages_content.setObjectName("OverlayChatMessagesContent")
@@ -132,6 +137,13 @@ class OverlayChatPanel(QWidget):
         self.input_edit.setPlaceholderText("输入问题…  Enter 发送，Shift+Enter 换行")
         self.input_edit.setMinimumHeight(44)
         self.input_edit.setMaximumHeight(78)
+        self.input_edit.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.input_edit.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.input_edit.verticalScrollBar().setSingleStep(24)
         self.send_button = QPushButton("发送")
         self.send_button.setObjectName("OverlayChatSendButton")
         self.send_button.setFixedWidth(64)
@@ -146,9 +158,36 @@ class OverlayChatPanel(QWidget):
         self.close_button.clicked.connect(self.close_requested)
         self.context_button.toggled.connect(self._toggle_context)
 
+        # Wheel events over labels/rows normally stop at those widgets. Route
+        # them to the conversation scrollbar so the entire AI reading surface
+        # scrolls naturally without forcing the pointer onto the scrollbar.
+        for widget in (
+            self.title_label,
+            self.identity_label,
+            self.context_preview,
+            self.status_label,
+            self.messages_content,
+        ):
+            self._install_message_wheel_proxy(widget)
+
     @property
     def message_count(self) -> int:
         return len(self._message_rows)
+
+    def _install_message_wheel_proxy(self, widget: QWidget) -> None:
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.Wheel and watched is not self.input_edit:
+            bar = self.messages_scroll.verticalScrollBar()
+            if bar.maximum() > bar.minimum():
+                delta = event.angleDelta().y()
+                if delta:
+                    direction = -1 if delta > 0 else 1
+                    bar.setValue(bar.value() + direction * CHAT_WHEEL_SCROLL_STEP)
+                    event.accept()
+                    return True
+        return super().eventFilter(watched, event)
 
     def _submit(self) -> None:
         text = self.input_edit.toPlainText().strip()
@@ -222,9 +261,6 @@ class OverlayChatPanel(QWidget):
         body = QLabel(content)
         body.setObjectName("OverlayChatMessageBody")
         body.setProperty("rawMessage", content)
-        # User input remains literal. Assistant output is interpreted as
-        # Markdown so markers such as **bold**, lists and inline/code blocks
-        # are rendered instead of being shown as raw punctuation.
         body.setTextFormat(
             Qt.TextFormat.PlainText if is_user else Qt.TextFormat.MarkdownText
         )
@@ -237,6 +273,10 @@ class OverlayChatPanel(QWidget):
         layout.addWidget(role_label)
         layout.addWidget(body)
 
+        self._install_message_wheel_proxy(row)
+        self._install_message_wheel_proxy(role_label)
+        self._install_message_wheel_proxy(body)
+
         if not is_user:
             actions = QHBoxLayout()
             actions.setContentsMargins(0, 0, 0, 0)
@@ -244,22 +284,43 @@ class OverlayChatPanel(QWidget):
             actions.addStretch(1)
             copy_button = QToolButton(row)
             copy_button.setObjectName("OverlayChatMessageCopyButton")
-            copy_button.setText("复制")
+            copy_button.setText("")
             copy_button.setToolTip("复制这条 AI 回复")
             copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            copy_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            copy_button.setIconSize(QSize(MESSAGE_COPY_ICON_SIZE, MESSAGE_COPY_ICON_SIZE))
+            copy_button.setFixedSize(30, 28)
             copy_button.setProperty("rawMessage", content)
+            copy_button.setProperty("copyFeedback", False)
+            self._update_message_copy_icon(copy_button)
             copy_button.clicked.connect(
                 lambda _checked=False, raw=content, button=copy_button: self._copy_assistant_message(
                     raw,
                     button,
                 )
             )
+            self._install_message_wheel_proxy(copy_button)
             actions.addWidget(copy_button)
             layout.addLayout(actions)
 
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, row)
         self._message_rows.append(row)
         QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def _update_message_copy_icon(self, button: QToolButton) -> None:
+        palette = self._palette
+        copied = bool(button.property("copyFeedback"))
+        color = palette.get("accent", "#60A5FA") if copied else palette.get(
+            "muted_text",
+            "#CBD5E1",
+        )
+        button.setIcon(
+            symbol_icon(
+                "✓" if copied else "▣",
+                color,
+                size=MESSAGE_COPY_ICON_SIZE,
+            )
+        )
 
     def _copy_assistant_message(self, content: str, button: QToolButton) -> None:
         """Copy one assistant reply without touching the whole conversation."""
@@ -268,18 +329,19 @@ class OverlayChatPanel(QWidget):
         if clipboard is None:
             return
         clipboard.setText(str(content))
-        button.setText("已复制")
+        button.setProperty("copyFeedback", True)
         button.setToolTip("已复制这条 AI 回复")
+        self._update_message_copy_icon(button)
         QTimer.singleShot(
             MESSAGE_COPY_FEEDBACK_MILLISECONDS,
             lambda current=button: self._restore_message_copy_button(current),
         )
 
-    @staticmethod
-    def _restore_message_copy_button(button: QToolButton) -> None:
+    def _restore_message_copy_button(self, button: QToolButton) -> None:
         try:
-            button.setText("复制")
+            button.setProperty("copyFeedback", False)
             button.setToolTip("复制这条 AI 回复")
+            self._update_message_copy_icon(button)
         except RuntimeError:
             # The row may have been removed while the feedback timer was active.
             return
@@ -311,6 +373,7 @@ class OverlayChatPanel(QWidget):
         self.input_edit.setFocus()
 
     def apply_palette(self, palette: dict[str, str]) -> None:
+        self._palette = dict(palette)
         self.setStyleSheet(
             f"""
             QWidget#OverlayChatPanel {{
@@ -335,15 +398,12 @@ class OverlayChatPanel(QWidget):
                 padding: 1px 0px 4px 0px;
             }}
             QToolButton#OverlayChatMessageCopyButton {{
-                color: {palette['muted_text']};
                 background-color: transparent;
                 border: 1px solid transparent;
-                border-radius: 5px;
-                padding: 3px 7px;
-                font-size: 11px;
+                border-radius: 6px;
+                padding: 2px;
             }}
             QToolButton#OverlayChatMessageCopyButton:hover {{
-                color: {palette['text']};
                 background-color: {palette['hover']};
                 border-color: {palette['border']};
             }}
@@ -421,10 +481,14 @@ class OverlayChatPanel(QWidget):
             }}
             """
         )
+        for button in self.findChildren(QToolButton, "OverlayChatMessageCopyButton"):
+            self._update_message_copy_icon(button)
 
 
 __all__ = [
+    "CHAT_WHEEL_SCROLL_STEP",
     "ChatInput",
     "MESSAGE_COPY_FEEDBACK_MILLISECONDS",
+    "MESSAGE_COPY_ICON_SIZE",
     "OverlayChatPanel",
 ]

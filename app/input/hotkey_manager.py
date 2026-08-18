@@ -16,6 +16,7 @@ from app.models.events import TranslationTriggerEvent
 
 DEFAULT_HOTKEY = "alt+q"
 DEFAULT_DEBOUNCE_SECONDS = 0.25
+RESERVED_COPY_HOTKEY = "ctrl+c"
 LOGGER_NAME = "desktop_translator"
 
 _MODIFIER_KEYS = {
@@ -23,6 +24,7 @@ _MODIFIER_KEYS = {
     "alt_l": "<alt_l>",
     "alt_r": "<alt_r>",
     "ctrl": "<ctrl>",
+    "control": "<ctrl>",
     "ctrl_l": "<ctrl_l>",
     "ctrl_r": "<ctrl_r>",
     "shift": "<shift>",
@@ -45,6 +47,25 @@ _SPECIAL_KEYS = {
     "delete": "<delete>",
 }
 
+_CONTROL_NAMES = {
+    "ctrl",
+    "control",
+    "ctrl_l",
+    "ctrl_r",
+    "<ctrl>",
+    "<ctrl_l>",
+    "<ctrl_r>",
+}
+
+
+def is_reserved_copy_hotkey(value: object) -> bool:
+    """Return whether ``value`` is the standard Ctrl+C copy chord."""
+
+    parts = [part.strip().lower() for part in str(value).split("+") if part.strip()]
+    if len(parts) != 2:
+        return False
+    return any(part in _CONTROL_NAMES for part in parts) and "c" in parts
+
 
 def normalize_pynput_hotkey(value: str) -> str:
     """Convert ``alt+q``-style configuration into pynput notation."""
@@ -52,6 +73,8 @@ def normalize_pynput_hotkey(value: str) -> str:
     parts = [part.strip().lower() for part in str(value).split("+") if part.strip()]
     if len(parts) < 2:
         raise ValueError("hotkey must contain at least a modifier and a key")
+    if is_reserved_copy_hotkey(value):
+        raise ValueError("Ctrl+C is reserved for the native copy shortcut")
 
     normalized: list[str] = []
     for part in parts:
@@ -92,9 +115,8 @@ class GlobalHotkeyManager(QObject):
         try:
             normalized_hotkey = normalize_pynput_hotkey(configured_hotkey)
         except (TypeError, ValueError):
-            # A malformed user TOML file must not prevent the tray app from
-            # starting. Keep the documented default and let the user repair
-            # the setting from the settings page.
+            # Reserved/malformed user settings must never steal the native
+            # Ctrl+C copy shortcut or prevent the tray app from starting.
             configured_hotkey = DEFAULT_HOTKEY
             normalized_hotkey = normalize_pynput_hotkey(configured_hotkey)
         self._configured_hotkey = configured_hotkey
@@ -306,3 +328,13 @@ class GlobalHotkeyManager(QObject):
         except Exception:
             safe_exception = RuntimeError(type(exc).__name__)
         return type(safe_exception), safe_exception, exc.__traceback__
+
+
+__all__ = [
+    "DEFAULT_DEBOUNCE_SECONDS",
+    "DEFAULT_HOTKEY",
+    "GlobalHotkeyManager",
+    "RESERVED_COPY_HOTKEY",
+    "is_reserved_copy_hotkey",
+    "normalize_pynput_hotkey",
+]

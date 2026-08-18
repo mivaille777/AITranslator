@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
-import re
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from typing import Any
 
+from app.ai.chunking import DEFAULT_CHUNK_SIZE, merge_chunks, split_text
 from app.ai.client import DeepSeekClient
 from app.ai.errors import AIConfigurationError, AIResponseError
 from app.ai.models import AITextAction, AITextRequest, AITextResult
-from app.ai.prompts import build_polish_prompt, build_translate_prompt, normalize_polish_style
+from app.ai.output_guard import validate_model_output
+from app.ai.prompts import (
+    build_polish_prompt,
+    build_strict_retry_prompt,
+    build_translate_prompt,
+    normalize_polish_style,
+)
 
 
 TRANSLATE_TEMPERATURE = 0.1
 POLISH_TEMPERATURE = 0.3
+STRICT_RETRY_TEMPERATURE = 0.0
+DEFAULT_AI_MAX_TOKENS = 4096
 
 
 class AITextProvider(ABC):
@@ -22,38 +31,21 @@ class AITextProvider(ABC):
         """Execute one AI text request."""
 
 
-def _clean_model_output(content: str) -> str:
-    """Remove common LLM wrapper artifacts before displaying user output."""
-
-    text = content.strip()
-
-    # Models occasionally return JSON envelopes even when asked for plain text.
-    if text.startswith("{") and text.endswith("}"):
-        import json
-        try:
-            data = json.loads(text)
-            for key in ("translated_text", "translation", "output", "result", "text"):
-                value = data.get(key)
-                if isinstance(value, str) and value.strip():
-                    text = value.strip()
-                    break
-        except Exception:
-            pass
-
-    # Remove markdown fences accidentally added by the model.
-    text = re.sub(r"^```(?:text|json|markdown)?\s*", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s*```$", "", text)
-
-    return text.strip()
-
-
 class DeepSeekTextProvider(AITextProvider):
     """Translate or polish text through :class:`DeepSeekClient`."""
 
     name = "deepseek"
 
-    def __init__(self, client: DeepSeekClient | Any | None = None) -> None:
+    def __init__(
+        self,
+        client: DeepSeekClient | Any | None = None,
+        *,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        max_tokens: int = DEFAULT_AI_MAX_TOKENS,
+    ) -> None:
         self.client = client if client is not None else DeepSeekClient()
+        self.chunk_size = int(chunk_size)
+        self.max_tokens = int(max_tokens)
 
     @property
     def model(self) -> str:
@@ -69,27 +61,67 @@ class DeepSeekTextProvider(AITextProvider):
             raise AIConfigurationError("Unsupported AI text action.")
         return request
 
+    def _prompts_for(self, request: AITextRequest) -> tuple[str, str, float, str]:
+        if request.action is AITextAction.TRANSLATE:
+            system_prompt, user_prompt = build_translate_prompt(request)
+            return system_prompt, user_prompt, TRANSLATE_TEMPERATURE, request.style or "general"
+        if request.action is AITextAction.POLISH:
+            style = normalize_polish_style(request.style)
+            system_prompt, user_prompt = build_polish_prompt(request)
+            return system_prompt, user_prompt, POLISH_TEMPERATURE, style
+        raise AIConfigurationError(f"Unsupported AI text action: {request.action!s}.")
+
+    def _complete_once(self, request: AITextRequest) -> str:
+        system_prompt, user_prompt, temperature, _style = self._prompts_for(request)
+        raw = self.client.complete(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_tokens=self.max_tokens,
+        )
+        validation = validate_model_output(
+            raw,
+            source_text=request.source_text,
+            action=request.action,
+        )
+        if validation.valid:
+            return validation.text
+
+        strict_system, strict_user = build_strict_retry_prompt(
+            request,
+            previous_failure=validation.reason,
+        )
+        retry_raw = self.client.complete(
+            system_prompt=strict_system,
+            user_prompt=strict_user,
+            temperature=STRICT_RETRY_TEMPERATURE,
+            max_tokens=self.max_tokens,
+        )
+        retry_validation = validate_model_output(
+            retry_raw,
+            source_text=request.source_text,
+            action=request.action,
+        )
+        if retry_validation.valid:
+            return retry_validation.text
+        raise AIResponseError(
+            f"DeepSeek provider returned unusable content after strict retry ({retry_validation.reason})."
+        )
+
     def execute(self, request: AITextRequest) -> AITextResult:
         validated = self._validate_request(request)
+        _system, _user, _temperature, style = self._prompts_for(validated)
 
-        if validated.action is AITextAction.TRANSLATE:
-            system_prompt, user_prompt = build_translate_prompt(validated)
-            temperature = TRANSLATE_TEMPERATURE
-            style = validated.style or "general"
-        elif validated.action is AITextAction.POLISH:
-            style = normalize_polish_style(validated.style)
-            system_prompt, user_prompt = build_polish_prompt(validated)
-            temperature = POLISH_TEMPERATURE
-        else:
-            raise AIConfigurationError(f"Unsupported AI text action: {validated.action!s}.")
+        chunks = split_text(validated.source_text, max_chars=self.chunk_size)
+        if not chunks:
+            raise AIResponseError("DeepSeek provider received no usable text chunks.")
 
-        output = _clean_model_output(
-            self.client.complete(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                temperature=temperature,
-            )
-        )
+        outputs: list[str] = []
+        for chunk in chunks:
+            chunk_request = replace(validated, source_text=chunk)
+            outputs.append(self._complete_once(chunk_request))
+
+        output = merge_chunks(outputs)
         if not output:
             raise AIResponseError("DeepSeek provider returned empty content.")
 
@@ -111,4 +143,11 @@ class DeepSeekTextProvider(AITextProvider):
             close()
 
 
-__all__ = ["AITextProvider", "DeepSeekTextProvider", "POLISH_TEMPERATURE", "TRANSLATE_TEMPERATURE"]
+__all__ = [
+    "AITextProvider",
+    "DEFAULT_AI_MAX_TOKENS",
+    "DeepSeekTextProvider",
+    "POLISH_TEMPERATURE",
+    "STRICT_RETRY_TEMPERATURE",
+    "TRANSLATE_TEMPERATURE",
+]

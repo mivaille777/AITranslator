@@ -15,6 +15,7 @@ from app.translation import google_web_provider as web_module
 from app.translation.google_web_provider import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_MIN_INTERVAL_SECONDS,
+    DEFAULT_WEB_ENDPOINT,
     GoogleWebTranslationProvider,
     WEB_TRANSLATION_TYPES,
     WebResponse,
@@ -34,9 +35,19 @@ def _request() -> TranslationRequest:
 def test_live_translation_defaults_include_bounded_retry_and_spacing() -> None:
     assert DEFAULT_MAX_RETRIES == 1
     assert DEFAULT_MIN_INTERVAL_SECONDS >= 0.1
+    assert urlparse(DEFAULT_WEB_ENDPOINT).hostname == "translate.googleapis.com"
 
 
-def test_web_provider_builds_request_and_parses_segments() -> None:
+def test_legacy_translate_google_endpoint_is_migrated_in_memory() -> None:
+    provider = GoogleWebTranslationProvider(
+        endpoint="https://translate.google.com/translate_a/single",
+        requester=lambda *_args: WebResponse(200, "[]"),
+    )
+
+    assert provider.endpoint == DEFAULT_WEB_ENDPOINT
+
+
+def test_web_provider_builds_current_gtx_request_and_parses_segments() -> None:
     calls: list[tuple[str, dict[str, str], float]] = []
 
     def requester(url, headers, timeout):
@@ -71,17 +82,18 @@ def test_web_provider_builds_request_and_parses_segments() -> None:
     )
     assert len(calls) == 1
     query = parse_qs(urlparse(calls[0][0]).query)
-    assert query["client"] == ["gtx"]
-    assert query["sl"] == ["en"]
-    assert query["tl"] == ["zh-CN"]
-    assert query["hl"] == ["en"]
-    assert query["dt"] == list(WEB_TRANSLATION_TYPES)
-    assert query["source"] == ["bh"]
-    assert query["ssel"] == ["0"]
-    assert query["tsel"] == ["0"]
-    assert query["kc"] == ["1"]
-    assert query["tk"] == ["814953.678685"]
-    assert query["q"] == ["Hello world"]
+    assert query == {
+        "client": ["gtx"],
+        "sl": ["en"],
+        "tl": ["zh-CN"],
+        "dt": list(WEB_TRANSLATION_TYPES),
+        "q": ["Hello world"],
+    }
+    assert "tk" not in query
+    assert "source" not in query
+    assert "ssel" not in query
+    assert "tsel" not in query
+    assert "kc" not in query
     assert "Hello world" not in calls[0][1].get("User-Agent", "")
     assert calls[0][2] == 3
 
@@ -111,6 +123,22 @@ def test_web_provider_retries_transient_status_without_logging_source_text() -> 
 
     assert result.translated_text == "你好"
     assert sleep_calls == [pytest.approx(0.25)]
+    assert all("Hello world" not in str(call) for call in logger.mock_calls)
+
+
+def test_non_success_status_is_logged_without_source_text() -> None:
+    logger = MagicMock()
+    provider = GoogleWebTranslationProvider(
+        min_interval_seconds=0,
+        requester=lambda *_args: WebResponse(403, "forbidden"),
+        logger=logger,
+    )
+
+    with pytest.raises(WebTranslationError, match="request failed"):
+        provider.translate(_request())
+
+    assert any("google_web_http_failed" in str(call) for call in logger.mock_calls)
+    assert any("403" in str(call) for call in logger.mock_calls)
     assert all("Hello world" not in str(call) for call in logger.mock_calls)
 
 
@@ -200,8 +228,6 @@ def test_persistent_requester_reconnects_once_when_reused_socket_is_stale(monkey
 
         def request(self, *_args, **_kwargs) -> None:
             self.request_count += 1
-            # The first connection works once, then simulates a server-closed
-            # idle keep-alive socket when the second translation reuses it.
             if self.ordinal == 0 and self.request_count == 2:
                 raise OSError("stale keep-alive")
 

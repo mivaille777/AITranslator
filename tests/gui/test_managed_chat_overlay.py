@@ -9,6 +9,22 @@ from app.ai.chat_selection_overlay import SelectionCaptureConversationalAIOverla
 from app.overlay.context_menu import OVERLAY_THEMES
 
 
+class FakeSettingsConfig:
+    def __init__(self, capture_enabled: bool = True) -> None:
+        self.capture_enabled = capture_enabled
+
+    def get(self, section: str, key: str, default=None):
+        if section == "ai" and key == "chat_selection_capture_enabled":
+            return self.capture_enabled
+        return default
+
+    def save(self, values):
+        ai_values = values.get("ai", {}) if isinstance(values, dict) else {}
+        if "chat_selection_capture_enabled" in ai_values:
+            self.capture_enabled = bool(ai_values["chat_selection_capture_enabled"])
+        return values
+
+
 def test_chat_history_menu_switches_conversations(qtbot) -> None:
     window = SelectionCaptureConversationalAIOverlayWindow(win32_adapter=MagicMock())
     qtbot.addWidget(window)
@@ -75,6 +91,26 @@ def test_clicking_model_display_emits_model_selection(qtbot) -> None:
         and value.get("model") == "deepseek-v4-pro"
         for key, value in events
     )
+
+
+def test_settings_menu_can_toggle_chat_selection_capture(qtbot) -> None:
+    config = FakeSettingsConfig(capture_enabled=True)
+    window = SelectionCaptureConversationalAIOverlayWindow(
+        win32_adapter=MagicMock(),
+        config_manager=config,
+    )
+    qtbot.addWidget(window)
+
+    action = window.chat_selection_capture_action
+    assert action.isChecked()
+    action.trigger()
+
+    assert config.capture_enabled is False
+    assert not action.isChecked()
+
+    action.trigger()
+    assert config.capture_enabled is True
+    assert action.isChecked()
 
 
 def test_first_chat_open_keeps_visible_drag_handle_operational(qtbot) -> None:

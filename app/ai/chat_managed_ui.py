@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtGui import QAction, QActionGroup
-from PySide6.QtWidgets import QHBoxLayout, QMenu, QToolButton
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtGui import QAction, QActionGroup, QFont
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QToolButton, QVBoxLayout, QWidget
 
+from app.ai.chat.models import ChatRole
 from app.ai.chat_selection_ui import SelectionCaptureChatPanel
 
 
@@ -16,11 +17,16 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
     conversation_selected = Signal(str)
     conversation_delete_requested = Signal(str)
     model_selected = Signal(object)
+    stream_layout_changed = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._active_conversation_id = ""
         self._current_model_key = ("", "")
+        self._streaming_request_id: int | None = None
+        self._streaming_row: QWidget | None = None
+        self._streaming_body: QLabel | None = None
+        self._display_font_size = 13
 
         root = self.layout()
         top_item = root.itemAt(0) if root is not None else None
@@ -65,11 +71,10 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         close_index = top.indexOf(self.close_button)
         top.insertWidget(max(0, close_index), self.delete_chat_button)
 
-        # The title row doubles as an explicit drag affordance.  The Overlay
-        # installs an event filter on this label so entering Chat never removes
-        # the user's ability to move the card.
         self.title_label.setToolTip("拖动以移动悬浮窗")
-        self.title_label.setMinimumWidth(72)
+        self.title_label.setMinimumWidth(64)
+        self.model_button.setMinimumWidth(120)
+        self.set_display_font_size(self._display_font_size)
 
     @property
     def active_conversation_id(self) -> str:
@@ -84,8 +89,6 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         items: tuple[dict[str, object], ...] | list[dict[str, object]],
         active_id: str = "",
     ) -> None:
-        """Render recent conversations as a compact ChatGPT-style history menu."""
-
         self._active_conversation_id = str(active_id or "")
         self.history_menu.clear()
 
@@ -124,8 +127,6 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         current_provider: str = "",
         current_model: str = "",
     ) -> None:
-        """Populate the clickable provider/model display with available models."""
-
         self.model_menu.clear()
         self._current_model_key = (
             str(current_provider).strip(),
@@ -175,6 +176,106 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         else:
             self.model_button.setText("选择模型 ▾")
 
+    def begin_streaming_reply(self, request_id: int) -> None:
+        """Create one temporary assistant row that can be updated in place."""
+
+        self.cancel_streaming_reply()
+        row = QWidget(self.messages_content)
+        row.setObjectName("OverlayChatStreamingMessageRow")
+        row.setProperty("chatRole", ChatRole.ASSISTANT.value)
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+
+        role_label = QLabel("AI")
+        role_label.setObjectName("OverlayChatAssistantRole")
+        body = QLabel("▍")
+        body.setObjectName("OverlayChatMessageBody")
+        body.setTextFormat(Qt.TextFormat.MarkdownText)
+        body.setWordWrap(True)
+        body.setOpenExternalLinks(False)
+        body.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        layout.addWidget(role_label)
+        layout.addWidget(body)
+        self._install_message_wheel_proxy(row)
+        self._install_message_wheel_proxy(role_label)
+        self._install_message_wheel_proxy(body)
+        self.messages_layout.insertWidget(self.messages_layout.count() - 1, row)
+        self._streaming_request_id = int(request_id)
+        self._streaming_row = row
+        self._streaming_body = body
+        self.set_display_font_size(self._display_font_size)
+        self.stream_layout_changed.emit()
+        QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def update_streaming_reply(self, request_id: int, text: str) -> bool:
+        if self._streaming_request_id != int(request_id) or self._streaming_body is None:
+            return False
+        content = str(text)
+        self._streaming_body.setText(content if content else "▍")
+        self._streaming_body.setProperty("rawMessage", content)
+        self._streaming_body.updateGeometry()
+        self.messages_content.updateGeometry()
+        self.stream_layout_changed.emit()
+        QTimer.singleShot(0, self._scroll_to_bottom)
+        return True
+
+    def finish_streaming_reply(self, request_id: int, text: str) -> bool:
+        if self._streaming_request_id != int(request_id):
+            return False
+        self.cancel_streaming_reply()
+        self.append_message(ChatRole.ASSISTANT, text)
+        self.set_display_font_size(self._display_font_size)
+        self.stream_layout_changed.emit()
+        return True
+
+    def cancel_streaming_reply(self, request_id: int | None = None) -> None:
+        if request_id is not None and self._streaming_request_id != int(request_id):
+            return
+        row = self._streaming_row
+        if row is not None:
+            self.messages_layout.removeWidget(row)
+            row.deleteLater()
+        self._streaming_request_id = None
+        self._streaming_row = None
+        self._streaming_body = None
+        self.stream_layout_changed.emit()
+
+    def clear_messages(self) -> None:
+        self.cancel_streaming_reply()
+        super().clear_messages()
+
+    def set_display_font_size(self, size: int) -> None:
+        """Scale chat content with a manually resized Overlay."""
+
+        try:
+            resolved = max(10, min(30, int(size)))
+        except (TypeError, ValueError):
+            resolved = 13
+        self._display_font_size = resolved
+        body_font = QFont(self.font())
+        body_font.setPointSize(resolved)
+        role_font = QFont(self.font())
+        role_font.setPointSize(max(8, round(resolved * 0.78)))
+        role_font.setBold(True)
+        input_font = QFont(self.font())
+        input_font.setPointSize(max(9, round(resolved * 0.92)))
+
+        self.input_edit.setFont(input_font)
+        self.context_preview.setFont(input_font)
+        for body in self.findChildren(QLabel, "OverlayChatMessageBody"):
+            body.setFont(body_font)
+        for role in self.findChildren(QLabel, "OverlayChatAssistantRole") + self.findChildren(
+            QLabel,
+            "OverlayChatUserRole",
+        ):
+            role.setFont(role_font)
+        if self._streaming_body is not None:
+            self._streaming_body.setFont(body_font)
+
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
         self.setStyleSheet(
@@ -223,6 +324,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
             }}
             """
         )
+        self.set_display_font_size(self._display_font_size)
 
 
 __all__ = ["ManagedChatPanel"]

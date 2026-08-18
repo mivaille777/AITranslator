@@ -27,7 +27,9 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
         self.undo_selection_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.undo_selection_button.setFixedSize(44, 44)
         self.undo_selection_button.setEnabled(False)
-        self.undo_selection_button.clicked.connect(self.undo_last_selection_input)
+        self.undo_selection_button.clicked.connect(
+            lambda _checked=False: self.undo_last_selection_input()
+        )
 
         root = self.layout()
         input_item = root.itemAt(root.count() - 1) if root is not None else None
@@ -46,16 +48,11 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
         )
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
-        if watched is self.input_edit:
-            if event.type() == QEvent.Type.FocusIn:
-                self._selection_capture_armed = True
-            elif event.type() == QEvent.Type.FocusOut:
-                reason = event.reason()
-                # Selecting text in another application deactivates the Overlay
-                # window. Keep capture armed across that temporary focus loss so
-                # the mouse-release selection event can be routed back here.
-                if reason != Qt.FocusReason.ActiveWindowFocusReason:
-                    self._selection_capture_armed = False
+        if watched is self.input_edit and event.type() == QEvent.Type.FocusIn:
+            # Once the user has placed the caret in Chat, keep capture armed
+            # across the temporary focus loss required to select text in a
+            # different application. Closing Chat explicitly disarms it.
+            self._selection_capture_armed = True
         return super().eventFilter(watched, event)
 
     def focus_input(self) -> None:

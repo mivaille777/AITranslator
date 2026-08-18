@@ -18,6 +18,8 @@ from app.ai.errors import AIConfigurationError, AIError
 from app.ai.factory import AI_PROVIDER_LABELS, normalize_ai_provider
 from app.ai.resizable_overlay import ResizableConversationalAIOverlayManager
 from app.infrastructure.settings import SettingsManager
+from app.input.mouse_selection_manager import MOUSE_SELECTION_SOURCE
+from app.models.events import TranslationTriggerEvent
 
 
 STREAM_CHAT_ERROR_TEXT = "AI 对话请求失败。"
@@ -101,6 +103,38 @@ class StreamingResizableAIAppController(
             True,
         )
         self.logger.info("overlay_shown")
+
+    def _is_ai_chat_open(self) -> bool:
+        """Return whether the production Overlay is currently in Chat mode."""
+
+        checker = getattr(self.overlay_manager, "is_chat_open", None)
+        if callable(checker):
+            try:
+                return bool(checker())
+            except Exception as exc:
+                self._log_exception("chat_open_state_failed", exc)
+
+        window = getattr(self.overlay_manager, "window", None)
+        return bool(getattr(window, "chat_open", False))
+
+    def _on_translation_triggered(self, event: TranslationTriggerEvent) -> None:
+        """Never let automatic mouse selection kick an open Chat back to translation."""
+
+        if event.source == MOUSE_SELECTION_SOURCE and self._is_ai_chat_open():
+            if self._is_chat_selection_capture_armed():
+                self.logger.info(
+                    "CHAT_SELECTION_CAPTURE_TRIGGERED source=%s",
+                    event.source,
+                )
+                self._capture_mouse_selection_into_chat()
+            else:
+                # Chat owns mouse-selection gestures while it is open. If the
+                # optional capture preference is disabled, or the input is
+                # temporarily unavailable during streaming, ignore the gesture
+                # instead of falling through to the normal translation path.
+                self.logger.info("auto_selection_ignored chat_open")
+            return
+        super()._on_translation_triggered(event)
 
     def _ensure_chat_service(self) -> Any:
         if self.chat_service is None:

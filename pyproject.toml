@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "desktop-translator"
+version = "0.1.0"
+description = "A Windows desktop selection translation overlay application."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # 6.7.3 is the tested Windows baseline for this project. Later wheels
+    # require an ICU runtime that is not bundled consistently on Windows.
+    "PySide6==6.7.3",
+    "pywin32>=306",
+    "pynput>=1.7.6",
+    "cachetools>=5.3",
+    "certifi>=2024.8.30",
+    "uiautomation>=2.0.18",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-qt>=4.2",
+]
+build = [
+    "pyinstaller>=6.10,<7",
+]
+
+[project.scripts]
+desktop-translator = "app.main:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra"
+qt_api = "pyside6"

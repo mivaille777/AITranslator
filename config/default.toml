@@ -1,0 +1,60 @@
+[app]
+name = "Desktop Translator"
+version = "0.1.0"
+
+[logging]
+level = "INFO"
+directory = "logs"
+
+[translation]
+source_language = "auto"
+target_language = "zh-CN"
+cache_enabled = true
+cache_max_size = 128
+max_text_length = 5000
+
+[google_web]
+enabled = true
+endpoint = "https://translate.google.com/translate_a/single"
+timeout_ms = 8000
+max_retries = 0
+min_interval_ms = 0
+
+[cache]
+enabled = true
+max_size = 128
+sqlite_enabled = true
+sqlite_path = "config/translation_cache.sqlite3"
+history_enabled = false
+
+[trigger]
+mode = "auto"
+hotkey = "alt+q"
+debounce_ms = 250
+
+[input]
+hotkey = "alt+q"
+hotkey_debounce_ms = 250
+auto_selection_enabled = true
+auto_selection_debounce_ms = 250
+
+[selection]
+uia_timeout_ms = 250
+
+[overlay]
+position_mode = "desktop_lyrics_bottom"
+font_family = "Segoe UI"
+font_size = 24
+# Legacy single-opacity key; new settings use the two fields below.
+opacity = 1.0
+background_opacity = 1.0
+text_opacity = 1.0
+max_width = 900
+locked = false
+theme = "dark"
+show_original = false
+margin = 24
+custom_position_x = 80
+custom_position_y = 80
+mouse_offset_x = 16
+mouse_offset_y = 16

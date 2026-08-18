@@ -1,0 +1,134 @@
+"""Small Windows foreground-process detector used by selection providers."""
+
+from __future__ import annotations
+
+import ctypes
+import os
+import sys
+from collections.abc import Callable
+from ctypes import wintypes
+from typing import Any
+
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+class ForegroundApplicationDetector:
+    """Return the executable name for the current foreground window."""
+
+    def __init__(
+        self,
+        user32: Any | None = None,
+        kernel32: Any | None = None,
+        *,
+        platform_name: str | None = None,
+        executable_name_reader: Callable[[], str | None] | None = None,
+    ) -> None:
+        self._user32 = user32
+        self._kernel32 = kernel32
+        self._platform_name = platform_name or sys.platform
+        self._executable_name_reader = executable_name_reader
+
+    def executable_name(self) -> str | None:
+        """Return a basename such as ``WINWORD.EXE`` or ``None`` on failure."""
+
+        if self._executable_name_reader is not None:
+            try:
+                value = self._executable_name_reader()
+            except Exception:
+                return None
+            return str(value) if value else None
+
+        if self._platform_name != "win32":
+            return None
+
+        process_handle: Any | None = None
+        try:
+            user32 = self._load_user32()
+            kernel32 = self._load_kernel32()
+            self._configure_api(user32, kernel32)
+
+            hwnd = user32.GetForegroundWindow()
+            if not hwnd:
+                return None
+
+            process_id = wintypes.DWORD(0)
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
+            if not process_id.value:
+                return None
+
+            process_handle = kernel32.OpenProcess(
+                _PROCESS_QUERY_LIMITED_INFORMATION,
+                False,
+                process_id.value,
+            )
+            if not process_handle:
+                return None
+
+            buffer = ctypes.create_unicode_buffer(1024)
+            buffer_size = wintypes.DWORD(len(buffer))
+            if not kernel32.QueryFullProcessImageNameW(
+                process_handle,
+                0,
+                buffer,
+                ctypes.byref(buffer_size),
+            ):
+                return None
+            return os.path.basename(buffer.value)
+        except (AttributeError, OSError, OverflowError, TypeError, ValueError):
+            return None
+        finally:
+            if process_handle:
+                try:
+                    self._load_kernel32().CloseHandle(process_handle)
+                except (AttributeError, OSError, TypeError, ValueError):
+                    pass
+
+    def is_word_foreground(self) -> bool:
+        """Return whether the current foreground process is Microsoft Word."""
+
+        name = self.executable_name()
+        return bool(name and name.casefold() == "winword.exe")
+
+    def _load_user32(self) -> Any:
+        return self._user32 or ctypes.WinDLL("user32", use_last_error=True)
+
+    def _load_kernel32(self) -> Any:
+        return self._kernel32 or ctypes.WinDLL("kernel32", use_last_error=True)
+
+    @staticmethod
+    def _configure_api(user32: Any, kernel32: Any) -> None:
+        """Set pointer-safe signatures for the real ctypes functions."""
+
+        get_foreground_window = user32.GetForegroundWindow
+        get_foreground_window.restype = wintypes.HWND
+
+        get_window_thread_process_id = user32.GetWindowThreadProcessId
+        get_window_thread_process_id.argtypes = [
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        get_window_thread_process_id.restype = wintypes.DWORD
+
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        ]
+        open_process.restype = wintypes.HANDLE
+
+        query_process_name = kernel32.QueryFullProcessImageNameW
+        query_process_name.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        query_process_name.restype = wintypes.BOOL
+
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+
+
+__all__ = ["ForegroundApplicationDetector"]

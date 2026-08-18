@@ -1,0 +1,24 @@
+AITranslator/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/*
+!dist/AITranslator/
+!dist/AITranslator/**
+coverage.xml
+.coverage
+
+logs/*
+!logs/.gitkeep
+
+# Per-user settings are local state and must never be committed.
+config/user.toml
+config/translation_cache.sqlite3*
+config/*.sqlite3-shm
+config/*.sqlite3-wal
+
+*.log

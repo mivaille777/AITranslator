@@ -18,12 +18,17 @@ from app.infrastructure.paths import user_config_path
 DEFAULT_USER_CONFIG_PATH = user_config_path()
 
 # Only values represented by the settings page and existing non-secret
-# compatibility options may be written. This prevents a future credentials
-# field from accidentally becoming part of the ordinary user config file.
+# compatibility options may be written. Secret credentials are deliberately
+# excluded and are stored by app.ai.secrets in Windows Credential Manager.
 ALLOWED_USER_KEYS: dict[str, set[str]] = {
     "translation": {
         "source_language",
         "target_language",
+    },
+    "ai": {
+        "provider",
+        "model",
+        "base_url",
     },
     "trigger": {"mode", "hotkey", "debounce_ms"},
     "overlay": {
@@ -209,10 +214,6 @@ class SettingsManager(ConfigManager):
     def _apply_legacy_overlay_opacity(self) -> None:
         """Make an old user opacity value the effective background value."""
 
-        # Migrate the old single opacity value in the effective view when an
-        # existing user.toml has not yet written the new background field.
-        # This matters even when the shipped defaults already contain a
-        # background_opacity key, because the user's old value must win.
         user_overlay = self._user_data.get("overlay", {})
         effective_overlay = self._data.get("overlay")
         if (
@@ -223,7 +224,6 @@ class SettingsManager(ConfigManager):
         ):
             effective_overlay["background_opacity"] = user_overlay["opacity"]
 
-    # A load alias makes the intent explicit for callers and tests.
     load = reload
 
     def save(self, values: Mapping[str, Any] | None = None) -> dict[str, Any]:

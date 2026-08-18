@@ -33,6 +33,7 @@ target_language = "zh-CN"
 provider = "deepseek"
 model = "deepseek-v4-flash"
 base_url = "https://api.deepseek.com"
+chat_selection_capture_enabled = true
 
 [trigger]
 mode = "hotkey"
@@ -61,7 +62,7 @@ history_enabled = false
     return SettingsManager(default_path, user_path)
 
 
-def test_settings_window_persists_provider_and_secure_api_key(
+def test_settings_window_persists_provider_secure_api_key_and_chat_capture(
     qapp,
     qtbot,
     tmp_path: Path,
@@ -74,23 +75,27 @@ def test_settings_window_persists_provider_and_secure_api_key(
     assert window.ai_provider_combo.currentData() == "deepseek"
     assert window.ai_api_key_edit.text() == "deepseek-saved"
     assert window.ai_api_key_edit.echoMode() == window.ai_api_key_edit.EchoMode.Password
+    assert window.ai_chat_selection_capture_check.isChecked()
 
     index = window.ai_provider_combo.findData("openai_compatible")
     window.ai_provider_combo.setCurrentIndex(index)
     window.ai_model_combo.setCurrentText("custom-model-v3")
     window.ai_base_url_edit.setText("https://provider.example/v1")
     window.ai_api_key_edit.setText("custom-secret")
+    window.ai_chat_selection_capture_check.setChecked(False)
 
     assert window.save_settings()
 
     assert manager.get("ai", "provider") == "openai_compatible"
     assert manager.get("ai", "model") == "custom-model-v3"
     assert manager.get("ai", "base_url") == "https://provider.example/v1"
+    assert manager.get("ai", "chat_selection_capture_enabled") is False
     assert store.values["openai_compatible"] == "custom-secret"
 
     saved_text = manager.user_path.read_text(encoding="utf-8")
     assert "custom-secret" not in saved_text
     assert "api_key" not in saved_text
+    assert "chat_selection_capture_enabled = false" in saved_text
 
     reloaded = SettingsManager(manager.default_path, manager.user_path)
     second = SettingsWindow(reloaded, credential_store=store)
@@ -100,3 +105,4 @@ def test_settings_window_persists_provider_and_secure_api_key(
     assert second.ai_model_combo.currentText() == "custom-model-v3"
     assert second.ai_base_url_edit.text() == "https://provider.example/v1"
     assert second.ai_api_key_edit.text() == "custom-secret"
+    assert not second.ai_chat_selection_capture_check.isChecked()

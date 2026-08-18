@@ -13,13 +13,38 @@ AITranslator 是一款面向 Windows 的桌面划词翻译工具，帮助你在�
 - 支持托盘运行、设置管理和翻译结果缓存。
 - 使用 Google Translate 网页翻译服务，无需配置 Google Cloud 凭据。
 
+## DeepSeek AI development stage
+
+The LLM integration starts from a minimal API connectivity layer.
+
+Install dependencies:
+
+```powershell
+python -m pip install -e "."
+```
+
+Configure the API key temporarily:
+
+```powershell
+$env:DEEPSEEK_API_KEY="your_api_key"
+```
+
+Run the Stage 1 smoke test:
+
+```powershell
+python scripts/deepseek_smoke_test.py
+```
+
+The current model identifier is `deepseek-v4-flash` (DeepSeek V4 Flash family).
+The API key is intentionally not stored in the application configuration file.
+
 ## 欢迎使用
 
 欢迎使用 AITranslator。希望它能让你的阅读、学习和工作更加顺畅。
 
 ## 改进建议
 
-欢迎其他 GitHub 用户提出改进意见、报告问题或提交 Pull Request。你可以在仓库的 [Issues](https://github.com/mivaille777/AITranslator/issues) 中反馈想法和问题，也可以通过 [Pull Requests](https://github.com/mivaille777/AITranslator/pulls) 参与改进。
+欢迎其他 GitHub 用户提出改进意见、报告问题或提交 Pull Request。
 
 ## Development environment
 
@@ -39,24 +64,8 @@ If PowerShell blocks activation for the current session, use:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-## Verify the environment
-
-```powershell
-python scripts/verify_environment.py
-```
-
-The command reports the Python and Windows versions and verifies imports for
-PySide6, pywin32, pynput, cachetools, certifi, and uiautomation.
-
 ## Run
-
-Normal startup enters the Qt event loop and can be interrupted with `Ctrl+C`:
 
 ```powershell
 python -m app.main
 ```
-
-Only one normal application process should be running. If another instance
-is already active, the second process exits and records
-`application_already_running` in the log. `--smoke-test` is exempt so it can
-be used while the application is running.

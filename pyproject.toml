@@ -17,6 +17,7 @@ dependencies = [
     "cachetools>=5.3",
     "certifi>=2024.8.30",
     "uiautomation>=2.0.18",
+    "openai>=1.0",
 ]
 
 [project.optional-dependencies]

@@ -332,4 +332,3 @@ class ClipboardAdapter:
     get_text = read_text
     set_text = write_text
     change_token = get_change_token
-

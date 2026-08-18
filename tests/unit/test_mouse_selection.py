@@ -226,4 +226,3 @@ def test_dead_mouse_listener_is_restarted_by_health_check(qapp) -> None:
     assert len(listeners) == 2
     assert listeners[1].start_count == 1
     manager.stop()
-

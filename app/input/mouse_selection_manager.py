@@ -404,4 +404,3 @@ __all__ = [
     "MouseSelectionState",
     "SCREEN_CAPTURE_PROCESS_NAMES",
 ]
-

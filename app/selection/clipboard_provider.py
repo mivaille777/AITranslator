@@ -174,4 +174,3 @@ class ClipboardSelectionProvider(SelectionProvider):
             self._sleeper(min(self.poll_interval_seconds, deadline - now))
 
         return False
-

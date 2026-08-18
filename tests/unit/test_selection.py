@@ -417,4 +417,3 @@ def test_selection_manager_returns_selected_text_from_provider() -> None:
     selected = SelectionManager(provider=FakeProvider()).get_selected_text()
 
     assert selected == SelectedText("manager result")
-

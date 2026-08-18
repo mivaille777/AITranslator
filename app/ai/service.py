@@ -123,12 +123,16 @@ class AITextService:
     ) -> AITextResult:
         """Convenience entry point for same-language AI polishing."""
 
+        normalized_source_language = str(source_language).strip() or DEFAULT_AI_SOURCE_LANGUAGE
         return self.execute(
             AITextRequest(
                 source_text=source_text,
                 action=AITextAction.POLISH,
-                source_language=source_language,
-                target_language=DEFAULT_AI_TARGET_LANGUAGE,
+                source_language=normalized_source_language,
+                # Polishing is same-language generation. Keep the result
+                # metadata truthful instead of inheriting the translation
+                # service's Chinese default target.
+                target_language=normalized_source_language,
                 style=style,
                 request_id=request_id,
             )

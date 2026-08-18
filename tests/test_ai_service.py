@@ -76,6 +76,7 @@ def test_translate_and_polish_build_expected_requests() -> None:
     assert translate_request.target_language == "zh-CN"
     assert translate_request.request_id == 2
     assert polish_request.action is AITextAction.POLISH
+    assert polish_request.target_language == "en"
     assert polish_request.style == "academic"
     assert polish_request.request_id == 3
 

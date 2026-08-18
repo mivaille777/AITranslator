@@ -27,6 +27,7 @@ from app.overlay.language_bar import normalize_target_language_code
 STREAM_CHAT_ERROR_TEXT = "AI 对话请求失败。"
 STREAM_CHAT_CONFIG_ERROR_TEXT = "请先在“设置 → AI 大模型与 API Key”中完成模型配置。"
 STARTUP_OVERLAY_TEXT = "等待划词翻译…"
+MAX_CONVERSATION_TITLE_CHARS = 80
 
 
 class StreamingResizableAIAppController(
@@ -44,6 +45,9 @@ class StreamingResizableAIAppController(
                 config_manager=resolved_config,
             )
         self._active_stream_request_id: int | None = None
+        self._active_stream_task: StreamingAIChatTask | None = None
+        self._active_stream_user_message = ""
+        self._active_stream_partial = ""
         super().__init__(*args, **kwargs)
         self._normalize_runtime_language_pair(persist_invalid_target=True)
 
@@ -224,9 +228,6 @@ class StreamingResizableAIAppController(
                 candidate_source = current_target
                 candidate_target = normalize_target_language_code(current_source)
 
-            # ``auto`` is valid only on the source side. The visible swap
-            # button is disabled in that state, but keep the controller guard
-            # too so synthetic/context events cannot persist an invalid pair.
             if candidate_source == "auto" or str(candidate_target).lower() == "auto":
                 return True
             source, target = self._apply_language_pair(
@@ -266,10 +267,6 @@ class StreamingResizableAIAppController(
                 )
                 self._capture_mouse_selection_into_chat()
             else:
-                # Chat owns mouse-selection gestures while it is open. If the
-                # optional capture preference is disabled, or the input is
-                # temporarily unavailable during streaming, ignore the gesture
-                # instead of falling through to the normal translation path.
                 self.logger.info("auto_selection_ignored chat_open")
             return
         super()._on_translation_triggered(event)
@@ -279,11 +276,112 @@ class StreamingResizableAIAppController(
             self.chat_service = StreamingAIChatService(self._ensure_ai_service())
         return self.chat_service
 
-    def _cancel_active_stream(self) -> None:
+    def _clear_active_stream_state(self) -> None:
+        self._active_stream_request_id = None
+        self._active_stream_task = None
+        self._active_stream_user_message = ""
+        self._active_stream_partial = ""
+
+    def _cancel_active_stream(self, *, reset_busy: bool = True) -> None:
+        task = self._active_stream_task
+        if task is not None:
+            task.cancel()
         request_id = self._active_stream_request_id
         if request_id is not None:
             self._chat_overlay_call("cancel_chat_stream", request_id)
-        self._active_stream_request_id = None
+        self._clear_active_stream_state()
+        if reset_busy:
+            self._chat_overlay_call("set_chat_busy", False)
+
+    def _stop_chat_generation(self) -> None:
+        """Stop the active stream and preserve the text already received."""
+
+        request_id = self._active_stream_request_id
+        if request_id is None:
+            return
+        task = self._active_stream_task
+        if task is not None:
+            task.cancel()
+
+        # Make every later callback from the cancelled request stale before
+        # touching UI/history state.
+        self._chat_request_versions.next_request_id()
+        partial = self._active_stream_partial.strip()
+        user_message = self._active_stream_user_message.strip()
+        active = self.conversation_manager.active
+
+        if partial and user_message and active is not None:
+            conversation = self.conversation_manager.append_exchange(
+                user_message,
+                partial,
+            )
+            self._chat_overlay_call("finish_chat_stream", request_id, partial)
+            self._sync_chat_controls(conversation)
+        else:
+            self._chat_overlay_call("cancel_chat_stream", request_id)
+            if active is not None:
+                # Remove the transient unsaved user row if generation was
+                # stopped before the first token arrived.
+                self._show_managed_conversation(active)
+
+        self._clear_active_stream_state()
+        self._chat_overlay_call("set_chat_busy", False)
+        self.logger.info("ai_chat_stream_stopped partial_length=%s", len(partial))
+
+    def _rename_ai_chat(self, payload: object) -> None:
+        if not isinstance(payload, dict):
+            return
+        conversation_id = str(payload.get("conversation_id", "")).strip()
+        title = " ".join(str(payload.get("title", "")).strip().split())
+        if not conversation_id or not title:
+            return
+        title = title[:MAX_CONVERSATION_TITLE_CHARS]
+        conversation = next(
+            (
+                item
+                for item in self.conversation_manager.conversations
+                if item.conversation_id == conversation_id
+            ),
+            None,
+        )
+        if conversation is None:
+            return
+        conversation.title = title
+        conversation.touch()
+        self.conversation_manager.save()
+        self._sync_chat_controls(self.conversation_manager.active)
+
+    def _regenerate_ai_response(self, assistant_content: object) -> None:
+        """Regenerate from the user turn that produced one selected AI answer."""
+
+        active = self.conversation_manager.active
+        content = str(assistant_content or "").strip()
+        if active is None or not content:
+            return
+        self._chat_request_versions.next_request_id()
+        self._cancel_active_stream()
+
+        assistant_index = -1
+        for index in range(len(active.messages) - 1, -1, -1):
+            message = active.messages[index]
+            if message.role == ChatRole.ASSISTANT and message.content.strip() == content:
+                assistant_index = index
+                break
+        if assistant_index <= 0:
+            return
+        user_index = assistant_index - 1
+        user_message = active.messages[user_index]
+        if user_message.role != ChatRole.USER:
+            return
+
+        prompt = user_message.content
+        # Regeneration branches from this turn. Later turns are removed so the
+        # new answer receives exactly the history that preceded the question.
+        active.messages = list(active.messages[:user_index])
+        active.rotate_session()
+        self.conversation_manager.save()
+        self._show_managed_conversation(active)
+        self._submit_chat_message(prompt)
 
     def _new_ai_chat(self) -> None:
         self._cancel_active_stream()
@@ -308,6 +406,15 @@ class StreamingResizableAIAppController(
 
     def _on_overlay_context_action(self, key: str, value: object) -> None:
         if self._handle_language_action(key, value):
+            return
+        if key == "ai_chat_stop":
+            self._stop_chat_generation()
+            return
+        if key == "ai_chat_rename":
+            self._rename_ai_chat(value)
+            return
+        if key == "ai_chat_regenerate":
+            self._regenerate_ai_response(value)
             return
         if key == "ai_chat_close":
             self._chat_request_versions.next_request_id()
@@ -344,6 +451,8 @@ class StreamingResizableAIAppController(
         self._chat_overlay_call("set_chat_busy", True)
         self._chat_overlay_call("begin_chat_stream", request_id)
         self._active_stream_request_id = request_id
+        self._active_stream_user_message = user_message
+        self._active_stream_partial = ""
 
         try:
             service = self._ensure_chat_service()
@@ -363,6 +472,7 @@ class StreamingResizableAIAppController(
             return
 
         task = StreamingAIChatTask(service, request, logger=self.logger)
+        self._active_stream_task = task
         task.signals.chunk.connect(self._on_chat_stream_chunk)
         task.signals.succeeded.connect(self._on_chat_task_succeeded)
         task.signals.failed.connect(self._on_chat_task_failed)
@@ -390,6 +500,7 @@ class StreamingResizableAIAppController(
         active = self.conversation_manager.active
         if active is None or chunk.session_id != active.session_id:
             return
+        self._active_stream_partial = chunk.accumulated_text
         self._chat_overlay_call(
             "update_chat_stream",
             chunk.request_id,
@@ -420,7 +531,7 @@ class StreamingResizableAIAppController(
             result.request_id,
             result.output_text,
         )
-        self._active_stream_request_id = None
+        self._clear_active_stream_state()
         self._chat_overlay_call(
             "set_chat_identity",
             AI_PROVIDER_LABELS.get(conversation.provider, conversation.provider),
@@ -438,12 +549,14 @@ class StreamingResizableAIAppController(
         if isinstance(failure, AIChatTaskFailure):
             self._chat_overlay_call("cancel_chat_stream", failure.request_id)
             if self._active_stream_request_id == failure.request_id:
-                self._active_stream_request_id = None
+                self._clear_active_stream_state()
         super()._on_chat_task_failed(failure)
 
     def _on_chat_task_finished(self, task: object) -> None:
         if isinstance(task, StreamingAIChatTask):
             self._chat_tasks.discard(task)
+            if self._active_stream_task is task and task.is_cancelled:
+                self._clear_active_stream_state()
             return
         super()._on_chat_task_finished(task)
 

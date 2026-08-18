@@ -256,4 +256,13 @@ class AITranslatorAgentGraph:
         )
 
 
-__all__ = ["AITranslatorAgentGraph", "AgentWorkflowState"]
+# This compiled graph has no checkpointer or mutable per-run state. Every
+# invocation receives an isolated input state, so worker threads can share it.
+DEFAULT_AGENT_GRAPH = AITranslatorAgentGraph()
+
+
+__all__ = [
+    "AITranslatorAgentGraph",
+    "AgentWorkflowState",
+    "DEFAULT_AGENT_GRAPH",
+]

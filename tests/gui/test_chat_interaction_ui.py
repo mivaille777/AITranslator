@@ -101,12 +101,14 @@ def test_assistant_actions_are_hover_only_and_regenerate_selected_reply(qtbot) -
     regenerate = row.findChild(QToolButton, "OverlayChatMessageRegenerateButton")
     assert copy_button is not None
     assert regenerate is not None
-    assert not copy_button.isVisible()
-    assert not regenerate.isVisible()
+    assert not panel.assistant_actions_visible(row)
+    assert copy_button.isHidden()
+    assert regenerate.isHidden()
 
     panel.eventFilter(row, QEvent(QEvent.Type.Enter))
-    assert copy_button.isVisible()
-    assert regenerate.isVisible()
+    assert panel.assistant_actions_visible(row)
+    assert not copy_button.isHidden()
+    assert not regenerate.isHidden()
 
     with qtbot.waitSignal(panel.regenerate_requested) as blocker:
         qtbot.mouseClick(regenerate, Qt.MouseButton.LeftButton)

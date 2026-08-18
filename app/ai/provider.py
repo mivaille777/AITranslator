@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 from app.ai.client import DeepSeekClient
 from app.ai.errors import AIConfigurationError, AIResponseError
 from app.ai.models import AITextAction, AITextRequest, AITextResult
-from app.ai.prompts import (
-    build_polish_prompt,
-    build_translate_prompt,
-    normalize_polish_style,
-)
+from app.ai.prompts import build_polish_prompt, build_translate_prompt, normalize_polish_style
 
 
 TRANSLATE_TEMPERATURE = 0.1
@@ -20,11 +17,34 @@ POLISH_TEMPERATURE = 0.3
 
 
 class AITextProvider(ABC):
-    """Execute provider-independent AI text requests."""
-
     @abstractmethod
     def execute(self, request: AITextRequest) -> AITextResult:
         """Execute one AI text request."""
+
+
+def _clean_model_output(content: str) -> str:
+    """Remove common LLM wrapper artifacts before displaying user output."""
+
+    text = content.strip()
+
+    # Models occasionally return JSON envelopes even when asked for plain text.
+    if text.startswith("{") and text.endswith("}"):
+        import json
+        try:
+            data = json.loads(text)
+            for key in ("translated_text", "translation", "output", "result", "text"):
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    text = value.strip()
+                    break
+        except Exception:
+            pass
+
+    # Remove markdown fences accidentally added by the model.
+    text = re.sub(r"^```(?:text|json|markdown)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+
+    return text.strip()
 
 
 class DeepSeekTextProvider(AITextProvider):
@@ -37,24 +57,19 @@ class DeepSeekTextProvider(AITextProvider):
 
     @property
     def model(self) -> str:
-        """Return the configured DeepSeek model identifier."""
-
-        value = getattr(self.client, "model", "")
-        return str(value).strip() or "unknown"
+        return str(getattr(self.client, "model", "unknown")).strip() or "unknown"
 
     @staticmethod
     def _validate_request(request: object) -> AITextRequest:
         if not isinstance(request, AITextRequest):
             raise AIConfigurationError("AI provider requires an AITextRequest.")
-        if not isinstance(request.source_text, str) or not request.source_text.strip():
+        if not request.source_text.strip():
             raise AIConfigurationError("AI source text must not be empty.")
         if not isinstance(request.action, AITextAction):
             raise AIConfigurationError("Unsupported AI text action.")
         return request
 
     def execute(self, request: AITextRequest) -> AITextResult:
-        """Execute translation or polishing without exposing SDK details."""
-
         validated = self._validate_request(request)
 
         if validated.action is AITextAction.TRANSLATE:
@@ -66,22 +81,21 @@ class DeepSeekTextProvider(AITextProvider):
             system_prompt, user_prompt = build_polish_prompt(validated)
             temperature = POLISH_TEMPERATURE
         else:
-            # Defensive boundary for future AITextAction extensions.
-            raise AIConfigurationError(
-                f"Unsupported AI text action: {validated.action!s}."
-            )
+            raise AIConfigurationError(f"Unsupported AI text action: {validated.action!s}.")
 
-        output = self.client.complete(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            temperature=temperature,
+        output = _clean_model_output(
+            self.client.complete(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+            )
         )
-        if not isinstance(output, str) or not output.strip():
+        if not output:
             raise AIResponseError("DeepSeek provider returned empty content.")
 
         return AITextResult(
             source_text=validated.source_text,
-            output_text=output.strip(),
+            output_text=output,
             action=validated.action,
             provider=self.name,
             model=self.model,
@@ -92,16 +106,9 @@ class DeepSeekTextProvider(AITextProvider):
         )
 
     def close(self) -> None:
-        """Release the underlying DeepSeek client when supported."""
-
         close = getattr(self.client, "close", None)
         if callable(close):
             close()
 
 
-__all__ = [
-    "AITextProvider",
-    "DeepSeekTextProvider",
-    "POLISH_TEMPERATURE",
-    "TRANSLATE_TEMPERATURE",
-]
+__all__ = ["AITextProvider", "DeepSeekTextProvider", "POLISH_TEMPERATURE", "TRANSLATE_TEMPERATURE"]

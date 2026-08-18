@@ -12,9 +12,11 @@ from typing import Any
 
 from app.ai.errors import AIConfigurationError, AIError
 from app.ai.models import AITextAction, AITextRequest, AITextResult
+from app.ai.overlay import AIOverlayManager
 from app.ai.service import AITextService
 from app.ai.task import AITextTask, AITextTaskFailure
 from app.controller import AppController, INPUT_TEXT_ERROR_TEXT
+from app.infrastructure.settings import SettingsManager
 from app.translation.errors import TextNormalizationError
 
 
@@ -41,6 +43,17 @@ class AIAppController(AppController):
         ai_service: AITextService | Any | None = None,
         **kwargs: Any,
     ) -> None:
+        # Resolve the normal settings object once so the AI-aware Overlay uses
+        # the exact same runtime visual/language configuration as AppController.
+        if kwargs.get("overlay_manager") is None:
+            resolved_config = kwargs.get("config_manager")
+            if resolved_config is None:
+                resolved_config = SettingsManager()
+                kwargs["config_manager"] = resolved_config
+            kwargs["overlay_manager"] = AIOverlayManager(
+                config_manager=resolved_config,
+            )
+
         super().__init__(*args, **kwargs)
         self.ai_service: AITextService | Any | None = ai_service
         self._ai_tasks: set[AITextTask] = set()

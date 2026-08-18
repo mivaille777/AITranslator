@@ -162,6 +162,12 @@ class OverlayContextMenu(QMenu):
         return self._language_menu
 
     @property
+    def ai_menu(self) -> QMenu:
+        """Return the compact AI translation/polish submenu."""
+
+        return self._ai_menu
+
+    @property
     def source_language_actions(self) -> dict[str, QAction]:
         """Return preset source-language actions for state sync and tests."""
 
@@ -177,6 +183,20 @@ class OverlayContextMenu(QMenu):
             "复制译文",
             "copy_translation",
             symbol="▤",
+        )
+
+        self._ai_menu = self._make_submenu("AI 助手", "AI", "✦")
+        self._add_submenu_action(
+            self._ai_menu,
+            "AI 翻译",
+            "ai_translate",
+            symbol="译",
+        )
+        self._add_submenu_action(
+            self._ai_menu,
+            "AI 润色",
+            "ai_polish",
+            symbol="✎",
         )
         self.addSeparator()
 
@@ -305,6 +325,27 @@ class OverlayContextMenu(QMenu):
         self._actions[key] = action
         return action
 
+    def _add_submenu_action(
+        self,
+        menu: QMenu,
+        text: str,
+        key: str,
+        *,
+        symbol: str | None = None,
+    ) -> QAction:
+        """Add a semantic action to a submenu while keeping one action index."""
+
+        action = QAction(text, menu)
+        action.setObjectName(f"OverlayContext{key.title().replace('_', '')}Action")
+        if symbol:
+            action.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
+        action.triggered.connect(
+            lambda _checked=False, action_key=key: self._emit(action_key, None)
+        )
+        menu.addAction(action)
+        self._actions[key] = action
+        return action
+
     def _make_submenu(self, title: str, key: str, symbol: str) -> QMenu:
         menu = QMenu(title, self)
         menu.setObjectName(f"OverlayContext{key}Menu")
@@ -343,6 +384,16 @@ class OverlayContextMenu(QMenu):
     def _emit(self, key: str, value: object = None) -> None:
         self.action_requested.emit(key, value)
 
+    def set_ai_enabled(self, enabled: bool) -> None:
+        """Enable AI operations only while source text is available."""
+
+        enabled = bool(enabled)
+        self._ai_menu.setEnabled(enabled)
+        for key in ("ai_translate", "ai_polish"):
+            action = self._actions.get(key)
+            if action is not None:
+                action.setEnabled(enabled)
+
     def set_lock_checked(self, checked: bool) -> None:
         action = self._actions.get("lock_position")
         if action is None:
@@ -380,6 +431,7 @@ class OverlayContextMenu(QMenu):
         original_visible: bool = False,
         source_language: str = "auto",
         target_language: str = TARGET_LANGUAGE_CODE,
+        ai_enabled: bool = True,
     ) -> None:
         """Update checkmarks before the menu is shown.
 
@@ -390,6 +442,7 @@ class OverlayContextMenu(QMenu):
         self.set_lock_checked(locked)
         self.set_always_on_top_checked(always_on_top)
         self.set_original_checked(original_visible)
+        self.set_ai_enabled(ai_enabled)
         if background_opacity is None:
             background_opacity = opacity if opacity is not None else 1.0
         if text_opacity is None:
@@ -459,6 +512,8 @@ class OverlayContextMenu(QMenu):
             symbol = {
                 "copyoriginal": "▣",
                 "copytranslation": "▤",
+                "aitranslate": "译",
+                "aipolish": "✎",
                 "hide": "◌",
                 "lockposition": "⌖",
                 "alwaysontop": "↥",
@@ -474,6 +529,7 @@ class OverlayContextMenu(QMenu):
             )
             if symbol:
                 action.setIcon(_symbol_icon(symbol, icon_color))
+        self._ai_menu.setIcon(_symbol_icon("✦", palette["accent"]))
         self._background_opacity_menu.setIcon(_symbol_icon("◐", icon_color))
         self._text_opacity_menu.setIcon(_symbol_icon("A", icon_color))
         self._language_menu.setIcon(_symbol_icon("文", icon_color))

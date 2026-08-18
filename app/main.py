@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from app.ai.compact_controller import CompactAIAppController
+from app.ai.chat_controller import ConversationalAIAppController
 from app.infrastructure.logging import configure_logging, sanitized_exception_info
 from app.infrastructure.instance_lock import SingleInstanceLock
 from app.infrastructure.paths import ensure_runtime_directories
@@ -74,10 +74,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             logger.error("application_already_running")
             return 1
 
-    controller: CompactAIAppController | None = None
+    controller: ConversationalAIAppController | None = None
     exit_code = 0
     try:
-        controller = CompactAIAppController(application, logger=logger)
+        controller = ConversationalAIAppController(application, logger=logger)
         controller.start(start_hotkey=not parsed.smoke_test)
 
         if parsed.smoke_test:

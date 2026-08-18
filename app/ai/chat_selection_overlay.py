@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 
-from app.ai.chat.models import ChatMessage, ChatRole
+from app.ai.chat.models import ChatMessage
 from app.ai.chat_managed_ui import ManagedChatPanel
 from app.ai.chat_overlay import (
     ConversationalAIOverlayManager,
     ConversationalAIOverlayWindow,
 )
+from app.overlay.context_menu import OVERLAY_THEMES
+from app.overlay.drag_handle import OverlayDragHandle
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
 
@@ -59,11 +61,15 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
             lambda payload: self.context_action.emit("ai_chat_model", payload)
         )
 
-        # The outer Overlay header remains draggable, and the visible AI Chat
-        # title becomes a second explicit drag handle. This fixes the first
-        # Chat-open transition where keyboard activation could otherwise make
-        # the card feel immovable until another window-state transition.
+        # Keep the existing title drag affordance for compatibility and add a
+        # dedicated pill at the geometric center of the outer Overlay header.
+        # The centered handle stays in the same place even when Chat adds more
+        # controls on the right side of the toolbar.
         self._chat_panel.title_label.installEventFilter(self)
+        self._drag_handle = OverlayDragHandle(self._header)
+        self._drag_handle.installEventFilter(self)
+        self._drag_handle.show()
+        self._position_drag_handle()
 
         self._apply_theme(self._theme_name)
         self._resize_to_content()
@@ -72,10 +78,45 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
     def chat_panel(self) -> ManagedChatPanel:
         return self._chat_panel
 
+    @property
+    def drag_handle(self) -> OverlayDragHandle:
+        return self._drag_handle
+
+    def _position_drag_handle(self) -> None:
+        handle = getattr(self, "_drag_handle", None)
+        header = getattr(self, "_header", None)
+        if handle is None or header is None:
+            return
+        x = max(0, (header.width() - handle.width()) // 2)
+        y = max(0, (header.height() - handle.height()) // 2)
+        handle.move(x, y)
+        handle.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        self._position_drag_handle()
+
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
         panel = getattr(self, "_chat_panel", None)
+        handle = getattr(self, "_drag_handle", None)
         if panel is not None and watched is panel.title_label:
             event_type = event.type()
+            if event_type == QEvent.Type.MouseButtonPress:
+                self.mousePressEvent(event)
+                return True
+            if event_type == QEvent.Type.MouseMove:
+                self.mouseMoveEvent(event)
+                return True
+            if event_type == QEvent.Type.MouseButtonRelease:
+                self.mouseReleaseEvent(event)
+                return True
+        if handle is not None and watched is handle:
+            event_type = event.type()
+            if event_type == QEvent.Type.MouseButtonDblClick:
+                if event.button() == Qt.MouseButton.LeftButton and self._chat_open:
+                    self.close_chat()
+                event.accept()
+                return True
             if event_type == QEvent.Type.MouseButtonPress:
                 self.mousePressEvent(event)
                 return True
@@ -118,6 +159,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self.raise_()
         self._dragging = False
         self._drag_offset = QPoint()
+        self._position_drag_handle()
         QTimer.singleShot(0, self._chat_panel.focus_input)
 
     def is_chat_selection_capture_armed(self) -> bool:
@@ -162,6 +204,15 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._dragging = False
         self._drag_offset = QPoint()
         super().close_chat()
+        self._position_drag_handle()
+
+    def _apply_theme(self, theme: str) -> None:
+        super()._apply_theme(theme)
+        handle = getattr(self, "_drag_handle", None)
+        if handle is None:
+            return
+        palette = OVERLAY_THEMES[self._theme_name]
+        handle.set_theme_colors(palette["muted_text"], palette["accent"])
 
 
 class SelectionCaptureConversationalAIOverlayManager(ConversationalAIOverlayManager):

@@ -4,11 +4,14 @@ from unittest.mock import MagicMock
 
 from app.ai.chat.conversation_manager import ConversationManager
 from app.ai.editable_controller import EditableStreamingResizableAIAppController
-from app.ai.editable_overlay import EditableResizableConversationalAIOverlayManager
+from app.ai.editable_overlay import (
+    MANUAL_TRANSLATION_DEBOUNCE_MILLISECONDS,
+    EditableResizableConversationalAIOverlayManager,
+)
 from app.infrastructure.settings import SettingsManager
 from app.input.hotkey_manager import GlobalHotkeyManager
 from app.translation.errors import TranslationError
-from app.translation.fake_provider import FakeTranslationProvider
+from app.translation.fake_provider import FakeTranslationProvider, TEST_TRANSLATION_PREFIX
 from app.translation.manager import TranslationManager
 from app.translation.task import TranslationTaskFailure
 from app.ui.tray import TrayManager
@@ -30,7 +33,7 @@ class HoldingPool:
         return True
 
 
-def _controller(qapp, tmp_path):
+def _components(qapp, tmp_path):
     default_path = tmp_path / "default.toml"
     user_path = tmp_path / "user.toml"
     default_path.write_text(
@@ -55,6 +58,11 @@ base_url = "https://api.deepseek.com"
     tray.hide()
     hotkey = GlobalHotkeyManager(parent=qapp, listener_factory=lambda _mapping: None)
     conversations = ConversationManager(storage_path=tmp_path / "history.sqlite3")
+    return config, overlay, tray, hotkey, conversations
+
+
+def _controller(qapp, tmp_path):
+    config, overlay, tray, hotkey, conversations = _components(qapp, tmp_path)
     pool = HoldingPool()
     controller = EditableStreamingResizableAIAppController(
         qapp,
@@ -111,5 +119,39 @@ def test_manual_provider_failure_stays_inline_instead_of_replacing_workspace(qap
         assert "暂时失败" in overlay.window.translation_status_label.text()
         assert controller._last_translation_text == "previous translation"
         assert overlay.window.source_editor.toPlainText() != "TranslationError: translation request failed."
+    finally:
+        controller.shutdown()
+
+
+def test_source_editor_reaches_result_through_real_qthreadpool(qtbot, qapp, tmp_path) -> None:
+    """Exercise the exact manual-input worker path used by the application."""
+
+    config, overlay, tray, hotkey, conversations = _components(qapp, tmp_path)
+    controller = EditableStreamingResizableAIAppController(
+        qapp,
+        overlay_manager=overlay,
+        config_manager=config,
+        tray_manager=tray,
+        hotkey_manager=hotkey,
+        translation_manager=TranslationManager(provider=FakeTranslationProvider()),
+        conversation_manager=conversations,
+        logger=MagicMock(),
+    )
+    try:
+        window = overlay.window
+        window.set_original_visible(True)
+        window.show()
+        window.source_editor.setPlainText("manual end to end")
+
+        qtbot.waitUntil(
+            lambda: window.translation_text
+            == f"{TEST_TRANSLATION_PREFIX}manual end to end",
+            timeout=3000 + MANUAL_TRANSLATION_DEBOUNCE_MILLISECONDS,
+        )
+
+        assert controller._last_translation_text == (
+            f"{TEST_TRANSLATION_PREFIX}manual end to end"
+        )
+        assert controller._manual_translation_inflight_request_id is None
     finally:
         controller.shutdown()

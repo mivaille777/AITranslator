@@ -16,6 +16,7 @@ from openai import (
 )
 from PySide6.QtCore import QObject, QRunnable, Signal
 
+from app.agent.workflow import DEFAULT_AGENT_GRAPH
 from app.ai.chat.models import ChatRequest, ChatResult
 from app.ai.chat.service import (
     AIChatService,
@@ -36,7 +37,7 @@ from app.ai.errors import (
 
 @dataclass(frozen=True, slots=True)
 class AIChatStreamChunk:
-    """One ordered UI update from a streaming chat request."""
+    """One ordered UI update from a LangGraph chat stream."""
 
     request_id: int
     session_id: str
@@ -139,7 +140,7 @@ class StreamingAIChatTaskSignals(QObject):
 
 
 class StreamingAIChatTask(QRunnable):
-    """Consume one provider stream off the GUI thread and emit ordered chunks."""
+    """Execute the chat branch of the shared LangGraph on a Qt worker."""
 
     def __init__(
         self,
@@ -161,63 +162,52 @@ class StreamingAIChatTask(QRunnable):
         return self._cancel_event.is_set()
 
     def cancel(self) -> None:
-        """Request cooperative cancellation without touching the GUI thread."""
+        """Request cooperative cancellation of the LangGraph chat node."""
 
         self._cancel_event.set()
 
     def run(self) -> None:
-        pieces: list[str] = []
-        iterator: Any | None = None
+        final_result: ChatResult | None = None
         try:
             if self.is_cancelled:
                 return
-            stream = getattr(self.chat_service, "stream", None)
-            if not callable(stream):
-                result = self.chat_service.execute(self.request)
+            for part in DEFAULT_AGENT_GRAPH.stream_chat(
+                self.chat_service,
+                self.request,
+                cancel_event=self._cancel_event,
+            ):
                 if self.is_cancelled:
-                    return
-                pieces.append(result.output_text)
-                self.signals.chunk.emit(
-                    AIChatStreamChunk(
-                        request_id=self.request.request_id,
-                        session_id=self.request.session_id,
-                        delta=result.output_text,
-                        accumulated_text=result.output_text,
-                    )
-                )
-            else:
-                iterator = iter(stream(self.request))
-                for delta in iterator:
-                    if self.is_cancelled:
-                        break
-                    if not isinstance(delta, str) or not delta:
+                    continue
+                part_type = str(part.get("type", "")) if isinstance(part, dict) else ""
+                data = part.get("data") if isinstance(part, dict) else None
+
+                if part_type == "custom" and isinstance(data, dict):
+                    if data.get("kind") != "chat_chunk":
                         continue
-                    pieces.append(delta)
-                    accumulated = "".join(pieces)
                     self.signals.chunk.emit(
                         AIChatStreamChunk(
-                            request_id=self.request.request_id,
-                            session_id=self.request.session_id,
-                            delta=delta,
-                            accumulated_text=accumulated,
+                            request_id=int(data.get("request_id", self.request.request_id)),
+                            session_id=str(data.get("session_id", self.request.session_id)),
+                            delta=str(data.get("delta", "")),
+                            accumulated_text=str(data.get("accumulated_text", "")),
                         )
                     )
+                    continue
+
+                if part_type != "updates" or not isinstance(data, dict):
+                    continue
+                for update in data.values():
+                    if not isinstance(update, dict):
+                        continue
+                    candidate = update.get("chat_result")
+                    if isinstance(candidate, ChatResult):
+                        final_result = candidate
 
             if self.is_cancelled:
                 return
-            output = "".join(pieces).strip()
-            if not output:
-                raise AIResponseError("AI chat provider returned empty content.")
-            self.signals.succeeded.emit(
-                ChatResult(
-                    session_id=self.request.session_id,
-                    user_message=self.request.user_message,
-                    output_text=output,
-                    provider=str(getattr(self.chat_service, "provider_name", "unknown")),
-                    model=str(getattr(self.chat_service, "model", "unknown")),
-                    request_id=self.request.request_id,
-                )
-            )
+            if final_result is None:
+                raise AIResponseError("LangGraph chat workflow produced no result.")
+            self.signals.succeeded.emit(final_result)
         except AIError as exc:
             if not self.is_cancelled:
                 self.signals.failed.emit(
@@ -228,7 +218,7 @@ class StreamingAIChatTask(QRunnable):
                 )
         except Exception as exc:
             if not self.is_cancelled:
-                error = AIResponseError("AI chat streaming request failed.")
+                error = AIResponseError("AI chat LangGraph execution failed.")
                 error.__cause__ = exc
                 self.signals.failed.emit(
                     AIChatTaskFailure(
@@ -237,13 +227,6 @@ class StreamingAIChatTask(QRunnable):
                     )
                 )
         finally:
-            if self.is_cancelled:
-                close = getattr(iterator, "close", None)
-                if callable(close):
-                    try:
-                        close()
-                    except Exception:
-                        pass
             self.signals.finished.emit(self)
 
 

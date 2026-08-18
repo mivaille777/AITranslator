@@ -45,6 +45,30 @@ def test_language_swap_updates_both_sides_and_never_creates_auto_target(qtbot) -
     assert window.target_language != "auto"
 
 
+def test_auto_detected_language_is_visible_and_can_be_swapped(qtbot) -> None:
+    window = ResizableConversationalAIOverlayWindow(win32_adapter=MagicMock())
+    qtbot.addWidget(window)
+    events: list[tuple[str, object]] = []
+    window.context_action.connect(lambda key, value: events.append((key, value)))
+
+    window.set_languages("auto", "zh-CN")
+    detected = window.set_detected_source_language("en")
+
+    assert detected == "en"
+    assert window.language_bar.source_language == "auto"
+    assert window.language_bar.detected_source_language == "en"
+    assert window.language_bar.effective_source_language == "en"
+    assert window.language_bar.source_button.text() == "EN·Auto"
+    assert window.language_bar.swap_button.isEnabled()
+
+    qtbot.mouseClick(window.language_bar.swap_button, Qt.MouseButton.LeftButton)
+
+    assert window.source_language == "zh-CN"
+    assert window.target_language == "en"
+    assert ("swap_languages", ("zh-CN", "en")) in events
+    assert window.target_language != "auto"
+
+
 def test_target_language_menu_updates_only_target_language(qtbot) -> None:
     window = ResizableConversationalAIOverlayWindow(win32_adapter=MagicMock())
     qtbot.addWidget(window)

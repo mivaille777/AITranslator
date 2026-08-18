@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -18,6 +19,9 @@ from PySide6.QtWidgets import (
 )
 
 from app.ai.chat.models import ChatMessage, ChatRole
+
+
+MESSAGE_COPY_FEEDBACK_MILLISECONDS = 1200
 
 
 class ChatInput(QPlainTextEdit):
@@ -196,31 +200,89 @@ class OverlayChatPanel(QWidget):
             self.append_message(message.role, message.content)
 
     def append_message(self, role: ChatRole | str, text: str) -> None:
+        """Append one message, rendering assistant Markdown like ChatGPT."""
+
         content = str(text).strip()
         if not content:
             return
         role_value = role.value if isinstance(role, ChatRole) else str(role).lower()
+        is_user = role_value == ChatRole.USER.value
+
         row = QWidget(self.messages_content)
         row.setObjectName("OverlayChatMessageRow")
+        row.setProperty("chatRole", role_value)
         layout = QVBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)
-        role_label = QLabel("YOU" if role_value == ChatRole.USER.value else "AI")
+
+        role_label = QLabel("YOU" if is_user else "AI")
         role_label.setObjectName(
-            "OverlayChatUserRole"
-            if role_value == ChatRole.USER.value
-            else "OverlayChatAssistantRole"
+            "OverlayChatUserRole" if is_user else "OverlayChatAssistantRole"
         )
         body = QLabel(content)
         body.setObjectName("OverlayChatMessageBody")
-        body.setTextFormat(Qt.TextFormat.PlainText)
+        body.setProperty("rawMessage", content)
+        # User input remains literal. Assistant output is interpreted as
+        # Markdown so markers such as **bold**, lists and inline/code blocks
+        # are rendered instead of being shown as raw punctuation.
+        body.setTextFormat(
+            Qt.TextFormat.PlainText if is_user else Qt.TextFormat.MarkdownText
+        )
         body.setWordWrap(True)
-        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        body.setOpenExternalLinks(False)
+        body.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         layout.addWidget(role_label)
         layout.addWidget(body)
+
+        if not is_user:
+            actions = QHBoxLayout()
+            actions.setContentsMargins(0, 0, 0, 0)
+            actions.setSpacing(4)
+            actions.addStretch(1)
+            copy_button = QToolButton(row)
+            copy_button.setObjectName("OverlayChatMessageCopyButton")
+            copy_button.setText("复制")
+            copy_button.setToolTip("复制这条 AI 回复")
+            copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            copy_button.setProperty("rawMessage", content)
+            copy_button.clicked.connect(
+                lambda _checked=False, raw=content, button=copy_button: self._copy_assistant_message(
+                    raw,
+                    button,
+                )
+            )
+            actions.addWidget(copy_button)
+            layout.addLayout(actions)
+
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, row)
         self._message_rows.append(row)
         QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def _copy_assistant_message(self, content: str, button: QToolButton) -> None:
+        """Copy one assistant reply without touching the whole conversation."""
+
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            return
+        clipboard.setText(str(content))
+        button.setText("已复制")
+        button.setToolTip("已复制这条 AI 回复")
+        QTimer.singleShot(
+            MESSAGE_COPY_FEEDBACK_MILLISECONDS,
+            lambda current=button: self._restore_message_copy_button(current),
+        )
+
+    @staticmethod
+    def _restore_message_copy_button(button: QToolButton) -> None:
+        try:
+            button.setText("复制")
+            button.setToolTip("复制这条 AI 回复")
+        except RuntimeError:
+            # The row may have been removed while the feedback timer was active.
+            return
 
     def _scroll_to_bottom(self) -> None:
         bar = self.messages_scroll.verticalScrollBar()
@@ -271,6 +333,19 @@ class OverlayChatPanel(QWidget):
                 color: {palette['text']};
                 background: transparent;
                 padding: 1px 0px 4px 0px;
+            }}
+            QToolButton#OverlayChatMessageCopyButton {{
+                color: {palette['muted_text']};
+                background-color: transparent;
+                border: 1px solid transparent;
+                border-radius: 5px;
+                padding: 3px 7px;
+                font-size: 11px;
+            }}
+            QToolButton#OverlayChatMessageCopyButton:hover {{
+                color: {palette['text']};
+                background-color: {palette['hover']};
+                border-color: {palette['border']};
             }}
             QToolButton#OverlayChatContextButton,
             QToolButton#OverlayChatClearButton,
@@ -348,4 +423,8 @@ class OverlayChatPanel(QWidget):
         )
 
 
-__all__ = ["ChatInput", "OverlayChatPanel"]
+__all__ = [
+    "ChatInput",
+    "MESSAGE_COPY_FEEDBACK_MILLISECONDS",
+    "OverlayChatPanel",
+]

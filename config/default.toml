@@ -13,6 +13,11 @@ cache_enabled = true
 cache_max_size = 128
 max_text_length = 5000
 
+[ai]
+provider = "deepseek"
+model = "deepseek-v4-flash"
+base_url = "https://api.deepseek.com"
+
 [google_web]
 enabled = true
 endpoint = "https://translate.google.com/translate_a/single"

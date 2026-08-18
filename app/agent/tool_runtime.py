@@ -23,6 +23,7 @@ ToolIntent = Literal[
 ]
 
 PICK_DOCUMENT_COMMAND = "pick_document"
+MAX_TOOL_OBSERVATION_CHARS = 60_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +60,9 @@ class AgentToolState(TypedDict, total=False):
 
 _OPEN_FILE_PHRASES = (
     "打开文件",
+    "打开一个文件",
     "打开文档",
+    "打开一个文档",
     "选择文件",
     "选择文档",
     "读取这个文件",
@@ -84,6 +87,8 @@ _SUMMARIZE_DOCUMENT_PHRASES = (
     "总结文档",
     "总结这个文档",
     "总结一下文档",
+    "总结这个文件",
+    "总结一下这个文件",
     "概括文档",
     "概括这个文档",
     "文档总结",
@@ -102,11 +107,14 @@ _SEARCH_DOCUMENT_PHRASES = (
 )
 _WEB_SEARCH_PHRASES = (
     "联网搜索",
+    "搜索网络",
     "网页搜索",
     "网上搜索",
     "上网搜索",
     "网上查",
     "上网查",
+    "帮我搜索",
+    "搜索一下",
     "web search",
     "search web",
     "search online",
@@ -296,9 +304,6 @@ class AgentToolGraph:
             str(state.get("tool_name", "")),
             **dict(state.get("tool_args", {})),
         )
-        # "打开并总结" is a common compound request. File selection/opening is
-        # deterministic; immediately prepare bounded summary evidence after a
-        # successful open instead of forcing an extra user turn.
         user_message = _normalize(state.get("user_message", ""))
         if (
             result.ok
@@ -408,13 +413,20 @@ class AgentToolCoordinator:
 
     @staticmethod
     def _build_tool_context(result: ToolResult, *, instruction: str = "") -> str:
+        raw_content = str(result.content or "")
+        clipped = raw_content[:MAX_TOOL_OBSERVATION_CHARS]
+        truncated = len(clipped) < len(raw_content)
         parts = [
             f"tool_name: {result.name}",
             "tool_status: success",
         ]
         if instruction:
             parts.append(f"tool_instruction: {instruction}")
-        parts.append("tool_observation:\n" + result.content)
+        if truncated:
+            parts.append(
+                f"tool_note: observation truncated to {MAX_TOOL_OBSERVATION_CHARS} characters before LLM input"
+            )
+        parts.append("tool_observation:\n" + clipped)
         return "\n".join(parts)
 
 
@@ -424,6 +436,7 @@ __all__ = [
     "AgentToolOutcome",
     "AgentToolPlan",
     "AgentToolState",
+    "MAX_TOOL_OBSERVATION_CHARS",
     "PICK_DOCUMENT_COMMAND",
     "ToolIntent",
 ]

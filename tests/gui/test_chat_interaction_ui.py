@@ -7,6 +7,17 @@ from PySide6.QtWidgets import QLineEdit, QMenu, QToolButton
 
 from app.ai.chat.models import ChatRole
 from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
+from app.ai.editable_overlay import EditableResizableConversationalAIOverlayWindow
+
+
+def test_production_overlay_constructs_interactive_chat_without_reentrant_crash(qtbot) -> None:
+    """Qt may dispatch hide/show events while parent constructors are running."""
+
+    window = EditableResizableConversationalAIOverlayWindow()
+    qtbot.addWidget(window)
+
+    assert isinstance(window.chat_panel, InteractiveManagedChatPanel)
+    assert window.chat_panel._assistant_action_rows == {}
 
 
 def test_back_button_is_explicit_and_stop_replaces_send_while_busy(qtbot) -> None:

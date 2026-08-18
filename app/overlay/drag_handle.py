@@ -41,14 +41,14 @@ class OverlayDragHandle(QWidget):
         self.update()
 
     def enterEvent(self, event) -> None:  # noqa: N802 - Qt override
+        del event
         self._hovered = True
         self.update()
-        super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:  # noqa: N802 - Qt override
+        del event
         self._hovered = False
         self.update()
-        super().leaveEvent(event)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
         del event

@@ -44,14 +44,28 @@ class AIOverlayWindow(OverlayWindow):
         return self._ai_button
 
     def _sync_ai_availability(self) -> None:
+        """Keep the AI menu reachable and gate only text-dependent operations."""
+
         enabled = bool(str(getattr(self, "_source_text", "")).strip())
         context_menu = getattr(self, "_context_menu", None)
         set_ai_enabled = getattr(context_menu, "set_ai_enabled", None)
         if callable(set_ai_enabled):
             set_ai_enabled(enabled)
+
+        # ``set_ai_enabled`` predates Overlay Chat and disables the whole AI
+        # submenu. Re-enable the submenu itself so Chat remains reachable;
+        # the two text actions retain their individual enabled state above.
+        ai_menu = getattr(context_menu, "ai_menu", None)
+        if ai_menu is not None:
+            ai_menu.setEnabled(True)
+
+        # The sparkle button is a menu entry point, not a text operation by
+        # itself. Keeping it enabled fixes the state where AI 翻译/润色 never
+        # became reachable after startup while still leaving those QAction
+        # rows disabled until a real source text exists.
         button = getattr(self, "_ai_button", None)
         if button is not None:
-            button.setEnabled(enabled)
+            button.setEnabled(True)
 
     def _set_content(
         self,

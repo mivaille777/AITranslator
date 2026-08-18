@@ -17,6 +17,7 @@ max_text_length = 5000
 provider = "deepseek"
 model = "deepseek-v4-flash"
 base_url = "https://api.deepseek.com"
+chat_selection_capture_enabled = true
 
 [google_web]
 enabled = true
@@ -58,8 +59,3 @@ max_width = 900
 locked = false
 theme = "dark"
 show_original = false
-margin = 24
-custom_position_x = 80
-custom_position_y = 80
-mouse_offset_x = 16
-mouse_offset_y = 16

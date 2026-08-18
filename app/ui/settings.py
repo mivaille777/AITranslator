@@ -19,6 +19,21 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.ai.client import (
+    DEFAULT_DEEPSEEK_MODEL,
+    DEEPSEEK_BASE_URL,
+    SUPPORTED_DEEPSEEK_MODELS,
+)
+from app.ai.errors import AIConfigurationError
+from app.ai.factory import (
+    AI_PROVIDER_LABELS,
+    DEFAULT_AI_PROVIDER,
+    OPENAI_COMPATIBLE_PROVIDER,
+    SUPPORTED_AI_PROVIDERS,
+    normalize_ai_provider,
+    provider_defaults,
+)
+from app.ai.secrets import ProviderCredentialStore
 from app.infrastructure.settings import SettingsManager
 from app.overlay.positioning import (
     DEFAULT_POSITION_MODE,
@@ -37,13 +52,19 @@ class SettingsWindow(QDialog):
         self,
         settings_manager: Any | None = None,
         parent=None,
+        *,
+        credential_store: ProviderCredentialStore | Any | None = None,
     ) -> None:
         super().__init__(parent)
         self.settings_manager = settings_manager or SettingsManager()
+        self.credential_store = credential_store or ProviderCredentialStore()
+        self._loaded_api_keys: dict[str, str] = {}
+        self._active_ai_provider = ""
+
         self.setObjectName("SettingsWindow")
         self.setWindowTitle("Desktop Translator 设置")
         self.setModal(False)
-        self.resize(560, 730)
+        self.resize(620, 900)
 
         root_layout = QVBoxLayout(self)
         root_layout.addWidget(
@@ -61,6 +82,44 @@ class SettingsWindow(QDialog):
         translation_form.addRow("源语言", self.source_language_edit)
         translation_form.addRow("目标语言", self.target_language_edit)
         root_layout.addWidget(translation_group)
+
+        self.ai_group = QGroupBox("AI 大模型")
+        self.ai_group.setObjectName("AIProviderGroup")
+        ai_form = QFormLayout(self.ai_group)
+        self.ai_provider_combo = QComboBox()
+        self.ai_provider_combo.setObjectName("AIProviderCombo")
+        for provider in SUPPORTED_AI_PROVIDERS:
+            self.ai_provider_combo.addItem(
+                AI_PROVIDER_LABELS.get(provider, provider),
+                provider,
+            )
+
+        self.ai_model_combo = QComboBox()
+        self.ai_model_combo.setObjectName("AIModelCombo")
+        self.ai_model_combo.setEditable(True)
+
+        self.ai_base_url_edit = QLineEdit()
+        self.ai_base_url_edit.setObjectName("AIBaseUrlEdit")
+        self.ai_base_url_edit.setPlaceholderText("https://provider.example/v1")
+
+        self.ai_api_key_edit = QLineEdit()
+        self.ai_api_key_edit.setObjectName("AIApiKeyEdit")
+        self.ai_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ai_api_key_edit.setClearButtonEnabled(True)
+        self.ai_api_key_edit.setPlaceholderText("输入当前 Provider 的 API Key")
+
+        credential_note = QLabel(
+            "API Key 仅保存在 Windows 凭据管理器，不会写入 user.toml 或日志。"
+        )
+        credential_note.setWordWrap(True)
+        credential_note.setObjectName("AICredentialNote")
+
+        ai_form.addRow("Provider", self.ai_provider_combo)
+        ai_form.addRow("Model", self.ai_model_combo)
+        ai_form.addRow("Base URL", self.ai_base_url_edit)
+        ai_form.addRow("API Key", self.ai_api_key_edit)
+        ai_form.addRow("", credential_note)
+        root_layout.addWidget(self.ai_group)
 
         web_group = QGroupBox("网页后端参数")
         web_form = QFormLayout(web_group)
@@ -129,8 +188,6 @@ class SettingsWindow(QDialog):
         self.opacity_spin.setRange(0.1, 1.0)
         self.opacity_spin.setSingleStep(0.05)
         self.opacity_spin.setDecimals(2)
-        # Keep the original attribute as a compatibility alias while
-        # presenting the new, explicit background setting in the form.
         self.background_opacity_spin = self.opacity_spin
         self.text_opacity_spin = QDoubleSpinBox()
         self.text_opacity_spin.setObjectName("TextOpacitySpin")
@@ -193,6 +250,9 @@ class SettingsWindow(QDialog):
 
         self.button_box.accepted.connect(self.save_settings)
         self.button_box.rejected.connect(self.reject)
+        self.ai_provider_combo.currentIndexChanged.connect(
+            self._on_ai_provider_changed
+        )
         self._connect_preview_signals()
         self.load_settings()
 
@@ -205,6 +265,83 @@ class SettingsWindow(QDialog):
         self.max_width_spin.valueChanged.connect(self._emit_preview)
         self.show_original_check.toggled.connect(self._emit_preview)
 
+    def _current_ai_provider(self) -> str:
+        return normalize_ai_provider(
+            self.ai_provider_combo.currentData() or DEFAULT_AI_PROVIDER
+        )
+
+    def _read_saved_api_key(self, provider: str) -> str:
+        if provider in self._loaded_api_keys:
+            return self._loaded_api_keys[provider]
+        try:
+            value = self.credential_store.get(provider)
+        except AIConfigurationError:
+            value = None
+        resolved = value.strip() if isinstance(value, str) else ""
+        self._loaded_api_keys[provider] = resolved
+        return resolved
+
+    def _configure_ai_provider_fields(
+        self,
+        provider: str,
+        *,
+        model: str | None = None,
+        base_url: str | None = None,
+    ) -> None:
+        provider = normalize_ai_provider(provider)
+        default_model, default_base_url = provider_defaults(provider)
+
+        blocked = self.ai_model_combo.blockSignals(True)
+        self.ai_model_combo.clear()
+        if provider == DEFAULT_AI_PROVIDER:
+            self.ai_model_combo.setEditable(False)
+            for model_name in sorted(SUPPORTED_DEEPSEEK_MODELS):
+                self.ai_model_combo.addItem(model_name, model_name)
+            selected_model = str(model or default_model or DEFAULT_DEEPSEEK_MODEL).strip()
+            index = self.ai_model_combo.findData(selected_model)
+            if index < 0:
+                index = self.ai_model_combo.findData(DEFAULT_DEEPSEEK_MODEL)
+            self.ai_model_combo.setCurrentIndex(max(0, index))
+            self.ai_base_url_edit.setReadOnly(True)
+            self.ai_base_url_edit.setText(DEEPSEEK_BASE_URL)
+        else:
+            self.ai_model_combo.setEditable(True)
+            selected_model = str(model or "").strip()
+            if selected_model:
+                self.ai_model_combo.addItem(selected_model, selected_model)
+                self.ai_model_combo.setCurrentText(selected_model)
+            line_edit = self.ai_model_combo.lineEdit()
+            if line_edit is not None:
+                line_edit.setPlaceholderText("例如 provider-model-id")
+            self.ai_base_url_edit.setReadOnly(False)
+            self.ai_base_url_edit.setText(
+                str(base_url or default_base_url or "").strip()
+            )
+        self.ai_model_combo.blockSignals(blocked)
+
+    def _on_ai_provider_changed(self, *_args: object) -> None:
+        new_provider = self._current_ai_provider()
+        if self._active_ai_provider:
+            self._loaded_api_keys[self._active_ai_provider] = (
+                self.ai_api_key_edit.text().strip()
+            )
+
+        old_provider = self._active_ai_provider
+        self._active_ai_provider = new_provider
+        self.ai_api_key_edit.setText(self._read_saved_api_key(new_provider))
+
+        if old_provider != new_provider:
+            current_model = self.ai_model_combo.currentText().strip()
+            current_base_url = self.ai_base_url_edit.text().strip()
+            if old_provider == DEFAULT_AI_PROVIDER:
+                current_model = ""
+                current_base_url = ""
+            self._configure_ai_provider_fields(
+                new_provider,
+                model=current_model,
+                base_url=current_base_url,
+            )
+
     def load_settings(self) -> None:
         """Populate controls from the current merged configuration."""
 
@@ -215,6 +352,38 @@ class SettingsWindow(QDialog):
         self.target_language_edit.setText(
             str(getattr(manager, "translation_target_language", "zh-CN"))
         )
+
+        get = getattr(manager, "get", None)
+        provider_value = (
+            get("ai", "provider", DEFAULT_AI_PROVIDER)
+            if callable(get)
+            else DEFAULT_AI_PROVIDER
+        )
+        provider = normalize_ai_provider(provider_value)
+        self._set_combo_data(
+            self.ai_provider_combo,
+            provider,
+            DEFAULT_AI_PROVIDER,
+        )
+        default_model, default_base_url = provider_defaults(provider)
+        model = (
+            str(get("ai", "model", default_model) or default_model).strip()
+            if callable(get)
+            else default_model
+        )
+        base_url = (
+            str(get("ai", "base_url", default_base_url) or default_base_url).strip()
+            if callable(get)
+            else default_base_url
+        )
+        self._configure_ai_provider_fields(
+            provider,
+            model=model,
+            base_url=base_url,
+        )
+        self._active_ai_provider = provider
+        self.ai_api_key_edit.setText(self._read_saved_api_key(provider))
+
         self.web_enabled_check.setChecked(
             bool(getattr(manager, "google_web_enabled", True))
         )
@@ -370,10 +539,22 @@ class SettingsWindow(QDialog):
         source_language = self.source_language_edit.text().strip() or "auto"
         target_language = self.target_language_edit.text().strip() or "zh-CN"
         hotkey = self.hotkey_edit.text().strip() or "alt+q"
+        provider = self._current_ai_provider()
+        model = self.ai_model_combo.currentText().strip()
+        base_url = self.ai_base_url_edit.text().strip()
+        if provider == DEFAULT_AI_PROVIDER:
+            model = model or DEFAULT_DEEPSEEK_MODEL
+            base_url = DEEPSEEK_BASE_URL
+
         return {
             "translation": {
                 "source_language": source_language,
                 "target_language": target_language,
+            },
+            "ai": {
+                "provider": provider,
+                "model": model,
+                "base_url": base_url,
             },
             "trigger": {
                 "mode": str(self.trigger_mode_combo.currentData() or "hotkey"),
@@ -419,7 +600,24 @@ class SettingsWindow(QDialog):
         self.preview_requested.emit(self.preview_settings())
 
     def save_settings(self) -> bool:
-        """Persist the form and notify the controller of the new values."""
+        """Persist non-secret settings and the active provider credential."""
+
+        provider = self._current_ai_provider()
+        api_key = self.ai_api_key_edit.text().strip()
+        previous_api_key = self._loaded_api_keys.get(
+            provider,
+            self._read_saved_api_key(provider),
+        )
+
+        if api_key != previous_api_key:
+            try:
+                self.credential_store.set(provider, api_key)
+            except AIConfigurationError:
+                self.status_label.setText(
+                    "保存失败：无法写入 Windows 凭据管理器中的 API Key。"
+                )
+                return False
+            self._loaded_api_keys[provider] = api_key
 
         try:
             saved = self.settings_manager.save(self.collect_settings())
@@ -431,6 +629,11 @@ class SettingsWindow(QDialog):
         self.settings_saved.emit(saved)
         self.accept()
         return True
+
+    def focus_ai_settings(self) -> None:
+        """Focus the provider selector when opened from an AI settings entry."""
+
+        self.ai_provider_combo.setFocus()
 
     def reject(self) -> None:
         """Discard an unsaved live preview before closing the dialog."""

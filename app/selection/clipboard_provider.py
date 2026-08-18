@@ -21,6 +21,7 @@ DEFAULT_POLL_INTERVAL_SECONDS = 0.02
 # interpreted as Alt+C by the foreground application.
 DEFAULT_COPY_DELAY_SECONDS = 0.15
 DEFAULT_COPY_ATTEMPTS = 2
+DEFAULT_RESTORE_GUARD_SECONDS = 0.03
 
 
 def _new_clipboard_sentinel() -> str:
@@ -30,7 +31,15 @@ def _new_clipboard_sentinel() -> str:
 
 
 class ClipboardSelectionProvider(SelectionProvider):
-    """Read a foreground selection by copying it and restoring the clipboard."""
+    """Read a foreground selection without stealing a newer user copy.
+
+    Clipboard selection is the final fallback after Word/UIA providers. It
+    temporarily sends Ctrl+C, but restores the previous clipboard only while
+    the clipboard still contains the temporary value produced by this
+    operation. If the user or another application performs a newer copy while
+    capture is in progress, that newer clipboard state wins and is never
+    overwritten by AITranslator's cleanup.
+    """
 
     def __init__(
         self,
@@ -41,6 +50,7 @@ class ClipboardSelectionProvider(SelectionProvider):
         poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
         copy_delay_seconds: float = DEFAULT_COPY_DELAY_SECONDS,
         copy_attempts: int = DEFAULT_COPY_ATTEMPTS,
+        restore_guard_seconds: float = DEFAULT_RESTORE_GUARD_SECONDS,
         clock: Callable[[], float] | None = None,
         sleeper: Callable[[float], None] | None = None,
     ) -> None:
@@ -56,6 +66,7 @@ class ClipboardSelectionProvider(SelectionProvider):
         self.poll_interval_seconds = max(0.001, float(poll_interval_seconds))
         self.copy_delay_seconds = max(0.0, float(copy_delay_seconds))
         self.copy_attempts = max(1, int(copy_attempts))
+        self.restore_guard_seconds = max(0.0, float(restore_guard_seconds))
         self._clock = clock or monotonic
         self._sleeper = sleeper or sleep
 
@@ -66,14 +77,13 @@ class ClipboardSelectionProvider(SelectionProvider):
         snapshot_captured = False
         operation_error: SelectionError | None = None
         selected: SelectedText | None = None
+        owned_token: object | None = None
+        owned_text: str | None = None
 
         try:
             # GlobalHotKeys invokes the callback while Alt is still physically
             # down. Give the modifier time to be released before sending Ctrl+C
-            # to the foreground application. Do this before taking the
-            # snapshot so Windows screen-capture tools have time to publish an
-            # image to the clipboard before the temporary selection workflow
-            # starts.
+            # to the foreground application.
             if self.copy_delay_seconds:
                 self._sleeper(self.copy_delay_seconds)
 
@@ -82,11 +92,13 @@ class ClipboardSelectionProvider(SelectionProvider):
 
             # Comparing against the old clipboard is ambiguous when the user
             # selects exactly the text that was already on the clipboard. Put
-            # a random sentinel in place first, then wait for Ctrl+C to replace
-            # that sentinel with the foreground selection.
+            # a random sentinel in place first, then wait for our synthetic
+            # Ctrl+C to replace it.
             sentinel = _new_clipboard_sentinel()
             self.clipboard_adapter.write_text(sentinel)
             sentinel_token = self.clipboard_adapter.get_change_token()
+            owned_token = sentinel_token
+            owned_text = sentinel
 
             copy_succeeded = False
             attempt_timeout = self.timeout_seconds / self.copy_attempts
@@ -106,9 +118,11 @@ class ClipboardSelectionProvider(SelectionProvider):
                 raise SelectionError("clipboard did not change before timeout")
 
             text = self.clipboard_adapter.read_text()
-            if not str(text).strip():
+            owned_token = self.clipboard_adapter.get_change_token()
+            owned_text = str(text)
+            if not owned_text.strip():
                 raise SelectionError("selected text is empty")
-            selected = SelectedText(text=str(text), provider="clipboard")
+            selected = SelectedText(text=owned_text, provider="clipboard")
         except SelectionError as exc:
             operation_error = exc
         except Exception as exc:
@@ -117,7 +131,12 @@ class ClipboardSelectionProvider(SelectionProvider):
 
         if snapshot_captured:
             try:
-                self.clipboard_adapter.restore(snapshot)
+                if self.restore_guard_seconds:
+                    # Give a physical user Ctrl+C immediately following the
+                    # selection gesture a chance to publish before cleanup.
+                    self._sleeper(self.restore_guard_seconds)
+                if self._clipboard_still_owned(owned_token, owned_text):
+                    self.clipboard_adapter.restore(snapshot)
             except Exception as exc:
                 restore_error = SelectionError("clipboard restoration failed")
                 restore_error.__cause__ = exc
@@ -135,6 +154,24 @@ class ClipboardSelectionProvider(SelectionProvider):
         if selected is None:  # pragma: no cover - defensive invariant
             raise SelectionError("selected text was not produced")
         return selected
+
+    def _clipboard_still_owned(
+        self,
+        expected_token: object | None,
+        expected_text: str | None,
+    ) -> bool:
+        """Restore only if no newer clipboard write has occurred."""
+
+        if expected_token is None or expected_text is None:
+            return False
+        try:
+            current_token = self.clipboard_adapter.get_change_token()
+            current_text = str(self.clipboard_adapter.read_text())
+        except Exception:
+            # If ownership cannot be proven, preserving the current clipboard
+            # is safer than overwriting a possible user copy.
+            return False
+        return current_token == expected_token and current_text == expected_text
 
     def _wait_for_clipboard_change(
         self,
@@ -174,3 +211,13 @@ class ClipboardSelectionProvider(SelectionProvider):
             self._sleeper(min(self.poll_interval_seconds, deadline - now))
 
         return False
+
+
+__all__ = [
+    "ClipboardSelectionProvider",
+    "DEFAULT_COPY_ATTEMPTS",
+    "DEFAULT_COPY_DELAY_SECONDS",
+    "DEFAULT_POLL_INTERVAL_SECONDS",
+    "DEFAULT_RESTORE_GUARD_SECONDS",
+    "DEFAULT_TIMEOUT_SECONDS",
+]

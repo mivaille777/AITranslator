@@ -30,9 +30,44 @@ def test_manual_source_text_emits_debounced_translation_action(qapp) -> None:
     window.context_action.connect(lambda key, value: events.append((key, value)))
 
     window.source_editor.setPlainText("Hello from manual input")
+    assert window.translation_status_label.text() == "输入中…"
     QTest.qWait(MANUAL_TRANSLATION_DEBOUNCE_MILLISECONDS + 80)
 
     assert ("manual_source_text", "Hello from manual input") in events
+    assert window.translation_status_label.text() == "翻译中…"
+    window.close()
+
+
+def test_ctrl_enter_translates_immediately_without_waiting_for_debounce(qapp) -> None:
+    window = EditableResizableConversationalAIOverlayWindow()
+    window.set_original_visible(True)
+    window.show()
+    events: list[tuple[str, object]] = []
+    window.context_action.connect(lambda key, value: events.append((key, value)))
+    window.source_editor.setPlainText("translate now")
+    window.source_editor.setFocus()
+
+    QTest.keyClick(
+        window.source_editor,
+        Qt.Key.Key_Return,
+        Qt.KeyboardModifier.ControlModifier,
+    )
+
+    assert ("manual_source_text", "translate now") in events
+    assert window.translation_status_label.text() == "翻译中…"
+    window.close()
+
+
+def test_translation_status_can_show_completion_feedback(qapp) -> None:
+    window = EditableResizableConversationalAIOverlayWindow()
+    window.set_original_visible(True)
+
+    window.set_translation_status("已更新", auto_hide_ms=80)
+    assert window.translation_status_label.text() == "已更新"
+    QTest.qWait(120)
+
+    assert window.translation_status_label.text() == ""
+    assert not window.translation_status_label.isVisible()
     window.close()
 
 

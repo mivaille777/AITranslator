@@ -168,6 +168,12 @@ class OverlayContextMenu(QMenu):
         return self._ai_menu
 
     @property
+    def settings_menu(self) -> QMenu:
+        """Return the Settings submenu, including the AI credential entry."""
+
+        return self._settings_menu
+
+    @property
     def source_language_actions(self) -> dict[str, QAction]:
         """Return preset source-language actions for state sync and tests."""
 
@@ -297,7 +303,19 @@ class OverlayContextMenu(QMenu):
             self._theme_actions[name] = action
 
         self.addSeparator()
-        self._add_action("设置...", "settings", symbol="⚙")
+        self._settings_menu = self._make_submenu("设置", "Settings", "⚙")
+        self._add_submenu_action(
+            self._settings_menu,
+            "常规设置...",
+            "settings",
+            symbol="⚙",
+        )
+        self._add_submenu_action(
+            self._settings_menu,
+            "AI 大模型与 API Key...",
+            "ai_settings",
+            symbol="✦",
+        )
         self._add_action("关于", "about", symbol="ⓘ")
         self.addSeparator()
         self._add_action("退出", "exit", symbol="⏻")
@@ -508,7 +526,6 @@ class OverlayContextMenu(QMenu):
             )
         icon_color = palette["text"]
         for action in self._actions.values():
-            # Repaint the generated glyphs for high-contrast mode too.
             symbol = {
                 "copyoriginal": "▣",
                 "copytranslation": "▤",
@@ -519,6 +536,7 @@ class OverlayContextMenu(QMenu):
                 "alwaysontop": "↥",
                 "showoriginal": "文",
                 "settings": "⚙",
+                "aisettings": "✦",
                 "about": "ⓘ",
                 "exit": "⏻",
             }.get(
@@ -530,6 +548,7 @@ class OverlayContextMenu(QMenu):
             if symbol:
                 action.setIcon(_symbol_icon(symbol, icon_color))
         self._ai_menu.setIcon(_symbol_icon("✦", palette["accent"]))
+        self._settings_menu.setIcon(_symbol_icon("⚙", icon_color))
         self._background_opacity_menu.setIcon(_symbol_icon("◐", icon_color))
         self._text_opacity_menu.setIcon(_symbol_icon("A", icon_color))
         self._language_menu.setIcon(_symbol_icon("文", icon_color))

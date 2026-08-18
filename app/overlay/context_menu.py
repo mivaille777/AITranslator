@@ -4,7 +4,16 @@ from __future__ import annotations
 
 from PySide6.QtCore import QRect, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QMenu
+from PySide6.QtWidgets import (
+    QFrame,
+    QMenu,
+    QScrollArea,
+    QSizePolicy,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    QWidgetAction,
+)
 
 
 OVERLAY_THEMES: dict[str, dict[str, str]] = {
@@ -60,6 +69,16 @@ LANGUAGE_OPTIONS = (
     ("es", "西班牙语", "ES"),
     ("zh-CN", "中文", "中文"),
 )
+
+# The Settings submenu is intentionally bounded. As new settings actions are
+# added, only this many rows remain visible and a native vertical scrollbar is
+# used for the remaining entries instead of allowing the menu to grow beyond
+# the desktop work area.
+SETTINGS_MENU_MAX_VISIBLE_ITEMS = 6
+SETTINGS_MENU_ITEM_HEIGHT = 38
+SETTINGS_MENU_MIN_WIDTH = 260
+SETTINGS_MENU_MAX_HEIGHT = 260
+SETTINGS_MENU_OUTER_MARGIN = 8
 
 
 def normalize_language_code(value: object, *, fallback: str = "auto") -> str:
@@ -122,6 +141,181 @@ def symbol_icon(symbol: str, color: str, size: int = 18) -> QIcon:
     return _symbol_icon(symbol, color, size)
 
 
+class ScrollableSettingsMenu(QMenu):
+    """A bounded submenu whose settings actions live in a scroll area.
+
+    ``QMenu`` only adds its own edge scrollers after it reaches screen bounds.
+    Settings can grow independently of the desktop size, so this submenu uses
+    an explicit ``QScrollArea``. Existing ``QAction`` objects remain the source
+    of truth, preserving controller routing, shortcuts, enabled state, icons,
+    and test access through ``actions_by_name``.
+    """
+
+    def __init__(
+        self,
+        title: str,
+        parent=None,
+        *,
+        max_height: int = SETTINGS_MENU_MAX_HEIGHT,
+        max_visible_items: int = SETTINGS_MENU_MAX_VISIBLE_ITEMS,
+    ) -> None:
+        super().__init__(title, parent)
+        self._max_height = max(120, int(max_height))
+        self._max_visible_items = max(1, int(max_visible_items))
+        self._buttons: list[QToolButton] = []
+        self._content_height = 0
+        self._viewport_height = 0
+
+        self.setMaximumHeight(self._max_height)
+
+        self._scroll_area = QScrollArea(self)
+        self._scroll_area.setObjectName("OverlaySettingsScrollArea")
+        self._scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._scroll_area.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._scroll_area.setMinimumWidth(SETTINGS_MENU_MIN_WIDTH)
+        self._scroll_area.verticalScrollBar().setSingleStep(SETTINGS_MENU_ITEM_HEIGHT)
+
+        self._scroll_content = QWidget(self._scroll_area)
+        self._scroll_content.setObjectName("OverlaySettingsScrollContent")
+        self._scroll_layout = QVBoxLayout(self._scroll_content)
+        self._scroll_layout.setContentsMargins(4, 4, 4, 4)
+        self._scroll_layout.setSpacing(1)
+        self._scroll_area.setWidget(self._scroll_content)
+
+        self._scroll_action = QWidgetAction(self)
+        self._scroll_action.setObjectName("OverlaySettingsScrollAction")
+        self._scroll_action.setDefaultWidget(self._scroll_area)
+        super().addAction(self._scroll_action)
+        self._sync_scroll_extent()
+
+    @property
+    def scroll_area(self) -> QScrollArea:
+        """Expose the bounded scroll area for state inspection and tests."""
+
+        return self._scroll_area
+
+    @property
+    def has_overflow(self) -> bool:
+        """Return whether not all settings rows fit in the visible viewport."""
+
+        return self._content_height > self._viewport_height
+
+    @property
+    def visible_item_limit(self) -> int:
+        return self._max_visible_items
+
+    def add_scrollable_action(self, action: QAction) -> None:
+        """Render one existing semantic action as a scrollable menu row."""
+
+        button = QToolButton(self._scroll_content)
+        button.setObjectName(f"{action.objectName()}Button")
+        button.setDefaultAction(action)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setAutoRaise(True)
+        button.setFixedHeight(SETTINGS_MENU_ITEM_HEIGHT)
+        button.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        self._scroll_layout.addWidget(button)
+        self._buttons.append(button)
+
+        # QWidgetAction rows do not automatically collapse the whole menu
+        # hierarchy after their QAction fires, so close the submenu chain here.
+        action.triggered.connect(self._close_menu_chain)
+        self._sync_scroll_extent()
+
+    def _close_menu_chain(self, *_args: object) -> None:
+        menu: QWidget | None = self
+        while isinstance(menu, QMenu):
+            menu.close()
+            menu = menu.parentWidget()
+
+    def _sync_scroll_extent(self) -> None:
+        count = len(self._buttons)
+        spacing = max(0, self._scroll_layout.spacing())
+        rows_height = count * SETTINGS_MENU_ITEM_HEIGHT
+        gaps_height = max(0, count - 1) * spacing
+        self._content_height = SETTINGS_MENU_OUTER_MARGIN + rows_height + gaps_height
+        visible_count = min(count, self._max_visible_items)
+        visible_rows = visible_count * SETTINGS_MENU_ITEM_HEIGHT
+        visible_gaps = max(0, visible_count - 1) * spacing
+        natural_viewport_height = (
+            SETTINGS_MENU_OUTER_MARGIN + visible_rows + visible_gaps
+        )
+        max_viewport_height = max(1, self._max_height - 16)
+        self._viewport_height = min(natural_viewport_height, max_viewport_height)
+        if count == 0:
+            self._viewport_height = 1
+
+        # A minimum content height larger than the viewport is what makes the
+        # QScrollArea expose its native scrollbar once the row limit is hit.
+        self._scroll_content.setMinimumHeight(max(1, self._content_height))
+        self._scroll_area.setFixedHeight(max(1, self._viewport_height))
+
+    def apply_palette(self, palette: dict[str, str]) -> None:
+        """Style the embedded scrolling controls with the Overlay palette."""
+
+        self._scroll_area.setStyleSheet(
+            f"""
+            QScrollArea#OverlaySettingsScrollArea {{
+                background-color: {palette['menu_background']};
+                border: none;
+            }}
+            QScrollBar:vertical {{
+                background: {palette['menu_background']};
+                width: 9px;
+                margin: 4px 1px 4px 1px;
+                border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background: {palette['border']};
+                min-height: 24px;
+                border-radius: 4px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background: {palette['accent']};
+            }}
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical,
+            QScrollBar::sub-page:vertical {{
+                background: transparent;
+            }}
+            """
+        )
+        self._scroll_content.setStyleSheet(
+            f"""
+            QWidget#OverlaySettingsScrollContent {{
+                background-color: {palette['menu_background']};
+            }}
+            QToolButton {{
+                background-color: transparent;
+                color: {palette['text']};
+                border: none;
+                border-radius: 5px;
+                padding: 6px 10px;
+                text-align: left;
+            }}
+            QToolButton:hover {{
+                background-color: {palette['hover']};
+                color: {palette['text']};
+            }}
+            QToolButton:disabled {{
+                color: {palette['muted_text']};
+            }}
+            """
+        )
+
+
 class OverlayContextMenu(QMenu):
     """Context menu whose events are semantic and handled by the controller."""
 
@@ -168,8 +362,8 @@ class OverlayContextMenu(QMenu):
         return self._ai_menu
 
     @property
-    def settings_menu(self) -> QMenu:
-        """Return the Settings submenu, including the AI credential entry."""
+    def settings_menu(self) -> ScrollableSettingsMenu:
+        """Return the bounded, scrollable Settings submenu."""
 
         return self._settings_menu
 
@@ -303,7 +497,11 @@ class OverlayContextMenu(QMenu):
             self._theme_actions[name] = action
 
         self.addSeparator()
-        self._settings_menu = self._make_submenu("设置", "Settings", "⚙")
+        self._settings_menu = self._make_scrollable_settings_submenu(
+            "设置",
+            "Settings",
+            "⚙",
+        )
         self._add_submenu_action(
             self._settings_menu,
             "常规设置...",
@@ -360,12 +558,28 @@ class OverlayContextMenu(QMenu):
         action.triggered.connect(
             lambda _checked=False, action_key=key: self._emit(action_key, None)
         )
-        menu.addAction(action)
+        if isinstance(menu, ScrollableSettingsMenu):
+            menu.add_scrollable_action(action)
+        else:
+            menu.addAction(action)
         self._actions[key] = action
         return action
 
     def _make_submenu(self, title: str, key: str, symbol: str) -> QMenu:
         menu = QMenu(title, self)
+        menu.setObjectName(f"OverlayContext{key}Menu")
+        menu.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
+        self.addMenu(menu)
+        self._menus.append(menu)
+        return menu
+
+    def _make_scrollable_settings_submenu(
+        self,
+        title: str,
+        key: str,
+        symbol: str,
+    ) -> ScrollableSettingsMenu:
+        menu = ScrollableSettingsMenu(title, self)
         menu.setObjectName(f"OverlayContext{key}Menu")
         menu.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
         self.addMenu(menu)
@@ -549,6 +763,7 @@ class OverlayContextMenu(QMenu):
                 action.setIcon(_symbol_icon(symbol, icon_color))
         self._ai_menu.setIcon(_symbol_icon("✦", palette["accent"]))
         self._settings_menu.setIcon(_symbol_icon("⚙", icon_color))
+        self._settings_menu.apply_palette(palette)
         self._background_opacity_menu.setIcon(_symbol_icon("◐", icon_color))
         self._text_opacity_menu.setIcon(_symbol_icon("A", icon_color))
         self._language_menu.setIcon(_symbol_icon("文", icon_color))
@@ -561,9 +776,14 @@ __all__ = [
     "LANGUAGE_OPTIONS",
     "OPACITY_OPTIONS",
     "OVERLAY_THEMES",
+    "SETTINGS_MENU_ITEM_HEIGHT",
+    "SETTINGS_MENU_MAX_HEIGHT",
+    "SETTINGS_MENU_MAX_VISIBLE_ITEMS",
+    "SETTINGS_MENU_MIN_WIDTH",
     "TARGET_LANGUAGE_CODE",
     "TARGET_LANGUAGE_LABEL",
     "OverlayContextMenu",
+    "ScrollableSettingsMenu",
     "THEME_LABELS",
     "language_display_name",
     "normalize_language_code",

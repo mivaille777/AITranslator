@@ -94,6 +94,16 @@ class AIAppController(AppController):
         if key == "ai_polish":
             self._submit_ai_action(AITextAction.POLISH)
             return
+        if key == "ai_settings":
+            self._show_settings()
+            settings_window = self._settings_window
+            focus_ai_settings = getattr(settings_window, "focus_ai_settings", None)
+            if callable(focus_ai_settings):
+                self._safe_call(
+                    "ai_settings_focus_failed",
+                    focus_ai_settings,
+                )
+            return
         super()._on_overlay_context_action(key, value)
 
     def _submit_ai_action(self, action: AITextAction) -> None:

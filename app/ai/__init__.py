@@ -21,6 +21,7 @@ from app.ai.prompts import (
     build_polish_prompt,
     build_translate_prompt,
 )
+from app.ai.provider import AITextProvider, DeepSeekTextProvider
 
 
 __all__ = [
@@ -32,11 +33,13 @@ __all__ = [
     "AIResponseError",
     "AITimeoutError",
     "AITextAction",
+    "AITextProvider",
     "AITextRequest",
     "AITextResult",
     "DEFAULT_DEEPSEEK_MODEL",
     "DEEPSEEK_BASE_URL",
     "DeepSeekClient",
+    "DeepSeekTextProvider",
     "POLISH_STYLE_INSTRUCTIONS",
     "SUPPORTED_DEEPSEEK_MODELS",
     "build_polish_prompt",

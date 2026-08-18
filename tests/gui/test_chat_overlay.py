@@ -2,11 +2,27 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import QApplication, QLabel, QToolButton
 
 from app.ai.chat.models import ChatRole
 from app.ai.chat_overlay import ConversationalAIOverlayWindow
+
+
+def _wheel_down(widget) -> None:
+    local = QPoint(8, 8)
+    event = QWheelEvent(
+        QPointF(local),
+        QPointF(widget.mapToGlobal(local)),
+        QPoint(0, -120),
+        QPoint(0, -120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.ScrollUpdate,
+        False,
+    )
+    QApplication.sendEvent(widget, event)
 
 
 def test_chat_button_switches_overlay_into_bounded_conversation_mode(qtbot) -> None:
@@ -58,7 +74,7 @@ def test_chat_input_and_context_menu_emit_semantic_actions(qtbot) -> None:
     assert events.count(("ai_chat", None)) >= 1
 
 
-def test_ai_replies_render_markdown_and_copy_only_the_selected_reply(qtbot) -> None:
+def test_ai_replies_render_markdown_and_use_icon_only_per_reply_copy(qtbot) -> None:
     window = ConversationalAIOverlayWindow(win32_adapter=MagicMock())
     qtbot.addWidget(window)
     window.open_chat(source_text="source", translated_text="译文")
@@ -86,10 +102,52 @@ def test_ai_replies_render_markdown_and_copy_only_the_selected_reply(qtbot) -> N
     assert user_row.findChild(QToolButton, "OverlayChatMessageCopyButton") is None
     assert first_copy is not None
     assert second_copy is not None
+    assert first_copy.text() == ""
+    assert second_copy.text() == ""
+    assert not first_copy.icon().isNull()
+    assert not second_copy.icon().isNull()
 
     QApplication.clipboard().clear()
     qtbot.mouseClick(first_copy, Qt.MouseButton.LeftButton)
 
     assert QApplication.clipboard().text() == markdown_reply
-    assert first_copy.text() == "已复制"
-    assert second_copy.text() == "复制"
+    assert bool(first_copy.property("copyFeedback"))
+    assert not bool(second_copy.property("copyFeedback"))
+
+
+def test_chat_message_surface_and_input_both_support_wheel_scrolling(qtbot) -> None:
+    window = ConversationalAIOverlayWindow(win32_adapter=MagicMock())
+    qtbot.addWidget(window)
+    window.open_chat(source_text="source", translated_text="译文")
+
+    for index in range(24):
+        window.append_chat_message(
+            ChatRole.ASSISTANT,
+            f"第 {index + 1} 条回答，包含用于滚动测试的较长内容。" * 3,
+        )
+
+    message_bar = window.chat_panel.messages_scroll.verticalScrollBar()
+    qtbot.waitUntil(lambda: message_bar.maximum() > 0, timeout=1000)
+    message_bar.setValue(0)
+    first_body = window.chat_panel._message_rows[0].findChild(
+        QLabel,
+        "OverlayChatMessageBody",
+    )
+    assert first_body is not None
+    _wheel_down(first_body)
+    qtbot.wait(30)
+    assert message_bar.value() > 0
+    assert window.chat_panel.messages_scroll.verticalScrollBarPolicy() == (
+        Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )
+
+    window.chat_panel.input_edit.setPlainText("\n".join(f"line {i}" for i in range(40)))
+    input_bar = window.chat_panel.input_edit.verticalScrollBar()
+    qtbot.waitUntil(lambda: input_bar.maximum() > 0, timeout=1000)
+    input_bar.setValue(0)
+    _wheel_down(window.chat_panel.input_edit.viewport())
+    qtbot.wait(30)
+    assert input_bar.value() > 0
+    assert window.chat_panel.input_edit.verticalScrollBarPolicy() == (
+        Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )

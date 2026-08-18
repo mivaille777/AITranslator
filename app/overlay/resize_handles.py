@@ -48,6 +48,8 @@ class OverlayResizeHandle(QWidget):
         super().__init__(parent)
         self.edge = edge
         self._hovered = False
+        self._normal_color = ""
+        self._accent_override = ""
         self.setObjectName(f"OverlayResizeHandle{edge.title().replace('_', '')}")
         self.setCursor(_CURSOR_BY_EDGE[edge])
         self.setMouseTracking(True)
@@ -61,6 +63,13 @@ class OverlayResizeHandle(QWidget):
     def hovered(self) -> bool:
         return self._hovered
 
+    def set_theme_colors(self, normal: str, accent: str) -> None:
+        """Accept Overlay palette updates without adding visible idle chrome."""
+
+        self._normal_color = str(normal or "")
+        self._accent_override = str(accent or "")
+        self.update()
+
     def enterEvent(self, event) -> None:  # noqa: N802 - Qt override
         self._hovered = True
         self.update()
@@ -72,6 +81,11 @@ class OverlayResizeHandle(QWidget):
         super().leaveEvent(event)
 
     def _accent_color(self) -> QColor:
+        if self._accent_override:
+            override = QColor(self._accent_override)
+            if override.isValid():
+                override.setAlpha(210)
+                return override
         owner = self.parentWidget()
         theme = str(getattr(owner, "theme_name", getattr(owner, "_theme_name", "dark")))
         palette = OVERLAY_THEMES.get(theme, OVERLAY_THEMES["dark"])
@@ -92,7 +106,13 @@ class OverlayResizeHandle(QWidget):
 
         width = float(self.width())
         height = float(self.height())
-        length = float(min(RESIZE_INDICATOR_LENGTH, max(4, self.width() - 4), max(4, self.height() - 4)))
+        length = float(
+            min(
+                RESIZE_INDICATOR_LENGTH,
+                max(4, self.width() - 4),
+                max(4, self.height() - 4),
+            )
+        )
 
         if self.edge == "left":
             painter.drawLine(QPointF(1.5, 4.0), QPointF(1.5, max(4.0, height - 4.0)))

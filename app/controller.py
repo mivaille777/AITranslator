@@ -381,4 +381,876 @@ class AppController(QObject):
             )
             text_opacity = source.get(
                 "text_opacity",
-                getattr(self.config_manager, "overlay_text_opacity", 1.0),çž:¶‰žËkºwµça•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰Í•±•Ñ¥½¹}Õ¹•áÁ•Ñ•‘}•ÉÉ½Èˆ°•áŒ¤(€€€€€€€€€€€Í•±˜¹}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½È¡M1Q%=9}II=I}QaP°€‰M•±•Ñ¥½¹ÉÉ½Èˆ¤(€€€€€€€€€€€É•ÑÕÉ¸((€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€‰Í•±•Ñ¥½¹}…ÁÑÕÉ•Ñ•áÑ}±•¹Ñ ô•ÌÁÉ½Ù¥‘•Èô•Ìˆ°(€€€€€€€€€€€±•¸¡Í•±•Ñ•¹Ñ•áÐ¤°(€€€€€€€€€€€Í•±•Ñ•¹ÁÉ½Ù¥‘•È°(€€€€€€€€¤(€€€€€€€Í•±˜¹}±…ÍÑ}Í½ÕÉ•}Ñ•áÐ€ôÍ•±•Ñ•¹Ñ•áÐ((€€€€€€€ÑÉäè(€€€€€€€€€€€ÑÉ…¹Í±…Ñ…‰±•}Ñ•áÐ€ôÍ•±˜¹}ÁÉ•Á…É•}Í•±•Ñ•‘}Ñ•áÐ¡Í•±•Ñ•¹Ñ•áÐ¤(€€€€€€€•á•ÁÐQ•áÑ9½Éµ…±¥é…Ñ¥½¹ÉÉ½È…Ì•áŒè(€€€€€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€€€€€‰¥¹ÁÕÑ}Ñ•áÑ}É•©•Ñ••ÉÉ½É}ÑåÁ”ô•Ìˆ°(€€€€€€€€€€€€€€€ÑåÁ”¡•áŒ¤¹}}¹…µ•}|°(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½È¡%9AUQ}QaQ}II=I}QaP°€‰%¹ÁÕÑÉÉ½Èˆ¤(€€€€€€€€€€€É•ÑÕÉ¸((€€€€€€€Í•±˜¹}ÍÕ‰µ¥Ñ}ÑÉ…¹Í±…Ñ¥½¸¡ÑÉ…¹Í±…Ñ…‰±•}Ñ•áÐ¤((€€€‘•˜}ÁÉ•Á…É•}Í•±•Ñ•‘}Ñ•áÐ¡Í•±˜°Í½ÕÉ•}Ñ•áÐè½‰©•Ðð9½¹”¤€´øÍÑÈè(€€€€€€€€ˆˆ‰9½Éµ…±¥é”…¹…À„Í•±•Ñ•ÍÑÉ¥¹œ‰•™½É”Í¡½Ý¥¹œ½±½…‘¥¹œ¥Ð¸ˆˆˆ((€€€€€€€ÁÉ•Á…É•}Í½ÕÉ•}Ñ•áÐ€ô•Ñ…ÑÑÈ (€€€€€€€€€€€Í•±˜¹ÑÉ…¹Í±…Ñ¥½¹}µ…¹…•È°(€€€€€€€€€€€€‰ÁÉ•Á…É•}Í½ÕÉ•}Ñ•áÐˆ°(€€€€€€€€€€€9½¹”°(€€€€€€€€¤(€€€€€€€¥˜…±±…‰±”¡ÁÉ•Á…É•}Í½ÕÉ•}Ñ•áÐ¤è(€€€€€€€€€€€ÁÉ•Á…É•€ôÁÉ•Á…É•}Í½ÕÉ•}Ñ•áÐ¡Í½ÕÉ•}Ñ•áÐ°ÑÉÕ¹…Ñ”õQÉÕ”¤(€€€€€€€€€€€¥˜±•¸¡ÍÑÈ¡Í½ÕÉ•}Ñ•áÐ½È€ˆˆ¤¤€ø±•¸¡ÁÉ•Á…É•¤è(€€€€€€€€€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€€€€€€€€€‰Í•±•Ñ¥½¹}ÑÉÕ¹…Ñ•µ…á}±•¹Ñ ô•Ìˆ°(€€€€€€€€€€€€€€€€€€€•Ñ…ÑÑÈ (€€€€€€€€€€€€€€€€€€€€€€€•Ñ…ÑÑÈ¡Í•±˜¹ÑÉ…¹Í±…Ñ¥½¹}µ…¹…•È°€‰Ñ•áÑ}¹½Éµ…±¥é•Èˆ°9½¹”¤°(€€€€€€€€€€€€€€€€€€€€€€€€‰µ…á}±•¹Ñ ˆ°(€€€€€€€€€€€€€€€€€€€€€€€±•¸¡ÁÉ•Á…É•¤°(€€€€€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€É•ÑÕÉ¸ÁÉ•Á…É•(€€€€€€€É•ÑÕÉ¸€ˆˆ¥˜Í½ÕÉ•}Ñ•áÐ¥Ì9½¹”•±Í”ÍÑÈ¡Í½ÕÉ•}Ñ•áÐ¤((€€€‘•˜}ÍÕ‰µ¥Ñ}ÑÉ…¹Í±…Ñ¥½¸¡Í•±˜°Í½ÕÉ•}Ñ•áÐèÍÑÈ¤€´ø9½¹”è(€€€€€€€€ˆˆ‰MÕ‰µ¥ÐÑÉ…¹Í±…Ñ¥½¸Ý½É¬Ý¥Ñ¡½ÕÐ‰±½­¥¹œÑ¡”EÐU$Ñ¡É•…¸ˆˆˆ((€€€€€€€¥˜Í•±˜¹}Í¡ÕÑ‘½Ý¸è(€€€€€€€€€€€É•ÑÕÉ¸((€€€€€€€É•ÅÕ•ÍÑ}¥€ôÍ•±˜¹}É•ÅÕ•ÍÑ}Ù•ÉÍ¥½¹Ì¹¹•áÑ}É•ÅÕ•ÍÑ}¥ ¤(€€€€€€€Ñ…Í¬€ôQÉ…¹Í±…Ñ¥½¹Q…Í¬ (€€€€€€€€€€€Í•±˜¹ÑÉ…¹Í±…Ñ¥½¹}µ…¹…•È°(€€€€€€€€€€€Í½ÕÉ•}Ñ•áÐ°(€€€€€€€€€€€É•ÅÕ•ÍÑ}¥õÉ•ÅÕ•ÍÑ}¥°(€€€€€€€€€€€±½•ÈõÍ•±˜¹±½•È°(€€€€€€€€¤(€€€€€€€Ñ…Í¬¹Í¥¹…±Ì¹ÍÕ••‘•¹½¹¹•Ð¡Í•±˜¹}½¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­}ÍÕ••‘•¤(€€€€€€€Ñ…Í¬¹Í¥¹…±Ì¹™…¥±•¹½¹¹•Ð¡Í•±˜¹}½¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­}™…¥±•¤(€€€€€€€Ñ…Í¬¹Í¥¹…±Ì¹™¥¹¥Í¡•¹½¹¹•Ð¡Í•±˜¹}½¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­}™¥¹¥Í¡•¤(€€€€€€€Í•±˜¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­Ì¹…‘¡Ñ…Í¬¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}ÍÕ‰µ¥ÑÑ•É•ÅÕ•ÍÑ}¥ô•ÌÑ•áÑ}±•¹Ñ ô•Ìˆ°(€€€€€€€€€€€É•ÅÕ•ÍÑ}¥°(€€€€€€€€€€€±•¸¡Í½ÕÉ•}Ñ•áÐ¤°(€€€€€€€€¤((€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}±½…‘¥¹œ¡Í½ÕÉ•}Ñ•áÐ¤(€€€€€€€€€€€Í•±˜¹ÑÉ…¹Í±…Ñ¥½¹}Á½½°¹ÍÑ…ÉÐ¡Ñ…Í¬¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€€ŒEQ¡É•…‘A½½°¹½Éµ…±±ä…•ÁÑÌÑ¡”Ñ…Í¬¥µµ•‘¥…Ñ•±ä°‰ÕÐÁÉ•Í•ÉÙ”(€€€€€€€€€€€€ŒÑ¡”Í…µ”Í…™”U$‰•¡…Ù¥½È¥˜„ÕÍÑ½´½¥¹©•Ñ•Á½½°É•©•ÑÌ¥Ð¸(€€€€€€€€€€€Í•±˜¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­Ì¹‘¥Í…É¡Ñ…Í¬¤(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­}ÍÑ…ÉÑ}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€Í•±˜¹}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½È (€€€€€€€€€€€€€€€QI9M1Q%=9}II=I}QaP°(€€€€€€€€€€€€€€€€‰QÉ…¹Í±…Ñ¥½¹ÉÉ½Èˆ°(€€€€€€€€€€€€¤((€€€‘•˜}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}±½…‘¥¹œ¡Í•±˜°Í½ÕÉ•}Ñ•áÐèÍÑÈ¤€´ø9½¹”è(€€€€€€€€ˆˆ‰¥ÍÁ±…äÑ¡”…¹¥µ…Ñ•±½…‘¥¹œ…ÉÝ¡¥±”Ñ¡”Ý½É­•È¥ÌÉÕ¹¹¥¹œ¸ˆˆˆ((€€€€€€€Í¡½Ý}±½…‘¥¹œ€ô•Ñ…ÑÑÈ¡Í•±˜¹½Ù•É±…å}µ…¹…•È°€‰Í¡½Ý}±½…‘¥¹œˆ°9½¹”¤(€€€€€€€¥˜¹½Ð…±±…‰±”¡Í¡½Ý}±½…‘¥¹œ¤è(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€ÑÉäè(€€€€€€€€€€€Í¡½Ý}±½…‘¥¹œ (€€€€€€€€€€€€€€€Í½ÕÉ•}Ñ•áÐ°(€€€€€€€€€€€€€€€•Ñ…ÑÑÈ (€€€€€€€€€€€€€€€€€€€Í•±˜¹ÑÉ…¹Í±…Ñ¥½¹}µ…¹…•È°(€€€€€€€€€€€€€€€€€€€€‰‘•™…Õ±Ñ}Í½ÕÉ•}±…¹Õ…”ˆ°(€€€€€€€€€€€€€€€€€€€€‰…ÕÑ¼ˆ°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€€€€•Ñ…ÑÑÈ (€€€€€€€€€€€€€€€€€€€Í•±˜¹ÑÉ…¹Í±…Ñ¥½¹}µ…¹…•È°(€€€€€€€€€€€€€€€€€€€€‰‘•™…Õ±Ñ}Ñ…É•Ñ}±…¹Õ…”ˆ°(€€€€€€€€€€€€€€€€€€€€‰é µ8ˆ°(€€€€€€€€€€€€€€€€¤°(€€€€€€€€€€€€¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰ÑÉ…¹Í±…Ñ¥½¹}±½…‘¥¹}‘¥ÍÁ±…å}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€Í•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”€ôQÉÕ”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}½Ù•É±…å}Ù¥Í¥‰¥±¥Ñå}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}Ù¥Í¥‰±”°(€€€€€€€€€€€QÉÕ”°(€€€€€€€€¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰ÑÉ…¹Í±…Ñ¥½¹}±½…‘¥¹}‘¥ÍÁ±…å•ˆ¤((€€€‘•˜}½¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­}ÍÕ••‘•¡Í•±˜°É•ÍÕ±Ðè½‰©•Ð¤€´ø9½¹”è(€€€€€€€€ˆˆ‰!…¹‘±”„Ý½É­•ÈÉ•ÍÕ±Ð½¸Ñ¡”U$Ñ¡É•…½¹±ä¸ˆˆˆ((€€€€€€€¥˜Í•±˜¹}Í¡ÕÑ‘½Ý¸è(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€¥˜¹½Ð¥Í¥¹ÍÑ…¹”¡É•ÍÕ±Ð°QÉ…¹Í±…Ñ¥½¹I•ÍÕ±Ð¤è(€€€€€€€€€€€Í•±˜¹±½•È¹•ÉÉ½È (€€€€€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}Õ¹•áÁ•Ñ•‘}É•ÍÕ±ÐÉ•ÍÕ±Ñ}ÑåÁ”ô•Ìˆ°(€€€€€€€€€€€€€€€ÑåÁ”¡É•ÍÕ±Ð¤¹}}¹…µ•}|°(€€€€€€€€€€€€¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€¥˜¹½ÐÍ•±˜¹}É•ÅÕ•ÍÑ}Ù•ÉÍ¥½¹Ì¹¥Í}±…Ñ•ÍÐ¡É•ÍÕ±Ð¹É•ÅÕ•ÍÑ}¥¤è(€€€€€€€€€€€Í•±˜¹±½•È¹‘•‰Õœ (€€€€€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}É•ÍÕ±Ñ}‘¥Í…É‘•É•ÅÕ•ÍÑ}¥ô•Ì±…Ñ•ÍÑ}É•ÅÕ•ÍÑ}¥ô•Ìˆ°(€€€€€€€€€€€€€€€É•ÍÕ±Ð¹É•ÅÕ•ÍÑ}¥°(€€€€€€€€€€€€€€€Í•±˜¹±…Ñ•ÍÑ}É•ÅÕ•ÍÑ}¥°(€€€€€€€€€€€€¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€Í•±˜¹}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¸ (€€€€€€€€€€€É•ÍÕ±Ð¹ÑÉ…¹Í±…Ñ•‘}Ñ•áÐ°(€€€€€€€€€€€Í½ÕÉ•}Ñ•áÐõÉ•ÍÕ±Ð¹Í½ÕÉ•}Ñ•áÐ°(€€€€€€€€€€€Í½ÕÉ•}±…¹Õ…”õÉ•ÍÕ±Ð¹Í½ÕÉ•}±…¹Õ…”°(€€€€€€€€€€€Ñ…É•Ñ}±…¹Õ…”õÉ•ÍÕ±Ð¹Ñ…É•Ñ}±…¹Õ…”°(€€€€€€€€¤((€€€‘•˜}½¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­}™…¥±•¡Í•±˜°™…¥±ÕÉ”è½‰©•Ð¤€´ø9½¹”è(€€€€€€€€ˆˆ‰½¹Ù•ÉÐ„Ý½É­•È•á•ÁÑ¥½¸¥¹Ñ¼„Í…™”°ÕÍ•Èµ™…¥¹œÉ•ÍÕ±Ð¸ˆˆˆ((€€€€€€€¥˜Í•±˜¹}Í¡ÕÑ‘½Ý¸è(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€¥˜¹½Ð¥Í¥¹ÍÑ…¹”¡™…¥±ÕÉ”°QÉ…¹Í±…Ñ¥½¹Q…Í­…¥±ÕÉ”¤è(€€€€€€€€€€€Í•±˜¹±½•È¹•ÉÉ½È (€€€€€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}Õ¹•áÁ•Ñ•‘}™…¥±ÕÉ”™…¥±ÕÉ•}ÑåÁ”ô•Ìˆ°(€€€€€€€€€€€€€€€ÑåÁ”¡™…¥±ÕÉ”¤¹}}¹…µ•}|°(€€€€€€€€€€€€¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€¥˜¹½ÐÍ•±˜¹}É•ÅÕ•ÍÑ}Ù•ÉÍ¥½¹Ì¹¥Í}±…Ñ•ÍÐ¡™…¥±ÕÉ”¹É•ÅÕ•ÍÑ}¥¤è(€€€€€€€€€€€Í•±˜¹±½•È¹‘•‰Õœ (€€€€€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}™…¥±ÕÉ•}‘¥Í…É‘•É•ÅÕ•ÍÑ}¥ô•Ì±…Ñ•ÍÑ}É•ÅÕ•ÍÑ}¥ô•Ìˆ°(€€€€€€€€€€€€€€€™…¥±ÕÉ”¹É•ÅÕ•ÍÑ}¥°(€€€€€€€€€€€€€€€Í•±˜¹±…Ñ•ÍÑ}É•ÅÕ•ÍÑ}¥°(€€€€€€€€€€€€¤(€€€€€€€€€€€É•ÑÕÉ¸((€€€€€€€•ÉÉ½È€ô™…¥±ÕÉ”¹•ÉÉ½È(€€€€€€€¥˜¥Í¥¹ÍÑ…¹”¡•ÉÉ½È°Q•áÑ9½Éµ…±¥é…Ñ¥½¹ÉÉ½È¤è(€€€€€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€€€€€‰¥¹ÁÕÑ}Ñ•áÑ}É•©•Ñ••ÉÉ½É}ÑåÁ”ô•Ìˆ°(€€€€€€€€€€€€€€€ÑåÁ”¡•ÉÉ½È¤¹}}¹…µ•}|°(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½È¡%9AUQ}QaQ}II=I}QaP°€‰%¹ÁÕÑÉÉ½Èˆ¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€¥˜¥Í¥¹ÍÑ…¹”¡•ÉÉ½È°QÉ…¹Í±…Ñ¥½¹ÉÉ½È¤è(€€€€€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}™…¥±••ÉÉ½É}ÑåÁ”ô•Ìˆ°(€€€€€€€€€€€€€€€ÑåÁ”¡•ÉÉ½È¤¹}}¹…µ•}|°(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½È¡QI9M1Q%=9}II=I}QaP°€‰QÉ…¹Í±…Ñ¥½¹ÉÉ½Èˆ¤(€€€€€€€€€€€É•ÑÕÉ¸((€€€€€€€Í•±˜¹±½•È¹•ÉÉ½È (€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}Õ¹•áÁ•Ñ•‘}•ÉÉ½È•ÉÉ½É}ÑåÁ”ô•Ìˆ°(€€€€€€€€€€€ÑåÁ”¡•ÉÉ½È¤¹}}¹…µ•}|°(€€€€€€€€¤((€€€‘•˜}½¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­}™¥¹¥Í¡•¡Í•±˜°Ñ…Í¬è½‰©•Ð¤€´ø9½¹”è(€€€€€€€€ˆˆ‰I•±•…Í”Ñ¡”½¹ÑÉ½±±•ÈÌ­••Àµ…±¥Ù”É•™•É•¹”™½È„½µÁ±•Ñ•Ñ…Í¬¸ˆˆˆ((€€€€€€€¥˜¥Í¥¹ÍÑ…¹”¡Ñ…Í¬°QÉ…¹Í±…Ñ¥½¹Q…Í¬¤è(€€€€€€€€€€€Í•±˜¹}ÑÉ…¹Í±…Ñ¥½¹}Ñ…Í­Ì¹‘¥Í…É¡Ñ…Í¬¤((€€€‘•˜}¡¥‘•}½Ù•É±…å}™½É}Í•±•Ñ¥½¸¡Í•±˜¤€´ø9½¹”è(€€€€€€€€ˆˆ‰I•µ½Ù”Ñ¡”ÁÉ•Ù¥½ÕÌÉ•ÍÕ±Ð‰•™½É”…Í­¥¹œ…¹½Ñ¡•È…ÁÀÑ¼½Áä¸ˆˆˆ((€€€€€€€¥˜¹½ÐÍ•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”è(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€Í•±˜¹}•ÉÉ½É}¡¥‘•}Ñ¥µ•È¹ÍÑ½À ¤(€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹½Ù•É±…å}µ…¹…•È¹¡¥‘•}½Ù•É±…ä ¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰½Ù•É±…å}¡¥‘•}™½É}Í•±•Ñ¥½¹}™…¥±•ˆ°•áŒ¤(€€€€€€€Í•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”€ô…±Í”(€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}Ù¥Í¥‰±”¡…±Í”¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰ÑÉ…å}Ù¥Í¥‰¥±¥Ñå}ÕÁ‘…Ñ•}™…¥±•ˆ°•áŒ¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰½Ù•É±…å}¡¥‘‘•¹}™½É}Í•±•Ñ¥½¸ˆ¤((€€€‘•˜}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¸ (€€€€€€€Í•±˜°(€€€€€€€ÑÉ…¹Í±…Ñ•‘}Ñ•áÐèÍÑÈ°(€€€€€€€€¨°(€€€€€€€Í½ÕÉ•}Ñ•áÐèÍÑÈ€ô€ˆˆ°(€€€€€€€Í½ÕÉ•}±…¹Õ…”èÍÑÈ€ô€‰…ÕÑ¼ˆ°(€€€€€€€Ñ…É•Ñ}±…¹Õ…”èÍÑÈ€ô€‰é µ8ˆ°(€€€€¤€´ø9½¹”è(€€€€€€€Í•±˜¹}•ÉÉ½É}¡¥‘•}Ñ¥µ•È¹ÍÑ½À ¤(€€€€€€€ÑÉäè(€€€€€€€€€€€Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¸€ô•Ñ…ÑÑÈ (€€€€€€€€€€€€€€€Í•±˜¹½Ù•É±…å}µ…¹…•È°(€€€€€€€€€€€€€€€€‰Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¸ˆ°(€€€€€€€€€€€€€€€9½¹”°(€€€€€€€€€€€€¤(€€€€€€€€€€€¥˜…±±…‰±”¡Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¸¤è(€€€€€€€€€€€€€€€Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¸ (€€€€€€€€€€€€€€€€€€€Í½ÕÉ•}Ñ•áÐ°(€€€€€€€€€€€€€€€€€€€ÑÉ…¹Í±…Ñ•‘}Ñ•áÐ°(€€€€€€€€€€€€€€€€€€€Í½ÕÉ•}±…¹Õ…”°(€€€€€€€€€€€€€€€€€€€Ñ…É•Ñ}±…¹Õ…”°(€€€€€€€€€€€€€€€€¤(€€€€€€€€€€€•±Í”è(€€€€€€€€€€€€€€€Í•±˜¹½Ù•É±…å}µ…¹…•È¹Í¡½Ý}Ñ•áÐ¡ÑÉ…¹Í±…Ñ•‘}Ñ•áÐ¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰ÑÉ…¹Í±…Ñ¥½¹}‘¥ÍÁ±…å}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€Í•±˜¹}±…ÍÑ}ÑÉ…¹Í±…Ñ¥½¹}Ñ•áÐ€ôÑÉ…¹Í±…Ñ•‘}Ñ•áÐ(€€€€€€€Í•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”€ôQÉÕ”(€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}Ù¥Í¥‰±”¡QÉÕ”¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰ÑÉ…å}Ù¥Í¥‰¥±¥Ñå}ÕÁ‘…Ñ•}™…¥±•ˆ°•áŒ¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}‘¥ÍÁ±…å•Ñ•áÑ}±•¹Ñ ô•Ìˆ°(€€€€€€€€€€€±•¸¡ÑÉ…¹Í±…Ñ•‘}Ñ•áÐ¤°(€€€€€€€€¤((€€€‘•˜}Í¡½Ý}ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½È¡Í•±˜°µ•ÍÍ…”èÍÑÈ°•ÉÉ½É}ÑåÁ”èÍÑÈ¤€´ø9½¹”è(€€€€€€€€ˆˆ‰¥ÍÁ±…ä„Í…™”ÁÉ½Ù¥‘•È•ÉÉ½ÈÝ¥Ñ¡½ÕÐ•áÁ½Í¥¹œM,‘•Ñ…¥±Ì¸ˆˆˆ((€€€€€€€Í•±˜¹}•ÉÉ½É}¡¥‘•}Ñ¥µ•È¹ÍÑ½À ¤(€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹½Ù•É±…å}µ…¹…•È¹Í¡½Ý}Ñ•áÐ¡µ•ÍÍ…”¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½É}‘¥ÍÁ±…å}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€Í•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”€ôQÉÕ”(€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}Ù¥Í¥‰±”¡QÉÕ”¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰ÑÉ…å}Ù¥Í¥‰¥±¥Ñå}ÕÁ‘…Ñ•}™…¥±•ˆ°•áŒ¤(€€€€€€€Í•±˜¹}•ÉÉ½É}¡¥‘•}Ñ¥µ•È¹ÍÑ…ÉÐ¡II=I}%MA1e}5%11%M=9L¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ (€€€€€€€€€€€€‰ÑÉ…¹Í±…Ñ¥½¹}•ÉÉ½É}‘¥ÍÁ±…å••ÉÉ½É}ÑåÁ”ô•Ìˆ°(€€€€€€€€€€€•ÉÉ½É}ÑåÁ”°(€€€€€€€€¤((€€€‘•˜}Íå¹¡É½¹¥é•}ÑÉ…å}ÍÑ…Ñ”¡Í•±˜¤€´ø9½¹”è(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}ÑÉ…¹Í±…Ñ¥½¹}ÍÑ…Ñ•}Íå¹}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€Í•±˜¹}ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•°(€€€€€€€€¤(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}…ÕÑ½}Í•±•Ñ¥½¹}ÍÑ…Ñ•}Íå¹}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€Í•±˜¹}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•°(€€€€€€€€¤(€€€€€€€ÑÉäè(€€€€€€€€€€€½Ù•É±…å}±½­•€ô‰½½°¡Í•±˜¹½Ù•É±…å}µ…¹…•È¹¥Í}±½­•¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰½Ù•É±…å}±½­}ÍÑ…Ñ•}Íå¹}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€½Ù•É±…å}±½­•€ô…±Í”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}½Ù•É±…å}±½­}ÍÑ…Ñ•}Íå¹}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}±½­•°(€€€€€€€€€€€½Ù•É±…å}±½­•°(€€€€€€€€¤(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}½Ù•É±…å}Ù¥Í¥‰¥±¥Ñå}Íå¹}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}Ù¥Í¥‰±”°(€€€€€€€€€€€Í•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”°(€€€€€€€€¤((€€€‘•˜}•¹…‰±•}ÑÉ…¹Í±…Ñ¥½¸¡Í•±˜¤€´ø9½¹”è(€€€€€€€Í•±˜¹}ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•€ôQÉÕ”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€QÉÕ”°(€€€€€€€€¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•ˆ¤((€€€‘•˜}Á…ÕÍ•}ÑÉ…¹Í±…Ñ¥½¸¡Í•±˜¤€´ø9½¹”è(€€€€€€€Í•±˜¹}ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•€ô…±Í”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}ÑÉ…¹Í±…Ñ¥½¹}Á…ÕÍ•}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}ÑÉ…¹Í±…Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€…±Í”°(€€€€€€€€¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰ÑÉ…¹Í±…Ñ¥½¹}Á…ÕÍ•ˆ¤((€€€‘•˜}ÍÑ…ÉÑ}…ÕÑ½}Í•±•Ñ¥½¸¡Í•±˜¤€´ø‰½½°è(€€€€€€€€ˆˆ‰MÑ…ÉÐÑ¡”½ÁÑ¥½¹…°µ½ÕÍ”±¥ÍÑ•¹•ÈÝ¡¥±”­••Á¥¹œÑ¡”ÑÉ…äÕÍ…‰±”¸ˆˆˆ((€€€€€€€ÑÉäè(€€€€€€€€€€€ÍÑ…ÉÑ•€ôÍ•±˜¹µ½ÕÍ•}Í•±•Ñ¥½¹}µ…¹…•È¹ÍÑ…ÉÐ ¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•€ô…±Í”(€€€€€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€€€€€‰ÑÉ…å}…ÕÑ½}Í•±•Ñ¥½¹}ÍÑ…Ñ•}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€€€€€…±Í”°(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰µ½ÕÍ•}Í•±•Ñ¥½¹}ÍÑ…ÉÑ}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€É•ÑÕÉ¸…±Í”((€€€€€€€¥˜¹½ÐÍÑ…ÉÑ•è(€€€€€€€€€€€Í•±˜¹}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•€ô…±Í”(€€€€€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€€€€€‰ÑÉ…å}…ÕÑ½}Í•±•Ñ¥½¹}ÍÑ…Ñ•}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€€€€€…±Í”°(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹±½•È¹•ÉÉ½È ‰µ½ÕÍ•}Í•±•Ñ¥½¹}ÍÑ…ÉÑ}™…¥±••ÉÉ½É}ÑåÁ”õU¹­¹½Ý¸ˆ¤(€€€€€€€€€€€É•ÑÕÉ¸…±Í”((€€€€€€€Í•±˜¹}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•€ôQÉÕ”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}…ÕÑ½}Í•±•Ñ¥½¹}ÍÑ…Ñ•}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€QÉÕ”°(€€€€€€€€¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰µ½ÕÍ•}Í•±•Ñ¥½¹}ÍÑ…ÉÑ•ˆ¤(€€€€€€€É•ÑÕÉ¸QÉÕ”((€€€‘•˜}Í•Ñ}…ÕÑ½}Í•±•Ñ¥½¸¡Í•±˜°•¹…‰±•è‰½½°¤€´ø9½¹”è(€€€€€€€€ˆˆ‰¹…‰±”½È‘¥Í…‰±”…ÕÑ½µ…Ñ¥Œµ½ÕÍ”µÍ•±•Ñ¥½¸µ½‘”™É½´Ñ¡”ÑÉ…ä¸ˆˆˆ((€€€€€€€¥˜•¹…‰±•è(€€€€€€€€€€€Í•±˜¹}ÍÑ…ÉÑ}…ÕÑ½}Í•±•Ñ¥½¸ ¤(€€€€€€€€€€€É•ÑÕÉ¸((€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹µ½ÕÍ•}Í•±•Ñ¥½¹}µ…¹…•È¹ÍÑ½À ¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰µ½ÕÍ•}Í•±•Ñ¥½¹}ÍÑ½Á}™…¥±•ˆ°•áŒ¤(€€€€€€€Í•±˜¹}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•€ô…±Í”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}…ÕÑ½}Í•±•Ñ¥½¹}ÍÑ…Ñ•}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}…ÕÑ½}Í•±•Ñ¥½¹}•¹…‰±•°(€€€€€€€€€€€…±Í”°(€€€€€€€€¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰µ½ÕÍ•}Í•±•Ñ¥½¹}ÍÑ½ÁÁ•ˆ¤((€€€‘•˜}±½­}½Ù•É±…ä¡Í•±˜¤€´ø9½¹”è(€€€€€€€ÑÉäè(€€€€€€€€€€€±½­•€ô‰½½°¡Í•±˜¹½Ù•É±…å}µ…¹…•È¹±½­}½Ù•É±…ä ¤¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰½Ù•É±…å}±½­}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€¥˜±½­•è(€€€€€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€€€€€‰ÑÉ…å}½Ù•É±…å}±½­}ÍÑ…Ñ•}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}±½­•°(€€€€€€€€€€€€€€€QÉÕ”°(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰½Ù•É±…å}±½­•ˆ¤(€€€€€€€•±Í”è(€€€€€€€€€€€Í•±˜¹±½•È¹Ý…É¹¥¹œ ‰½Ù•É±…å}±½­}™…¥±•ˆ¤((€€€‘•˜}Õ¹±½­}½Ù•É±…ä¡Í•±˜¤€´ø9½¹”è(€€€€€€€ÑÉäè(€€€€€€€€€€€Õ¹±½­•€ô‰½½°¡Í•±˜¹½Ù•É±…å}µ…¹…•È¹Õ¹±½­}½Ù•É±…ä ¤¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰½Ù•É±…å}Õ¹±½­}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€¥˜Õ¹±½­•è(€€€€€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€€€€€‰ÑÉ…å}½Ù•É±…å}±½­}ÍÑ…Ñ•}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}±½­•°(€€€€€€€€€€€€€€€…±Í”°(€€€€€€€€€€€€¤(€€€€€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰½Ù•É±…å}Õ¹±½­•ˆ¤(€€€€€€€•±Í”è(€€€€€€€€€€€Í•±˜¹±½•È¹Ý…É¹¥¹œ ‰½Ù•É±…å}Õ¹±½­}™…¥±•ˆ¤((€€€‘•˜}Í¡½Ý}Ñ•ÍÑ}Ñ•áÐ¡Í•±˜¤€´ø9½¹”è(€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹½Ù•É±…å}µ…¹…•È¹Í¡½Ý}Ñ•áÐ¡U1Q}QMQ}QaP¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰½Ù•É±…å}Ñ•ÍÑ}Ñ•áÑ}™…¥±•ˆ°•áŒ¤(€€€€€€€€€€€É•ÑÕÉ¸(€€€€€€€Í•±˜¹}±…ÍÑ}ÑÉ…¹Í±…Ñ¥½¹}Ñ•áÐ€ôU1Q}QMQ}QaP(€€€€€€€Í•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”€ôQÉÕ”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}½Ù•É±…å}Ù¥Í¥‰¥±¥Ñå}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}Ù¥Í¥‰±”°(€€€€€€€€€€€QÉÕ”°(€€€€€€€€¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰½Ù•É±…å}Ñ•ÍÑ}Ñ•áÑ}Í¡½Ý¸ˆ¤((€€€‘•˜}¡¥‘•}½Ù•É±…ä¡Í•±˜¤€´ø9½¹”è(€€€€€€€ÑÉäè(€€€€€€€€€€€Í•±˜¹½Ù•É±…å}µ…¹…•È¹¡¥‘•}½Ù•É±…ä ¤(€€€€€€€•á•ÁÐá•ÁÑ¥½¸…Ì•áŒè(€€€€€€€€€€€Í•±˜¹}±½}•á•ÁÑ¥½¸ ‰½Ù•É±…å}¡¥‘•}™…¥±•ˆ°•áŒ¤(€€€€€€€Í•±˜¹}½Ù•É±…å}Ù¥Í¥‰±”€ô…±Í”(€€€€€€€Í•±˜¹}Í…™•}…±° (€€€€€€€€€€€€‰ÑÉ…å}½Ù•É±…å}Ù¥Í¥‰¥±¥Ñå}ÕÁ‘…Ñ•}™…¥±•ˆ°(€€€€€€€€€€€Í•±˜¹ÑÉ…å}µ…¹…•È¹Í•Ñ}½Ù•É±…å}Ù¥Í¥‰±”°(€€€€€€€€€€€…±Í”°(€€€€€€€€¤(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰½Ù•É±…å}¡¥‘‘•¸ˆ¤((€€€‘•˜}•á¥Ñ}…ÁÁ±¥…Ñ¥½¸¡Í•±˜¤€´ø9½¹”è(€€€€€€€Í•±˜¹±½•È¹¥¹™¼ ‰•á¥Ñ}É•ÅÕ•ÍÑ•ˆ¤(€€€€€€€Í•±˜¹…ÁÁ±¥…Ñ¥½¸¹ÅÕ¥Ð ¤(
+                getattr(self.config_manager, "overlay_text_opacity", 1.0),
+            )
+            self._safe_call(
+                "overlay_style_apply_failed",
+                apply_style,
+                font_family=source.get(
+                    "font_family",
+                    getattr(self.config_manager, "overlay_font_family", "Segoe UI"),
+                ),
+                font_size=source.get(
+                    "font_size",
+                    getattr(self.config_manager, "overlay_font_size", 24),
+                ),
+                background_opacity=background_opacity,
+                text_opacity=text_opacity,
+                max_width=source.get(
+                    "max_width",
+                    getattr(self.config_manager, "overlay_max_width", 900),
+                ),
+            )
+
+        set_position_mode = getattr(self.overlay_manager, "set_position_mode", None)
+        if callable(set_position_mode):
+            self._safe_call(
+                "overlay_position_apply_failed",
+                set_position_mode,
+                source.get(
+                    "position_mode",
+                    getattr(
+                        self.config_manager,
+                        "overlay_position_mode",
+                        "desktop_lyrics_bottom",
+                    ),
+                )
+            )
+
+        set_theme = getattr(self.overlay_manager, "set_theme", None)
+        if callable(set_theme):
+            self._safe_call(
+                "overlay_theme_apply_failed",
+                set_theme,
+                source.get(
+                    "theme",
+                    getattr(self.config_manager, "overlay_theme", "dark"),
+                ),
+            )
+
+        set_original_visible = getattr(
+            self.overlay_manager,
+            "set_original_visible",
+            None,
+        )
+        if callable(set_original_visible):
+            self._safe_call(
+                "overlay_original_visibility_apply_failed",
+                set_original_visible,
+                source.get(
+                    "show_original",
+                    getattr(self.config_manager, "overlay_show_original", False),
+                ),
+            )
+
+        set_languages = getattr(self.overlay_manager, "set_languages", None)
+        if callable(set_languages):
+            self._safe_call(
+                "overlay_language_display_apply_failed",
+                set_languages,
+                getattr(
+                    self.config_manager,
+                    "translation_source_language",
+                    "auto",
+                ),
+                getattr(
+                    self.config_manager,
+                    "translation_target_language",
+                    "zh-CN",
+                ),
+            )
+
+    def _apply_runtime_settings(self) -> None:
+        """Apply persisted values to services without restarting the process."""
+
+        source_language = getattr(
+            self.config_manager,
+            "translation_source_language",
+            "auto",
+        )
+        target_language = getattr(
+            self.config_manager,
+            "translation_target_language",
+            "zh-CN",
+        )
+        configure_languages = getattr(
+            self.translation_manager,
+            "configure_languages",
+            None,
+        )
+        if callable(configure_languages):
+            configure_languages(source_language, target_language)
+        else:
+            if hasattr(self.translation_manager, "default_source_language"):
+                self.translation_manager.default_source_language = source_language
+            if hasattr(self.translation_manager, "default_target_language"):
+                self.translation_manager.default_target_language = target_language
+
+        set_overlay_languages = getattr(
+            self.overlay_manager,
+            "set_languages",
+            None,
+        )
+        if callable(set_overlay_languages):
+            self._safe_call(
+                "overlay_language_display_apply_failed",
+                set_overlay_languages,
+                source_language,
+                target_language,
+            )
+
+        configure_cache = getattr(self.translation_manager, "configure_cache", None)
+        if callable(configure_cache):
+            self._safe_call(
+                "translation_cache_reconfigure_failed",
+                configure_cache,
+                enabled=getattr(
+                    self.config_manager,
+                    "translation_cache_enabled",
+                    True,
+                ),
+                max_size=getattr(
+                    self.config_manager,
+                    "translation_cache_max_size",
+                    128,
+                ),
+                sqlite_enabled=getattr(
+                    self.config_manager,
+                    "translation_sqlite_cache_enabled",
+                    True,
+                ),
+                sqlite_path=getattr(
+                    self.config_manager,
+                    "translation_cache_path",
+                    None,
+                ),
+                history_enabled=getattr(
+                    self.config_manager,
+                    "translation_history_enabled",
+                    False,
+                ),
+            )
+
+    def _on_overlay_context_action(self, key: str, value: object) -> None:
+        """Handle semantic actions emitted by the Overlay right-click menu."""
+
+        if key == "copy_original":
+            self._copy_overlay_text("original", self._last_source_text)
+            return
+        if key == "copy_translation":
+            self._copy_overlay_text("translation", self._last_translation_text)
+            return
+        if key == "hide":
+            self._error_hide_timer.stop()
+            self._overlay_visible = False
+            self._safe_call(
+                "tray_overlay_visibility_update_failed",
+                self.tray_manager.set_overlay_visible,
+                False,
+            )
+            self.logger.info("overlay_hidden_from_context_menu")
+            return
+        if key == "lock_position":
+            self._safe_call(
+                "tray_overlay_lock_state_update_failed",
+                self.tray_manager.set_overlay_locked,
+                bool(value),
+            )
+            self.logger.info("overlay_lock_changed_from_context_menu locked=%s", bool(value))
+            return
+        if key == "always_on_top":
+            self.logger.info(
+                "overlay_topmost_changed_from_context_menu enabled=%s",
+                bool(value),
+            )
+            return
+        if key == "show_original":
+            self._persist_overlay_menu_setting(
+                "show_original",
+                bool(value),
+            )
+            self.logger.info(
+                "overlay_original_visibility_changed_from_context_menu visible=%s",
+                bool(value),
+            )
+            return
+        if key == "source_language":
+            source_language = str(value).strip() or "auto"
+            configure_languages = getattr(
+                self.translation_manager,
+                "configure_languages",
+                None,
+            )
+            if callable(configure_languages):
+                self._safe_call(
+                    "translation_language_apply_failed",
+                    configure_languages,
+                    source_language,
+                    "zh-CN",
+                )
+            self._persist_translation_menu_language(source_language)
+            self.logger.info(
+                "translation_source_language_changed_from_context_menu language=%s",
+                source_language,
+            )
+            return
+        if key in {
+            "font_size",
+            "opacity",
+            "background_opacity",
+            "text_opacity",
+            "theme",
+        }:
+            setting_key = key
+            setting_value = value
+            if key == "font_size":
+                try:
+                    setting_value = int(value)
+                except (TypeError, ValueError):
+                    return
+            elif key in {"opacity", "background_opacity", "text_opacity"}:
+                try:
+                    setting_value = float(value)
+                except (TypeError, ValueError):
+                    return
+            else:
+                setting_value = str(value)
+            self._persist_overlay_menu_setting(setting_key, setting_value)
+            self.logger.info(
+                "overlay_%s_changed_from_context_menu",
+                setting_key,
+            )
+            return
+        if key == "settings":
+            self._show_settings()
+            return
+        if key == "about":
+            self._show_about_dialog()
+            return
+        if key == "exit":
+            self._exit_application()
+
+    def _copy_overlay_text(self, kind: str, text: str) -> bool:
+        """Copy a known overlay value without logging its contents."""
+
+        if not text:
+            self.logger.info("overlay_copy_unavailable kind=%s", kind)
+            return False
+        try:
+            clipboard = QApplication.clipboard()
+            if clipboard is None:
+                raise RuntimeError("clipboard unavailable")
+            clipboard.setText(text)
+        except Exception as exc:
+            self._log_exception("overlay_copy_failed", exc)
+            return False
+        show_feedback = getattr(
+            self.overlay_manager,
+            "show_copy_feedback",
+            None,
+        )
+        if callable(show_feedback):
+            self._safe_call(
+                "overlay_copy_feedback_failed",
+                show_feedback,
+            )
+        self.logger.info("overlay_text_copied kind=%s text_length=%s", kind, len(text))
+        return True
+
+    def _persist_overlay_menu_setting(self, key: str, value: object) -> None:
+        """Persist context-menu visual choices when the settings layer exists."""
+
+        save = getattr(self.config_manager, "save", None)
+        if not callable(save):
+            return
+        try:
+            overlay_values = {key: value}
+            # Keep the old single-opacity key synchronized with the
+            # background value so older integrations observe the same choice.
+            if key == "background_opacity":
+                overlay_values["opacity"] = value
+            save({"overlay": overlay_values})
+        except Exception as exc:
+            self._log_exception("overlay_context_setting_save_failed", exc)
+
+    def _persist_translation_menu_language(self, source_language: str) -> None:
+        """Persist a preset source language with the fixed Chinese target."""
+
+        save = getattr(self.config_manager, "save", None)
+        if not callable(save):
+            return
+        try:
+            save(
+                {
+                    "translation": {
+                        "source_language": source_language,
+                        "target_language": "zh-CN",
+                    }
+                }
+            )
+        except Exception as exc:
+            self._log_exception("translation_language_setting_save_failed", exc)
+
+    def _show_about_dialog(self) -> None:
+        """Show a small non-secret about dialog from the Overlay menu."""
+
+        try:
+            parent = getattr(self.overlay_manager, "window", None)
+            QMessageBox.information(
+                parent,
+                ABOUT_DIALOG_TITLE,
+                ABOUT_DIALOG_TEXT,
+            )
+        except Exception as exc:
+            self._log_exception("about_dialog_failed", exc)
+
+        configure_provider = getattr(
+            self.translation_manager,
+            "configure_provider",
+            None,
+        )
+        if callable(configure_provider):
+            try:
+                configure_provider()
+            except Exception as exc:
+                # A malformed or unavailable web configuration must not make
+                # the running tray application crash after saving settings.
+                self._log_exception("translation_provider_reconfigure_failed", exc)
+
+        reconfigure_hotkey = getattr(self.hotkey_manager, "reconfigure", None)
+        if callable(reconfigure_hotkey):
+            try:
+                if not reconfigure_hotkey():
+                    self.logger.warning("global_hotkey_reconfigure_failed")
+            except Exception as exc:
+                self._log_exception("global_hotkey_reconfigure_failed", exc)
+
+        reconfigure_mouse = getattr(
+            self.mouse_selection_manager,
+            "reconfigure",
+            None,
+        )
+        if callable(reconfigure_mouse):
+            try:
+                if not reconfigure_mouse():
+                    self.logger.warning("mouse_selection_reconfigure_failed")
+            except Exception as exc:
+                self._log_exception("mouse_selection_reconfigure_failed", exc)
+
+        self._apply_overlay_visual_settings()
+        desired_locked = bool(getattr(self.config_manager, "overlay_locked", False))
+        if desired_locked and not self.overlay_manager.is_locked:
+            self._lock_overlay()
+        elif not desired_locked and self.overlay_manager.is_locked:
+            self._unlock_overlay()
+
+        self._set_auto_selection(
+            bool(getattr(self.config_manager, "auto_selection_enabled", True))
+        )
+
+        # QMessageBox runs its own nested event loop.  When it closes, Qt can
+        # leave one more geometry/style pass queued for the overlay; refresh
+        # after that pass so the source row cannot retain a stale narrow width.
+        refresh_layout = getattr(self.overlay_manager, "refresh_layout", None)
+        if callable(refresh_layout):
+            QTimer.singleShot(
+                0,
+                lambda: self._safe_call(
+                    "overlay_layout_refresh_failed",
+                    refresh_layout,
+                ),
+            )
+
+    def _is_cursor_over_overlay(self) -> bool:
+        """Check the current cursor on the Qt thread before hiding a result."""
+
+        contains_global_point = getattr(
+            self.overlay_manager,
+            "contains_global_point",
+            None,
+        )
+        if not callable(contains_global_point):
+            return False
+        try:
+            cursor_position = QCursor.pos()
+            return bool(
+                contains_global_point(
+                    cursor_position.x(),
+                    cursor_position.y(),
+                )
+            )
+        except Exception as exc:
+            self.logger.debug(
+                "overlay_cursor_hit_test_failed error_type=%s",
+                type(exc).__name__,
+            )
+            return False
+
+    def _on_translation_triggered(self, event: TranslationTriggerEvent) -> None:
+        """Read the selection and submit an asynchronous translation request."""
+
+        if event.source == MOUSE_SELECTION_SOURCE:
+            self.logger.info(
+                "AUTO_SELECTION_TRIGGERED source=%s",
+                event.source,
+            )
+        else:
+            self.logger.info(
+                "HOTKEY_TRIGGERED hotkey=%s source=%s",
+                event.hotkey,
+                event.source,
+            )
+
+        if not self._translation_enabled:
+            if event.source == MOUSE_SELECTION_SOURCE:
+                self.logger.info("auto_selection_ignored translation_paused")
+            else:
+                self.logger.info("selection_trigger_ignored translation_paused")
+            return
+
+        # The global mouse listener and Qt can observe a release in different
+        # orders. If the cursor is already over the result card, this is an
+        # Overlay gesture/hover rather than a new text-selection request. Do
+        # this check on the Qt thread as a second guard against a stale native
+        # frame geometry from the pynput callback.
+        if (
+            event.source == MOUSE_SELECTION_SOURCE
+            and self._is_cursor_over_overlay()
+        ):
+            self.logger.info("auto_selection_ignored overlay_hover")
+            return
+
+        # A previous result is always-on-top. Hide it before Ctrl+C so it
+        # cannot cover the user's selection or become the active window while
+        # the foreground application publishes the copied text.
+        self._hide_overlay_for_selection()
+
+        try:
+            selected = self.selection_manager.get_selected_text()
+        except SelectionError as exc:
+            self.logger.info(
+                "selection_failed error_type=%s",
+                type(exc).__name__,
+            )
+            self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
+            return
+        except Exception as exc:
+            self._log_exception("selection_unexpected_error", exc)
+            self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
+            return
+
+        self.logger.info(
+            "selection_captured text_length=%s provider=%s",
+            len(selected.text),
+            selected.provider,
+        )
+        self._last_source_text = selected.text
+
+        try:
+            translatable_text = self._prepare_selected_text(selected.text)
+        except TextNormalizationError as exc:
+            self.logger.info(
+                "input_text_rejected error_type=%s",
+                type(exc).__name__,
+            )
+            self._show_translation_error(INPUT_TEXT_ERROR_TEXT, "InputError")
+            return
+
+        self._submit_translation(translatable_text)
+
+    def _prepare_selected_text(self, source_text: object | None) -> str:
+        """Normalize and cap a selected string before showing/loading it."""
+
+        prepare_source_text = getattr(
+            self.translation_manager,
+            "prepare_source_text",
+            None,
+        )
+        if callable(prepare_source_text):
+            prepared = prepare_source_text(source_text, truncate=True)
+            if len(str(source_text or "")) > len(prepared):
+                self.logger.info(
+                    "selection_truncated max_length=%s",
+                    getattr(
+                        getattr(self.translation_manager, "text_normalizer", None),
+                        "max_length",
+                        len(prepared),
+                    ),
+                )
+            return prepared
+        return "" if source_text is None else str(source_text)
+
+    def _submit_translation(self, source_text: str) -> None:
+        """Submit translation work without blocking the Qt GUI thread."""
+
+        if self._shutdown:
+            return
+
+        request_id = self._request_versions.next_request_id()
+        task = TranslationTask(
+            self.translation_manager,
+            source_text,
+            request_id=request_id,
+            logger=self.logger,
+        )
+        task.signals.succeeded.connect(self._on_translation_task_succeeded)
+        task.signals.failed.connect(self._on_translation_task_failed)
+        task.signals.finished.connect(self._on_translation_task_finished)
+        self._translation_tasks.add(task)
+        self.logger.info(
+            "translation_submitted request_id=%s text_length=%s",
+            request_id,
+            len(source_text),
+        )
+
+        try:
+            self._show_translation_loading(source_text)
+            self.translation_pool.start(task)
+        except Exception as exc:
+            # QThreadPool normally accepts the task immediately, but preserve
+            # the same safe UI behavior if a custom/injected pool rejects it.
+            self._translation_tasks.discard(task)
+            self._log_exception("translation_task_start_failed", exc)
+            self._show_translation_error(
+                TRANSLATION_ERROR_TEXT,
+                "TranslationError",
+            )
+
+    def _show_translation_loading(self, source_text: str) -> None:
+        """Display the animated loading card while the worker is running."""
+
+        show_loading = getattr(self.overlay_manager, "show_loading", None)
+        if not callable(show_loading):
+            return
+        try:
+            show_loading(
+                source_text,
+                getattr(
+                    self.translation_manager,
+                    "default_source_language",
+                    "auto",
+                ),
+                getattr(
+                    self.translation_manager,
+                    "default_target_language",
+                    "zh-CN",
+                ),
+            )
+        except Exception as exc:
+            self._log_exception("translation_loading_display_failed", exc)
+            return
+        self._overlay_visible = True
+        self._safe_call(
+            "tray_overlay_visibility_update_failed",
+            self.tray_manager.set_overlay_visible,
+            True,
+        )
+        self.logger.info("translation_loading_displayed")
+
+    def _on_translation_task_succeeded(self, result: object) -> None:
+        """Handle a worker result on the GUI thread only."""
+
+        if self._shutdown:
+            return
+        if not isinstance(result, TranslationResult):
+            self.logger.error(
+                "translation_unexpected_result result_type=%s",
+                type(result).__name__,
+            )
+            return
+        if not self._request_versions.is_latest(result.request_id):
+            self.logger.debug(
+                "translation_result_discarded request_id=%s latest_request_id=%s",
+                result.request_id,
+                self.latest_request_id,
+            )
+            return
+        self._show_translation(
+            result.translated_text,
+            source_text=result.source_text,
+            source_language=result.source_language,
+            target_language=result.target_language,
+        )
+
+    def _on_translation_task_failed(self, failure: object) -> None:
+        """Convert a worker exception into a safe, user-facing result."""
+
+        if self._shutdown:
+            return
+        if not isinstance(failure, TranslationTaskFailure):
+            self.logger.error(
+                "translation_unexpected_failure failure_type=%s",
+                type(failure).__name__,
+            )
+            return
+        if not self._request_versions.is_latest(failure.request_id):
+            self.logger.debug(
+                "translation_failure_discarded request_id=%s latest_request_id=%s",
+                failure.request_id,
+                self.latest_request_id,
+            )
+            return
+
+        error = failure.error
+        if isinstance(error, TextNormalizationError):
+            self.logger.info(
+                "input_text_rejected error_type=%s",
+                type(error).__name__,
+            )
+            self._show_translation_error(INPUT_TEXT_ERROR_TEXT, "InputError")
+            return
+        if isinstance(error, TranslationError):
+            self.logger.info(
+                "translation_failed error_type=%s",
+                type(error).__name__,
+            )
+            self._show_translation_error(TRANSLATION_ERROR_TEXT, "TranslationError")
+            return
+
+        self.logger.error(
+            "translation_unexpected_error error_type=%s",
+            type(error).__name__,
+        )
+
+    def _on_translation_task_finished(self, task: object) -> None:
+        """Release the controller's keep-alive reference for a completed task."""
+
+        if isinstance(task, TranslationTask):
+            self._translation_tasks.discard(task)
+
+    def _hide_overlay_for_selection(self) -> None:
+        """Remove the previous result before asking another app to copy."""
+
+        if not self._overlay_visible:
+            return
+        self._error_hide_timer.stop()
+        try:
+            self.overlay_manager.hide_overlay()
+        except Exception as exc:
+            self._log_exception("overlay_hide_for_selection_failed", exc)
+        self._overlay_visible = False
+        try:
+            self.tray_manager.set_overlay_visible(False)
+        except Exception as exc:
+            self._log_exception("tray_visibility_update_failed", exc)
+        self.logger.info("overlay_hidden_for_selection")
+
+    def _show_translation(
+        self,
+        translated_text: str,
+        *,
+        source_text: str = "",
+        source_language: str = "auto",
+        target_language: str = "zh-CN",
+    ) -> None:
+        self._error_hide_timer.stop()
+        try:
+            show_translation = getattr(
+                self.overlay_manager,
+                "show_translation",
+                None,
+            )
+            if callable(show_translation):
+                show_translation(
+                    source_text,
+                    translated_text,
+                    source_language,
+                    target_language,
+                )
+            else:
+                self.overlay_manager.show_text(translated_text)
+        except Exception as exc:
+            self._log_exception("translation_display_failed", exc)
+            return
+        self._last_translation_text = translated_text
+        self._overlay_visible = True
+        try:
+            self.tray_manager.set_overlay_visible(True)
+        except Exception as exc:
+            self._log_exception("tray_visibility_update_failed", exc)
+        self.logger.info(
+            "translation_displayed text_length=%s",
+            len(translated_text),
+        )
+
+    def _show_translation_error(self, message: str, error_type: str) -> None:
+        """Display a safe provider error without exposing SDK details."""
+
+        self._error_hide_timer.stop()
+        try:
+            self.overlay_manager.show_text(message)
+        except Exception as exc:
+            self._log_exception("translation_error_display_failed", exc)
+            return
+        self._overlay_visible = True
+        try:
+            self.tray_manager.set_overlay_visible(True)
+        except Exception as exc:
+            self._log_exception("tray_visibility_update_failed", exc)
+        self._error_hide_timer.start(ERROR_DISPLAY_MILLISECONDS)
+        self.logger.info(
+            "translation_error_displayed error_type=%s",
+            error_type,
+        )
+
+    def _synchronize_tray_state(self) -> None:
+        self._safe_call(
+            "tray_translation_state_sync_failed",
+            self.tray_manager.set_translation_enabled,
+            self._translation_enabled,
+        )
+        self._safe_call(
+            "tray_auto_selection_state_sync_failed",
+            self.tray_manager.set_auto_selection_enabled,
+            self._auto_selection_enabled,
+        )
+        try:
+            overlay_locked = bool(self.overlay_manager.is_locked)
+        except Exception as exc:
+            self._log_exception("overlay_lock_state_sync_failed", exc)
+            overlay_locked = False
+        self._safe_call(
+            "tray_overlay_lock_state_sync_failed",
+            self.tray_manager.set_overlay_locked,
+            overlay_locked,
+        )
+        self._safe_call(
+            "tray_overlay_visibility_sync_failed",
+            self.tray_manager.set_overlay_visible,
+            self._overlay_visible,
+        )
+
+    def _enable_translation(self) -> None:
+        self._translation_enabled = True
+        self._safe_call(
+            "tray_translation_enable_failed",
+            self.tray_manager.set_translation_enabled,
+            True,
+        )
+        self.logger.info("translation_enabled")
+
+    def _pause_translation(self) -> None:
+        self._translation_enabled = False
+        self._safe_call(
+            "tray_translation_pause_failed",
+            self.tray_manager.set_translation_enabled,
+            False,
+        )
+        self.logger.info("translation_paused")
+
+    def _start_auto_selection(self) -> bool:
+        """Start the optional mouse listener while keeping the tray usable."""
+
+        try:
+            started = self.mouse_selection_manager.start()
+        except Exception as exc:
+            self._auto_selection_enabled = False
+            self._safe_call(
+                "tray_auto_selection_state_update_failed",
+                self.tray_manager.set_auto_selection_enabled,
+                False,
+            )
+            self._log_exception("mouse_selection_start_failed", exc)
+            return False
+
+        if not started:
+            self._auto_selection_enabled = False
+            self._safe_call(
+                "tray_auto_selection_state_update_failed",
+                self.tray_manager.set_auto_selection_enabled,
+                False,
+            )
+            self.logger.error("mouse_selection_start_failed error_type=Unknown")
+            return False
+
+        self._auto_selection_enabled = True
+        self._safe_call(
+            "tray_auto_selection_state_update_failed",
+            self.tray_manager.set_auto_selection_enabled,
+            True,
+        )
+        self.logger.info("mouse_selection_started")
+        return True
+
+    def _set_auto_selection(self, enabled: bool) -> None:
+        """Enable or disable automatic mouse-selection mode from the tray."""
+
+        if enabled:
+            self._start_auto_selection()
+            return
+
+        try:
+            self.mouse_selection_manager.stop()
+        except Exception as exc:
+            self._log_exception("mouse_selection_stop_failed", exc)
+        self._auto_selection_enabled = False
+        self._safe_call(
+            "tray_auto_selection_state_update_failed",
+            self.tray_manager.set_auto_selection_enabled,
+            False,
+        )
+        self.logger.info("mouse_selection_stopped")
+
+    def _lock_overlay(self) -> None:
+        try:
+            locked = bool(self.overlay_manager.lock_overlay())
+        except Exception as exc:
+            self._log_exception("overlay_lock_failed", exc)
+            return
+        if locked:
+            self._safe_call(
+                "tray_overlay_lock_state_update_failed",
+                self.tray_manager.set_overlay_locked,
+                True,
+            )
+            self.logger.info("overlay_locked")
+        else:
+            self.logger.warning("overlay_lock_failed")
+
+    def _unlock_overlay(self) -> None:
+        try:
+            unlocked = bool(self.overlay_manager.unlock_overlay())
+        except Exception as exc:
+            self._log_exception("overlay_unlock_failed", exc)
+            return
+        if unlocked:
+            self._safe_call(
+                "tray_overlay_lock_state_update_failed",
+                self.tray_manager.set_overlay_locked,
+                False,
+            )
+            self.logger.info("overlay_unlocked")
+        else:
+            self.logger.warning("overlay_unlock_failed")
+
+    def _show_test_text(self) -> None:
+        try:
+            self.overlay_manager.show_text(DEFAULT_TEST_TEXT)
+        except Exception as exc:
+            self._log_exception("overlay_test_text_failed", exc)
+            return
+        self._last_translation_text = DEFAULT_TEST_TEXT
+        self._overlay_visible = True
+        self._safe_call(
+            "tray_overlay_visibility_update_failed",
+            self.tray_manager.set_overlay_visible,
+            True,
+        )
+        self.logger.info("overlay_test_text_shown")
+
+    def _hide_overlay(self) -> None:
+        try:
+            self.overlay_manager.hide_overlay()
+        except Exception as exc:
+            self._log_exception("overlay_hide_failed", exc)
+        self._overlay_visible = False
+        self._safe_call(
+            "tray_overlay_visibility_update_failed",
+            self.tray_manager.set_overlay_visible,
+            False,
+        )
+        self.logger.info("overlay_hidden")
+
+    def _exit_application(self) -> None:
+        self.logger.info("exit_requested")
+        self.application.quit()

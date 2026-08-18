@@ -13,6 +13,8 @@ from app.models.translation import TranslationRequest, TranslationResult
 from app.translation.errors import WebTranslationError
 from app.translation import google_web_provider as web_module
 from app.translation.google_web_provider import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_MIN_INTERVAL_SECONDS,
     GoogleWebTranslationProvider,
     WEB_TRANSLATION_TYPES,
     WebResponse,
@@ -27,6 +29,11 @@ def _request() -> TranslationRequest:
         target_language="zh-CN",
         request_id=7,
     )
+
+
+def test_live_translation_defaults_include_bounded_retry_and_spacing() -> None:
+    assert DEFAULT_MAX_RETRIES == 1
+    assert DEFAULT_MIN_INTERVAL_SECONDS >= 0.1
 
 
 def test_web_provider_builds_request_and_parses_segments() -> None:
@@ -172,6 +179,53 @@ def test_persistent_requester_reuses_the_warm_connection(monkeypatch) -> None:
     assert second.status_code == 200
     assert len(created) == 1
     assert created[0].request_count == 2
+    transport.close()
+
+
+def test_persistent_requester_reconnects_once_when_reused_socket_is_stale(monkeypatch) -> None:
+    created: list[object] = []
+
+    class FakeResponse:
+        status = 200
+        will_close = False
+
+        def read(self):
+            return b"[]"
+
+    class FakeConnection:
+        def __init__(self, ordinal: int) -> None:
+            self.ordinal = ordinal
+            self.request_count = 0
+            self.timeout = None
+
+        def request(self, *_args, **_kwargs) -> None:
+            self.request_count += 1
+            # The first connection works once, then simulates a server-closed
+            # idle keep-alive socket when the second translation reuses it.
+            if self.ordinal == 0 and self.request_count == 2:
+                raise OSError("stale keep-alive")
+
+        def getresponse(self):
+            return FakeResponse()
+
+        def close(self) -> None:
+            pass
+
+    def make_connection(*_args, **_kwargs):
+        connection = FakeConnection(len(created))
+        created.append(connection)
+        return connection
+
+    monkeypatch.setattr(web_module, "HTTPSConnection", make_connection)
+    transport = web_module._PersistentWebRequester()
+
+    assert transport("https://example.test/translate?q=one", {}, 2.0).status_code == 200
+    second = transport("https://example.test/translate?q=two", {}, 2.0)
+
+    assert second.status_code == 200
+    assert len(created) == 2
+    assert created[0].request_count == 2
+    assert created[1].request_count == 1
     transport.close()
 
 

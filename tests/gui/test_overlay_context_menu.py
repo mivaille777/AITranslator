@@ -7,6 +7,11 @@ from unittest.mock import MagicMock
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QAction, QMouseEvent
 
+from app.overlay.context_menu import (
+    SETTINGS_MENU_MAX_HEIGHT,
+    SETTINGS_MENU_MAX_VISIBLE_ITEMS,
+    ScrollableSettingsMenu,
+)
 from app.overlay.manager import OverlayManager
 from app.overlay.window import OverlayWindow
 
@@ -50,6 +55,42 @@ def test_settings_submenu_emits_ai_settings_action(qtbot) -> None:
     window.context_menu.actions_by_name["ai_settings"].trigger()
 
     assert ("ai_settings", None) in events
+
+
+def test_settings_submenu_is_bounded_and_scrolls_when_items_exceed_limit(
+    qtbot,
+) -> None:
+    window = OverlayWindow(win32_adapter=MagicMock())
+    qtbot.addWidget(window)
+    menu = window.context_menu.settings_menu
+
+    assert isinstance(menu, ScrollableSettingsMenu)
+    assert menu.maximumHeight() == SETTINGS_MENU_MAX_HEIGHT
+    assert menu.visible_item_limit == SETTINGS_MENU_MAX_VISIBLE_ITEMS
+    assert (
+        menu.scroll_area.verticalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )
+    assert not menu.has_overflow
+
+    # Add enough future-style settings rows to exceed the visible row cap.
+    # They intentionally remain plain QAction objects so the scroll container
+    # exercises the same rendering path as production settings actions.
+    for index in range(SETTINGS_MENU_MAX_VISIBLE_ITEMS + 4):
+        action = QAction(f"Extra setting {index}", menu)
+        action.setObjectName(f"ExtraSetting{index}Action")
+        menu.add_scrollable_action(action)
+
+    assert menu.has_overflow
+    menu.popup(QPoint(100, 100))
+    qtbot.wait(30)
+
+    assert menu.height() <= SETTINGS_MENU_MAX_HEIGHT
+    qtbot.waitUntil(
+        lambda: menu.scroll_area.verticalScrollBar().maximum() > 0,
+        timeout=1000,
+    )
+    menu.close()
 
 
 def test_context_menu_has_no_shortcuts_and_uses_compact_width(qtbot) -> None:

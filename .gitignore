@@ -20,6 +20,7 @@ config/user.toml
 config/translation_cache.sqlite3*
 config/*.sqlite3-shm
 config/*.sqlite3-wal
+config/chat_history.json
 
 *.log
 

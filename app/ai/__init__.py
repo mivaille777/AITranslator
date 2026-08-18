@@ -16,6 +16,11 @@ from app.ai.errors import (
     AITimeoutError,
 )
 from app.ai.models import AITextAction, AITextRequest, AITextResult
+from app.ai.prompts import (
+    POLISH_STYLE_INSTRUCTIONS,
+    build_polish_prompt,
+    build_translate_prompt,
+)
 
 
 __all__ = [
@@ -32,5 +37,8 @@ __all__ = [
     "DEFAULT_DEEPSEEK_MODEL",
     "DEEPSEEK_BASE_URL",
     "DeepSeekClient",
+    "POLISH_STYLE_INSTRUCTIONS",
     "SUPPORTED_DEEPSEEK_MODELS",
+    "build_polish_prompt",
+    "build_translate_prompt",
 ]

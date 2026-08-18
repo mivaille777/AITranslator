@@ -15,6 +15,7 @@ from app.ai.errors import (
     AIResponseError,
     AITimeoutError,
 )
+from app.ai.models import AITextAction, AITextRequest, AITextResult
 
 
 __all__ = [
@@ -25,6 +26,9 @@ __all__ = [
     "AIRateLimitError",
     "AIResponseError",
     "AITimeoutError",
+    "AITextAction",
+    "AITextRequest",
+    "AITextResult",
     "DEFAULT_DEEPSEEK_MODEL",
     "DEEPSEEK_BASE_URL",
     "DeepSeekClient",

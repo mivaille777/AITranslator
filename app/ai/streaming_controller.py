@@ -22,6 +22,7 @@ from app.infrastructure.settings import SettingsManager
 
 STREAM_CHAT_ERROR_TEXT = "AI 对话请求失败。"
 STREAM_CHAT_CONFIG_ERROR_TEXT = "请先在“设置 → AI 大模型与 API Key”中完成模型配置。"
+STARTUP_OVERLAY_TEXT = "等待划词翻译…"
 
 
 class StreamingResizableAIAppController(
@@ -64,10 +65,29 @@ class StreamingResizableAIAppController(
         was_started = self._started
         super().start(start_hotkey=start_hotkey)
         if not was_started and self._started and not self._shutdown:
+            self._show_startup_overlay()
+
+    def _show_startup_overlay(self) -> None:
+        """Show a normal ready card instead of the old internal test subtitle."""
+
+        if self._last_translation_text:
             self._show_overlay_from_tray()
+            return
+        try:
+            self.overlay_manager.show_text(STARTUP_OVERLAY_TEXT)
+        except Exception as exc:
+            self._log_exception("overlay_startup_show_failed", exc)
+            return
+        self._overlay_visible = True
+        self._safe_call(
+            "tray_overlay_visibility_update_failed",
+            self.tray_manager.set_overlay_visible,
+            True,
+        )
+        self.logger.info("overlay_startup_ready_shown")
 
     def _show_overlay_from_tray(self) -> None:
-        """Reveal the current Overlay content without replacing it with test text."""
+        """Reveal the current Overlay content without replacing it."""
 
         try:
             self.overlay_manager.show_overlay()
@@ -260,6 +280,7 @@ class StreamingResizableAIAppController(
 
 
 __all__ = [
+    "STARTUP_OVERLAY_TEXT",
     "STREAM_CHAT_CONFIG_ERROR_TEXT",
     "STREAM_CHAT_ERROR_TEXT",
     "StreamingResizableAIAppController",

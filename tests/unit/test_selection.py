@@ -355,6 +355,59 @@ def test_native_clipboard_adapter_reads_and_restores_text_without_qt(
     assert FakeNativeClipboard.text == "original text"
 
 
+def test_native_clipboard_adapter_preserves_image_mime_formats(monkeypatch) -> None:
+    class FakeNativeClipboard:
+        @classmethod
+        def OpenClipboard(cls) -> None:
+            return None
+
+        @classmethod
+        def CloseClipboard(cls) -> None:
+            return None
+
+        @classmethod
+        def EnumClipboardFormats(cls, current: int) -> int:
+            return 8 if current == 0 else 0  # CF_DIB
+
+        @classmethod
+        def IsClipboardFormatAvailable(cls, _format_id: int) -> bool:
+            return False
+
+        @classmethod
+        def GetClipboardData(cls, _format_id: int) -> str:
+            return ""
+
+    monkeypatch.setitem(sys.modules, "win32clipboard", FakeNativeClipboard)
+    monkeypatch.setitem(
+        sys.modules,
+        "win32con",
+        SimpleNamespace(CF_UNICODETEXT=13, CF_TEXT=1, CF_OEMTEXT=7),
+    )
+
+    image_data = QMimeData()
+    image_data.setData("image/png", b"screenshot-bytes")
+    clipboard = FakeQtClipboard(image_data)
+
+    from app.selection.clipboard_adapter import ClipboardAdapter
+
+    adapter = ClipboardAdapter(
+        sequence_number_reader=lambda: 1,
+        restore_attempts=1,
+        platform_name="win32",
+    )
+    # Keep native text access and Qt MIME access separate, as they are on the
+    # real Windows path, while allowing this test to control both stores.
+    adapter._clipboard_object = clipboard
+
+    snapshot = adapter.snapshot()
+    assert any(name == "image/png" for name, _ in snapshot.formats)
+
+    clipboard.setMimeData(QMimeData())
+    adapter.restore(snapshot)
+
+    assert clipboard.mimeData().data("image/png") == b"screenshot-bytes"
+
+
 class FakeProvider(SelectionProvider):
     def get_selected_text(self) -> SelectedText:
         return SelectedText("manager result")
@@ -364,3 +417,4 @@ def test_selection_manager_returns_selected_text_from_provider() -> None:
     selected = SelectionManager(provider=FakeProvider()).get_selected_text()
 
     assert selected == SelectedText("manager result")
+

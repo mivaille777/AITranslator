@@ -72,20 +72,19 @@ class ClipboardAdapter:
         # QClipboard uses OLE to read and write Windows clipboard data. Some
         # Chromium versions keep private MIME formats open for a short time,
         # which can make an otherwise harmless Qt restore fail. The native
-        # path deliberately snapshots text only, the data this application
-        # needs and can reliably restore without touching browser-private
-        # formats.
+        # path therefore stays text-only for ordinary text, but captures safe
+        # Qt MIME formats when a non-text payload such as a screenshot exists.
         if self._native_windows:
-            return ClipboardSnapshot((), text=self.read_text())
+            text = self.read_text()
+            formats = (
+                self._read_qt_formats()
+                if self._native_clipboard_has_non_text_data()
+                else ()
+            )
+            return ClipboardSnapshot(formats, text=text)
 
-        mime_data = self.clipboard.mimeData()
         text = self.read_text()
-        formats: list[tuple[str, bytes]] = []
-        if mime_data is not None:
-            for mime_format in mime_data.formats():
-                formats.append(
-                    (str(mime_format), bytes(mime_data.data(mime_format)))
-                )
+        formats = list(self._read_qt_formats())
 
         # Some clipboard implementations expose text without listing a MIME
         # format. Keep a restorable text representation in that case.
@@ -131,8 +130,31 @@ class ClipboardAdapter:
         """Restore a snapshot while tolerating browser-owned clipboard data."""
 
         if self._native_windows:
+            if snapshot.formats:
+                self._restore_qt_formats(snapshot)
+                return
             self._restore_native_text(snapshot.text)
             return
+
+        self._restore_qt_formats(snapshot)
+
+    def _read_qt_formats(self) -> tuple[tuple[str, bytes], ...]:
+        """Serialize the current Qt MIME payload when a GUI clipboard exists."""
+
+        try:
+            mime_data = self.clipboard.mimeData()
+        except Exception:
+            return ()
+        formats: list[tuple[str, bytes]] = []
+        if mime_data is not None:
+            for mime_format in mime_data.formats():
+                formats.append(
+                    (str(mime_format), bytes(mime_data.data(mime_format)))
+                )
+        return tuple(formats)
+
+    def _restore_qt_formats(self, snapshot: ClipboardSnapshot) -> None:
+        """Restore safe MIME payloads and verify text or non-text formats."""
 
         safe_formats = tuple(
             (mime_format, payload)
@@ -149,7 +171,15 @@ class ClipboardAdapter:
                 for mime_format, payload in safe_formats:
                     mime_data.setData(mime_format, QByteArray(payload))
                 self.clipboard.setMimeData(mime_data)
-                if self.read_text() == snapshot.text:
+                current_formats = {
+                    str(item) for item in self.clipboard.mimeData().formats()
+                }
+                expected_formats = {mime_format for mime_format, _ in safe_formats}
+                formats_restored = (
+                    not expected_formats
+                    or bool(expected_formats.intersection(current_formats))
+                )
+                if formats_restored and self.read_text() == snapshot.text:
                     return
             except Exception as exc:
                 last_error = exc
@@ -160,6 +190,30 @@ class ClipboardAdapter:
         if last_error is not None:
             raise RuntimeError("clipboard restore failed") from last_error
         raise RuntimeError("clipboard restore could not be verified")
+
+    def _native_clipboard_has_non_text_data(self) -> bool:
+        """Check for non-text formats without asking Qt to materialize them."""
+
+        def has_non_text(clipboard_module: Any, constants: Any) -> bool:
+            text_formats = {
+                getattr(constants, "CF_TEXT", 1),
+                getattr(constants, "CF_OEMTEXT", 7),
+                getattr(constants, "CF_UNICODETEXT", 13),
+            }
+            format_id = 0
+            while True:
+                format_id = int(clipboard_module.EnumClipboardFormats(format_id))
+                if not format_id:
+                    return False
+                if format_id not in text_formats:
+                    return True
+
+        try:
+            return bool(self._native_clipboard_call(has_non_text))
+        except Exception:
+            # A locked or unsupported clipboard should not prevent the text
+            # selection fallback from proceeding.
+            return False
 
     def _read_native_text(self) -> str:
         """Read CF_UNICODETEXT without asking Qt/OLE to materialize MIME data."""
@@ -278,3 +332,4 @@ class ClipboardAdapter:
     get_text = read_text
     set_text = write_text
     change_token = get_change_token
+

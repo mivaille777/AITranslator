@@ -54,6 +54,7 @@ def _make_manager(
     clock: FakeClock | None = None,
     debounce_seconds: float = 0.25,
     overlay_hit_test=None,
+    foreground_executable_reader=lambda: None,
 ):
     listener = FakeMouseListener()
 
@@ -67,6 +68,7 @@ def _make_manager(
         clock=clock or FakeClock(),
         debounce_seconds=debounce_seconds,
         overlay_hit_test=overlay_hit_test,
+        foreground_executable_reader=foreground_executable_reader,
     )
     return manager, listener
 
@@ -101,6 +103,21 @@ def test_left_drag_and_release_emits_one_mouse_selection_trigger(qapp) -> None:
     assert len(events) == 1
     assert events[0].source == MOUSE_SELECTION_SOURCE
     assert events[0].hotkey == MOUSE_SELECTION_SOURCE
+    assert manager.state == MouseSelectionState.IDLE
+
+
+def test_drag_from_system_screen_capture_is_ignored(qapp) -> None:
+    manager, listener = _make_manager(
+        qapp,
+        foreground_executable_reader=lambda: r"C:\Windows\System32\SnippingTool.exe",
+    )
+    events: list[TranslationTriggerEvent] = []
+    manager.triggered.connect(events.append)
+    manager.start()
+
+    _drag(listener)
+
+    assert events == []
     assert manager.state == MouseSelectionState.IDLE
 
 
@@ -209,3 +226,4 @@ def test_dead_mouse_listener_is_restarted_by_health_check(qapp) -> None:
     assert len(listeners) == 2
     assert listeners[1].start_count == 1
     manager.stop()
+

@@ -68,14 +68,17 @@ class ClipboardSelectionProvider(SelectionProvider):
         selected: SelectedText | None = None
 
         try:
-            snapshot = self.clipboard_adapter.snapshot()
-            snapshot_captured = True
-
             # GlobalHotKeys invokes the callback while Alt is still physically
             # down. Give the modifier time to be released before sending Ctrl+C
-            # to the foreground application.
+            # to the foreground application. Do this before taking the
+            # snapshot so Windows screen-capture tools have time to publish an
+            # image to the clipboard before the temporary selection workflow
+            # starts.
             if self.copy_delay_seconds:
                 self._sleeper(self.copy_delay_seconds)
+
+            snapshot = self.clipboard_adapter.snapshot()
+            snapshot_captured = True
 
             # Comparing against the old clipboard is ambiguous when the user
             # selects exactly the text that was already on the clipboard. Put
@@ -171,3 +174,4 @@ class ClipboardSelectionProvider(SelectionProvider):
             self._sleeper(min(self.poll_interval_seconds, deadline - now))
 
         return False
+

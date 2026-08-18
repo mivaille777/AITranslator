@@ -22,3 +22,7 @@ config/*.sqlite3-shm
 config/*.sqlite3-wal
 
 *.log
+
+# Private development plan; keep it local and never publish it.
+Windows桌面划词翻译软件_架构技术路线与Codex分步提示词.md
+

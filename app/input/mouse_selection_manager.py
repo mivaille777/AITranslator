@@ -20,6 +20,24 @@ DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS = 0.25
 DEFAULT_DRAG_THRESHOLD_PIXELS = 4
 MOUSE_SELECTION_SOURCE = "mouse_selection"
 LOGGER_NAME = "desktop_translator"
+SCREEN_CAPTURE_PROCESS_NAMES = frozenset(
+    {
+        "screenclippinghost.exe",
+        "screensketch.exe",
+        "snippingtool.exe",
+    }
+)
+
+
+def _read_foreground_executable_name() -> str | None:
+    """Read the foreground process name without coupling startup to Win32."""
+
+    try:
+        from app.selection.foreground import ForegroundApplicationDetector
+
+        return ForegroundApplicationDetector().executable_name()
+    except Exception:
+        return None
 
 
 class MouseSelectionState(str, Enum):
@@ -52,6 +70,7 @@ class MouseSelectionManager(QObject):
         debounce_seconds: float | None = None,
         drag_threshold_pixels: int = DEFAULT_DRAG_THRESHOLD_PIXELS,
         overlay_hit_test: Callable[[int, int], bool] | None = None,
+        foreground_executable_reader: Callable[[], str | None] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         super().__init__(parent)
@@ -75,6 +94,9 @@ class MouseSelectionManager(QObject):
             overlay_hit_test
             if overlay_hit_test is not None
             else lambda _x, _y: False
+        )
+        self._foreground_executable_reader = (
+            foreground_executable_reader or _read_foreground_executable_name
         )
 
         self._lock = Lock()
@@ -298,6 +320,15 @@ class MouseSelectionManager(QObject):
                 self._state = MouseSelectionState.IDLE
                 return
 
+            screen_capture_process = self._screen_capture_process_name()
+            if screen_capture_process is not None:
+                self._state = MouseSelectionState.IDLE
+                self.logger.info(
+                    "auto_selection_ignored screen_capture process=%s",
+                    screen_capture_process,
+                )
+                return
+
             now = self._clock()
             if (
                 self._last_trigger_at is not None
@@ -335,6 +366,20 @@ class MouseSelectionManager(QObject):
             # overlay itself remains non-triggering when its hit test works.
             return False
 
+    def _screen_capture_process_name(self) -> str | None:
+        """Return a known Windows screen-capture foreground process name."""
+
+        try:
+            value = self._foreground_executable_reader()
+        except Exception:
+            return None
+        if not value:
+            return None
+        normalized = str(value).replace("\\", "/").rsplit("/", 1)[-1].casefold()
+        if normalized in SCREEN_CAPTURE_PROCESS_NAMES:
+            return normalized
+        return None
+
     def _reset_gesture_locked(self) -> None:
         self._state = MouseSelectionState.IDLE
         self._button_down = False
@@ -357,4 +402,6 @@ __all__ = [
     "MOUSE_SELECTION_SOURCE",
     "MouseSelectionManager",
     "MouseSelectionState",
+    "SCREEN_CAPTURE_PROCESS_NAMES",
 ]
+

@@ -151,6 +151,23 @@ class AgentWorkspaceAppController(EditableStreamingResizableAIAppController):
         )
         self.logger.info("agent_workspace_entered workspace=translation")
 
+    def _restore_agent_translation_surface(self, assistant_message: str = "") -> None:
+        """Re-show the translation workspace after temporary chat-side cleanup."""
+
+        if not self._agent_translation_active:
+            return
+        source_language, target_language = self._configured_language_pair()
+        try:
+            self.overlay_manager.show_translation(
+                self._last_source_text or "",
+                self._last_translation_text or "",
+                source_language,
+                target_language,
+            )
+            self.overlay_manager.enter_agent_translation_mode(assistant_message)
+        except Exception as exc:
+            self._log_exception("agent_translation_workspace_restore_failed", exc)
+
     def _return_from_agent_translation_workspace(
         self,
         conversation: Conversation | None = None,
@@ -269,9 +286,12 @@ class AgentWorkspaceAppController(EditableStreamingResizableAIAppController):
 
     def _stop_chat_generation(self) -> None:
         partial = self._active_stream_partial.strip()
+        was_agent_translation = self._agent_translation_active
         super()._stop_chat_generation()
-        if self._agent_translation_active:
-            if partial:
+        if was_agent_translation and self._agent_translation_active:
+            if not partial and self._is_ai_chat_open():
+                self._restore_agent_translation_surface()
+            elif partial:
                 self._chat_overlay_call(
                     "set_agent_workspace_reply",
                     partial,

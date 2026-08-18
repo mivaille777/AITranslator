@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QFont, QTextOption
-from PySide6.QtWidgets import QSizePolicy, QTextEdit
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QKeyEvent, QTextOption
+from PySide6.QtWidgets import QLabel, QSizePolicy, QTextEdit
 
 from app.ai.resizable_overlay import (
     ResizableConversationalAIOverlayManager,
@@ -18,6 +18,7 @@ from app.overlay.window import OverlayWindow
 
 
 MANUAL_TRANSLATION_DEBOUNCE_MILLISECONDS = 420
+TRANSLATION_STATUS_FEEDBACK_MILLISECONDS = 1100
 SOURCE_EDITOR_MIN_HEIGHT = 48
 SOURCE_EDITOR_MAX_HEIGHT = 150
 
@@ -25,12 +26,14 @@ SOURCE_EDITOR_MAX_HEIGHT = 150
 class EditableSourceTextEdit(QTextEdit):
     """Compact multiline source editor that grows before it starts scrolling."""
 
+    translate_now_requested = Signal()
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("OverlaySourceLabel")
         self.setAcceptRichText(False)
         self.setUndoRedoEnabled(True)
-        self.setPlaceholderText("输入原文，停顿后自动翻译…")
+        self.setPlaceholderText("输入原文，停顿后自动翻译…  Ctrl+Enter 立即翻译")
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
@@ -38,6 +41,15 @@ class EditableSourceTextEdit(QTextEdit):
         self.setMinimumHeight(SOURCE_EDITOR_MIN_HEIGHT)
         self.setMaximumHeight(SOURCE_EDITOR_MAX_HEIGHT)
         self.textChanged.connect(self.adjust_editor_height)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt override
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (
+            event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            event.accept()
+            self.translate_now_requested.emit()
+            return
+        super().keyPressEvent(event)
 
     def setText(self, text: str) -> None:  # noqa: N802 - QLabel compatibility
         """Keep the base Overlay's QLabel-style setter contract."""
@@ -95,7 +107,22 @@ class EditableResizableConversationalAIOverlayWindow(
                 max(8, min(18, round(self._font_size * 0.55))),
             )
         )
-        self._content_layout.insertWidget(max(0, index), self._source_editor)
+        source_index = max(0, index)
+        self._content_layout.insertWidget(source_index, self._source_editor)
+
+        self._translation_status_label = QLabel("", self._content)
+        self._translation_status_label.setObjectName("OverlayTranslationStatus")
+        self._translation_status_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._translation_status_label.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._translation_status_label.hide()
+        self._content_layout.insertWidget(source_index + 1, self._translation_status_label)
+        self._translation_status_timer = QTimer(self)
+        self._translation_status_timer.setSingleShot(True)
+        self._translation_status_timer.timeout.connect(
+            lambda: self.set_translation_status("")
+        )
 
         # The old presentation-only content container ignored all mouse input.
         # The source editor needs normal focus/selection/Ctrl+C behavior while
@@ -115,6 +142,9 @@ class EditableResizableConversationalAIOverlayWindow(
             self._emit_manual_source_translation
         )
         self._source_editor.textChanged.connect(self._on_source_editor_changed)
+        self._source_editor.translate_now_requested.connect(
+            self._translate_source_immediately
+        )
 
         self._source_editor_programmatic = True
         try:
@@ -130,24 +160,52 @@ class EditableResizableConversationalAIOverlayWindow(
     def source_editor(self) -> EditableSourceTextEdit:
         return self._source_editor
 
+    @property
+    def translation_status_label(self) -> QLabel:
+        return self._translation_status_label
+
     def _on_source_editor_changed(self) -> None:
         if self._source_editor_programmatic:
             return
         self._source_text = self._source_editor.toPlainText()
         self._source_editor.adjust_editor_height()
+        self.set_translation_status("输入中…")
         self._manual_translation_timer.start()
         if self._manual_size_locked:
             self._update_scroll_area_limits()
         else:
             self._resize_to_content(animate=False)
 
+    def _translate_source_immediately(self) -> None:
+        if self._source_editor_programmatic:
+            return
+        self._manual_translation_timer.stop()
+        self._emit_manual_source_translation()
+
     def _emit_manual_source_translation(self) -> None:
         if self._chat_open or not self._original_visible:
             return
-        self.context_action.emit(
-            "manual_source_text",
-            self._source_editor.toPlainText(),
+        text = self._source_editor.toPlainText()
+        self.set_translation_status("翻译中…" if text.strip() else "")
+        self.context_action.emit("manual_source_text", text)
+
+    def set_translation_status(
+        self,
+        status: object,
+        *,
+        auto_hide_ms: int = 0,
+    ) -> str:
+        text = str(status or "").strip()
+        self._translation_status_timer.stop()
+        self._translation_status_label.setText(text)
+        self._translation_status_label.setVisible(
+            bool(text) and self._original_visible and not self._chat_open
         )
+        if text and auto_hide_ms > 0:
+            self._translation_status_timer.start(int(auto_hide_ms))
+        if not self._manual_size_locked:
+            self._resize_to_content(animate=False)
+        return text
 
     def set_original_visible(self, visible: bool) -> bool:
         """Show an empty editor too, so users can type without prior selection."""
@@ -157,8 +215,22 @@ class EditableResizableConversationalAIOverlayWindow(
         if editor is not None:
             editor.setVisible(bool(visible))
             editor.adjust_editor_height()
+            self._translation_status_label.setVisible(
+                bool(visible) and bool(self._translation_status_label.text())
+            )
             self._resize_to_content(animate=False)
         return result
+
+    def open_chat(self, **kwargs: Any) -> None:
+        self._manual_translation_timer.stop()
+        self._translation_status_timer.stop()
+        self._translation_status_label.hide()
+        super().open_chat(**kwargs)
+
+    def close_chat(self) -> None:
+        super().close_chat()
+        if self._original_visible and self._translation_status_label.text():
+            self._translation_status_label.show()
 
     def _set_content(
         self,
@@ -249,6 +321,16 @@ class EditableResizableConversationalAIOverlayWindow(
             }}
             """
         )
+        self._translation_status_label.setStyleSheet(
+            f"""
+            QLabel#OverlayTranslationStatus {{
+                color: {palette['muted_text']};
+                background: transparent;
+                padding: 0px 4px 2px 4px;
+                font-size: 11px;
+            }}
+            """
+        )
 
     def _apply_theme(self, theme: str) -> None:
         super()._apply_theme(theme)
@@ -283,10 +365,17 @@ class EditableResizableConversationalAIOverlayManager(
             )
         super().__init__(window=window)
 
+    def set_translation_status(self, status: object, *, auto_hide_ms: int = 0) -> str:
+        callback = getattr(self.window, "set_translation_status", None)
+        if not callable(callback):
+            return ""
+        return str(callback(status, auto_hide_ms=auto_hide_ms))
+
 
 __all__ = [
     "EditableResizableConversationalAIOverlayManager",
     "EditableResizableConversationalAIOverlayWindow",
     "EditableSourceTextEdit",
     "MANUAL_TRANSLATION_DEBOUNCE_MILLISECONDS",
+    "TRANSLATION_STATUS_FEEDBACK_MILLISECONDS",
 ]

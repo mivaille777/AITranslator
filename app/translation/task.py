@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import logging
 from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
+from app.agent.workflow import DEFAULT_AGENT_GRAPH
 from app.infrastructure.logging import sanitized_exception_info
 from app.models.translation import TranslationResult
 from app.translation.errors import TranslationError
-from app.translation.manager import TranslationManager
 
 
 class TranslationTaskSignals(QObject):
@@ -39,7 +39,7 @@ class TranslationTaskFailure:
 
 
 class TranslationTask(QRunnable):
-    """Run one manager translation request on a ``QThreadPool`` worker."""
+    """Run one translation intent through the shared LangGraph workflow."""
 
     def __init__(
         self,
@@ -65,14 +65,12 @@ class TranslationTask(QRunnable):
         self.logger = logger or logging.getLogger("desktop_translator")
 
     def run(self) -> None:
-        """Execute the synchronous manager call on the pool's worker thread."""
+        """Execute the LangGraph translation branch on the pool worker."""
 
         try:
             result = self._translate()
             if not isinstance(result, TranslationResult):
                 raise TranslationError("translation task returned unsupported result")
-            if result.request_id != self.request_id:
-                result = replace(result, request_id=self.request_id)
             self.signals.succeeded.emit(result)
         except TranslationError as exc:
             self.logger.error(
@@ -85,9 +83,8 @@ class TranslationTask(QRunnable):
                 TranslationTaskFailure(request_id=self.request_id, error=exc)
             )
         except Exception as exc:
-            # A provider supplied by a plugin or a test may violate the
-            # manager boundary. Convert that failure before it reaches Qt so
-            # no exception escapes QRunnable::run and kills the process.
+            # A plugin/provider can still fail outside the graph's expected
+            # domain. Convert that failure before it reaches Qt.
             error = TranslationError("translation task failed")
             error.__cause__ = exc
             self.logger.error(
@@ -103,23 +100,14 @@ class TranslationTask(QRunnable):
             self.signals.finished.emit(self)
 
     def _translate(self) -> TranslationResult:
-        """Call compatible managers with or without language parameters."""
+        """Run the translation node while preserving injected-manager support."""
 
-        if isinstance(self.translation_manager, TranslationManager):
-            return self.translation_manager.translate(
-                self.source_text,
-                source_language=self.source_language,
-                target_language=self.target_language,
-                request_id=self.request_id,
-            )
-
-        if self.source_language is None and self.target_language is None:
-            return self.translation_manager.translate(self.source_text)
-
-        return self.translation_manager.translate(
+        return DEFAULT_AGENT_GRAPH.run_translation(
+            self.translation_manager,
             self.source_text,
             source_language=self.source_language,
             target_language=self.target_language,
+            request_id=self.request_id,
         )
 
 

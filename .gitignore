@@ -18,8 +18,10 @@ logs/*
 # Per-user settings are local state and must never be committed.
 config/user.toml
 config/translation_cache.sqlite3*
+config/chat_history.sqlite3*
 config/*.sqlite3-shm
 config/*.sqlite3-wal
+# Legacy JSON is no longer read, but keep any old local file untracked.
 config/chat_history.json
 
 *.log

@@ -48,6 +48,13 @@ class EditableStreamingResizableAIAppController(StreamingResizableAIAppControlle
         self._set_translation_status("")
         super()._open_ai_chat()
 
+    def _clear_ai_chat(self) -> None:
+        # Clearing a conversation is also a state transition. Invalidate the
+        # current chat request before the streaming controller cooperatively
+        # cancels it so any already-queued token/result signal becomes stale.
+        self._chat_request_versions.next_request_id()
+        super()._clear_ai_chat()
+
     def _on_overlay_context_action(self, key: str, value: object) -> None:
         if key == "manual_source_text":
             self._translate_manual_source(value)

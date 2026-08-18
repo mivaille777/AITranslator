@@ -62,6 +62,15 @@ class FakeCaptureOverlayManager:
         pass
 
 
+class FakeChatConfig:
+    def __init__(self, capture_enabled: bool) -> None:
+        self.capture_enabled = capture_enabled
+
+    def get(self, section: str, key: str, default=None):
+        if section == "ai" and key == "chat_selection_capture_enabled":
+            return self.capture_enabled
+        return default
+
 
 def test_chat_input_auto_inserts_selection_and_undo_restores_previous_text(
     qtbot,
@@ -125,6 +134,24 @@ def test_conversational_overlay_exposes_capture_state_and_insertion(qtbot) -> No
 
     window.close_chat()
     assert not window.is_chat_selection_capture_armed()
+
+
+def test_chat_selection_capture_can_be_disabled_from_settings(qtbot) -> None:
+    config = FakeChatConfig(capture_enabled=False)
+    window = SelectionCaptureConversationalAIOverlayWindow(
+        win32_adapter=MagicMock(),
+        config_manager=config,
+    )
+    qtbot.addWidget(window)
+    window.open_chat(provider="DeepSeek", model="deepseek-v4-flash")
+    window.chat_panel.focus_input()
+
+    # The UI may still have a caret, but the runtime setting vetoes routing
+    # external mouse selections into the Chat input.
+    assert window.chat_panel.selection_capture_armed
+    assert not window.is_chat_selection_capture_armed()
+    assert not window.insert_chat_selection("must not be inserted")
+    assert "must not be inserted" not in window.chat_panel.input_edit.toPlainText()
 
 
 def test_mouse_selection_is_routed_to_armed_chat_instead_of_translation(qapp) -> None:

@@ -3,7 +3,7 @@
 This module extends the existing :class:`app.controller.AppController` instead
 of duplicating the mature selection/translation/tray logic. AI work therefore
 shares the controller's request-version sequence and QThreadPool while keeping
-DeepSeek-specific details below :class:`AITextService`.
+provider-specific details below :class:`AITextService`.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.ai.errors import AIConfigurationError, AIError
+from app.ai.factory import create_ai_text_service
 from app.ai.models import AITextAction, AITextRequest, AITextResult
 from app.ai.overlay import AIOverlayManager
 from app.ai.service import AITextService
@@ -21,7 +22,7 @@ from app.translation.errors import TextNormalizationError
 
 
 AI_ERROR_TEXT = "AIError: AI request failed."
-AI_CONFIG_ERROR_TEXT = "AIConfigError: configure DEEPSEEK_API_KEY to use AI features."
+AI_CONFIG_ERROR_TEXT = "AIConfigError: 请在“设置 → AI 大模型”中配置 Provider 和 API Key。"
 AI_INPUT_ERROR_TEXT = "InputError: no source text is available for AI processing."
 AI_TRANSLATING_TEXT = "AI 翻译中…"
 AI_POLISHING_TEXT = "AI 润色中…"
@@ -31,10 +32,9 @@ AI_POLISH_DISPLAY_TARGET = "润色"
 class AIAppController(AppController):
     """Add asynchronous AI translation/polish actions to ``AppController``.
 
-    The DeepSeek-backed service is created lazily. This is important for the
-    normal desktop startup and ``--smoke-test`` path: users who only use the
-    existing Google translation flow do not need an API key just to launch the
-    application.
+    The configured provider service is created lazily. Users who only use the
+    existing Google translation flow do not need an AI credential just to
+    launch the application.
     """
 
     def __init__(
@@ -43,8 +43,6 @@ class AIAppController(AppController):
         ai_service: AITextService | Any | None = None,
         **kwargs: Any,
     ) -> None:
-        # Resolve the normal settings object once so the AI-aware Overlay uses
-        # the exact same runtime visual/language configuration as AppController.
         if kwargs.get("overlay_manager") is None:
             resolved_config = kwargs.get("config_manager")
             if resolved_config is None:
@@ -56,15 +54,36 @@ class AIAppController(AppController):
 
         super().__init__(*args, **kwargs)
         self.ai_service: AITextService | Any | None = ai_service
+        self._ai_service_injected = ai_service is not None
         self._ai_tasks: set[AITextTask] = set()
         self._ai_shutdown_complete = False
 
     def _ensure_ai_service(self) -> AITextService | Any:
-        """Create the default DeepSeek service only when an AI action is used."""
+        """Create the selected provider service only when an AI action is used."""
 
         if self.ai_service is None:
-            self.ai_service = AITextService()
+            self.ai_service = create_ai_text_service(self.config_manager)
         return self.ai_service
+
+    def _reset_configured_ai_service(self) -> None:
+        """Drop the lazily built service so saved provider settings take effect."""
+
+        if self._ai_service_injected:
+            return
+        service = self.ai_service
+        close = getattr(service, "close", None) if service is not None else None
+        if callable(close):
+            try:
+                close()
+            except Exception as exc:
+                self._log_exception("ai_service_reconfigure_close_failed", exc)
+        self.ai_service = None
+
+    def _apply_runtime_settings(self) -> None:
+        """Apply legacy runtime settings and refresh the configured AI provider."""
+
+        super()._apply_runtime_settings()
+        self._reset_configured_ai_service()
 
     def _on_overlay_context_action(self, key: str, value: object) -> None:
         """Handle AI semantic actions, delegating every legacy action unchanged."""
@@ -150,8 +169,6 @@ class AIAppController(AppController):
 
         try:
             self._show_ai_loading(request)
-            # Reuse the existing pool so shutdown semantics and concurrency
-            # limits remain centralized in one controller-owned resource.
             self.translation_pool.start(task)
         except Exception as exc:
             self._ai_tasks.discard(task)

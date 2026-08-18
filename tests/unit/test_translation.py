@@ -65,6 +65,15 @@ def test_translation_manager_rejects_text_over_configured_limit() -> None:
         manager.translate("123456")
 
 
+def test_translation_manager_prepares_truncated_selection_text() -> None:
+    manager = TranslationManager(
+        provider=FakeTranslationProvider(),
+        max_text_length=5,
+    )
+
+    assert manager.prepare_source_text("123456", truncate=True) == "12345"
+
+
 def test_translation_manager_uses_lazy_web_provider_by_default() -> None:
     manager = TranslationManager()
 
@@ -116,4 +125,3 @@ def test_translation_manager_rejects_empty_result() -> None:
 
     with pytest.raises(TranslationError, match="translated text is empty"):
         manager.translate("hello")
-

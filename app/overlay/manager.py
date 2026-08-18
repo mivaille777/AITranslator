@@ -86,6 +86,13 @@ class OverlayManager:
     def hide_overlay(self) -> None:
         self.window.hide_overlay()
 
+    def refresh_layout(self) -> None:
+        """Reflow the managed window after a modal dialog closes."""
+
+        refresh = getattr(self.window, "refresh_layout", None)
+        if callable(refresh):
+            refresh()
+
     def connect_context_menu(self, callback) -> bool:
         """Connect semantic context-menu events from the real Overlay window."""
 

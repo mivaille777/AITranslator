@@ -129,6 +129,29 @@ def test_auto_selection_allows_repeating_same_normalized_text(
         controller.shutdown()
 
 
+def test_auto_selection_truncates_text_to_translation_limit(qapp, qtbot) -> None:
+    selection = FakeSelectionManager(["123456789"])
+    mouse_manager = FakeMouseSelectionManager(qapp)
+    controller, overlay, _tray, logger = _make_controller(
+        qapp,
+        selection_manager=selection,
+        mouse_manager=mouse_manager,
+    )
+    controller.translation_manager.text_normalizer.max_length = 5
+
+    try:
+        mouse_manager.triggered.emit(_auto_event())
+        qtbot.waitUntil(
+            lambda: overlay.shown_text == ["[TEST TRANSLATION] 12345"],
+            timeout=2000,
+        )
+
+        assert controller._last_source_text == "123456789"
+        logger.info.assert_any_call("selection_truncated max_length=%s", 5)
+    finally:
+        controller.shutdown()
+
+
 def test_auto_selection_over_overlay_does_not_hide_or_capture(
     qapp,
     qtbot,

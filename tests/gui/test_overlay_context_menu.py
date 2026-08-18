@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from PySide6.QtCore import QPoint, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QAction, QMouseEvent
 
 from app.overlay.manager import OverlayManager
 from app.overlay.window import OverlayWindow
@@ -34,6 +34,17 @@ def test_right_click_opens_overlay_context_menu(qtbot) -> None:
     assert window.context_menu._background_opacity_menu.title() == "背景透明度"
     assert window.context_menu._text_opacity_menu.title() == "字体透明度"
     window.context_menu.close()
+
+
+def test_context_menu_has_no_shortcuts_and_uses_compact_width(qtbot) -> None:
+    window = OverlayWindow(win32_adapter=MagicMock())
+    qtbot.addWidget(window)
+    menu = window.context_menu
+
+    all_actions = menu.findChildren(QAction)
+
+    assert all(action.shortcut().isEmpty() for action in all_actions)
+    assert menu.sizeHint().width() <= 240
 
 
 def test_context_menu_popup_is_protected_from_auto_selection(qtbot) -> None:
@@ -113,6 +124,8 @@ def test_header_actions_and_original_toggle(qtbot) -> None:
     )
     assert window.copy_button.iconSize().width() >= 20
     assert window.menu_button.iconSize().width() >= 22
+    assert "background-color: rgba" in window._header.styleSheet()
+    assert "border: 1px solid rgba" in window._header.styleSheet()
     assert window.translation_text == "译文内容"
     assert window.source_text == "The source text"
     assert not window.original_visible
@@ -126,6 +139,8 @@ def test_header_actions_and_original_toggle(qtbot) -> None:
     assert window.original_visible
     assert not window._source_label.isHidden()
     assert window._source_label.text() == "The source text"
+    assert "background-color: rgba" in window._source_label.styleSheet()
+    assert "border-radius: 7px" in window._source_label.styleSheet()
     assert ("show_original", True) in events
 
     window.context_menu.source_language_actions["ja"].trigger()

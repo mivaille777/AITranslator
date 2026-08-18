@@ -244,6 +244,16 @@ class TranslationManager:
             if callable(close_cache):
                 close_cache()
 
+    def prepare_source_text(
+        self,
+        source_text: object | None,
+        *,
+        truncate: bool = False,
+    ) -> str:
+        """Normalize source text for a caller that needs explicit preparation."""
+
+        return self.text_normalizer.normalize(source_text, truncate=truncate)
+
     @staticmethod
     def _provider_name(provider: object | None) -> str:
         if provider is None:

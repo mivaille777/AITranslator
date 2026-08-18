@@ -171,29 +171,25 @@ class OverlayContextMenu(QMenu):
         self._add_action(
             "复制原文",
             "copy_original",
-            shortcut="Ctrl+C",
             symbol="▣",
         )
         self._add_action(
             "复制译文",
             "copy_translation",
-            shortcut="Ctrl+Shift+C",
             symbol="▤",
         )
         self.addSeparator()
 
-        self._add_action("隐藏悬浮窗", "hide", shortcut="H", symbol="◌")
+        self._add_action("隐藏悬浮窗", "hide", symbol="◌")
         self._add_action(
             "锁定位置",
             "lock_position",
-            shortcut="L",
             checkable=True,
             symbol="⌖",
         )
         self._add_action(
             "置顶显示",
             "always_on_top",
-            shortcut="T",
             checkable=True,
             symbol="↥",
         )
@@ -281,26 +277,22 @@ class OverlayContextMenu(QMenu):
             self._theme_actions[name] = action
 
         self.addSeparator()
-        self._add_action("设置...", "settings", shortcut="S", symbol="⚙")
-        self._add_action("关于", "about", shortcut="A", symbol="ⓘ")
+        self._add_action("设置...", "settings", symbol="⚙")
+        self._add_action("关于", "about", symbol="ⓘ")
         self.addSeparator()
-        self._add_action("退出", "exit", shortcut="Q", symbol="⏻")
+        self._add_action("退出", "exit", symbol="⏻")
 
     def _add_action(
         self,
         text: str,
         key: str,
         *,
-        shortcut: str | None = None,
         checkable: bool = False,
         symbol: str | None = None,
     ) -> QAction:
         action = QAction(text, self)
         action.setObjectName(f"OverlayContext{key.title().replace('_', '')}Action")
         action.setCheckable(checkable)
-        if shortcut:
-            action.setShortcut(shortcut)
-            action.setShortcutVisibleInContextMenu(True)
         if symbol:
             action.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
         action.triggered.connect(
@@ -442,9 +434,9 @@ class OverlayContextMenu(QMenu):
                 QMenu#{menu.objectName()}::item {{
                     background-color: transparent;
                     color: {palette['text']};
-                    padding: 8px 18px 8px 38px;
-                    margin: 1px 6px;
-                    min-width: 195px;
+                    padding: 7px 10px 7px 30px;
+                    margin: 1px 4px;
+                    min-width: 150px;
                     border-radius: 5px;
                 }}
                 QMenu#{menu.objectName()}::item:selected {{

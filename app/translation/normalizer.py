@@ -24,13 +24,15 @@ class TextNormalizer:
             raise ValueError("max text length must be a positive integer")
         self.max_length = normalized_limit
 
-    def normalize(self, text: object | None) -> str:
-        """Return normalized text or raise a clear input protection error.
+    def normalize(self, text: object | None, *, truncate: bool = False) -> str:
+        """Return normalized text, optionally capped for a selection request.
 
         Newlines are normalized to ``\n``. Horizontal whitespace within each
         line is collapsed to one ordinary space, while paragraph boundaries
         are retained. Punctuation, Unicode characters, and emoji are not
-        rewritten.
+        rewritten. The default remains strict; ``truncate=True`` keeps the
+        first configured maximum-length characters instead of rejecting an
+        otherwise valid long selection.
         """
 
         value = "" if text is None else str(text)
@@ -53,6 +55,8 @@ class TextNormalizer:
         if not normalized:
             raise TextNormalizationError("source text is empty")
         if len(normalized) > self.max_length:
+            if truncate:
+                return normalized[: self.max_length].rstrip()
             raise TextNormalizationError(
                 "source text exceeds maximum length "
                 f"of {self.max_length} characters"

@@ -41,6 +41,12 @@ def test_normalizer_rejects_text_over_configured_limit() -> None:
         TextNormalizer(max_length=5).normalize("123456")
 
 
+def test_normalizer_can_truncate_text_for_selection_translation() -> None:
+    normalizer = TextNormalizer(max_length=5)
+
+    assert normalizer.normalize("123456", truncate=True) == "12345"
+
+
 def test_normalizer_does_not_remove_required_punctuation() -> None:
     text = "Don't delete: commas, periods... or C++ symbols!"
 

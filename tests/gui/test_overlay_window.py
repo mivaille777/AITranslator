@@ -5,7 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from PySide6.QtCore import QPoint, QPointF, QRect, QSize, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QMouseEvent, QWheelEvent
+from PySide6.QtWidgets import QApplication, QSizePolicy
 
 from app.overlay.positioning import clamp_position, centered_position
 from app.overlay.window import DEFAULT_TEST_TEXT, OverlayWindow
@@ -97,6 +98,75 @@ def test_original_visibility_and_hover_use_short_transitions(qtbot) -> None:
     window._animate_header_opacity(0.82)
     qtbot.wait(150)
     assert window._header_emphasis == 0.82
+
+
+def test_style_reapply_keeps_original_row_aligned_with_translation(qtbot) -> None:
+    window = OverlayWindow(max_width=900)
+    qtbot.addWidget(window)
+    window.show_translation(
+        "M10 was best at all ten anchors. It avoided the large nominal losses "
+        "observed for M01 at A2-A5, for C8 at A3 and A9, and for M05 at A0 "
+        "and A3-A6.",
+        "M10 在所有十个锚点中都是最好的。它避免了在 A2-A5 处观察到的损耗。",
+        "en",
+        "zh-CN",
+    )
+    window.set_original_visible(True)
+    qtbot.wait(30)
+
+    window.apply_style(
+        font_size=window.font_size,
+        background_opacity=window.background_opacity,
+        text_opacity=window.text_opacity,
+        max_width=window._max_width,
+    )
+    window.refresh_layout()
+    qtbot.wait(30)
+
+    assert (
+        window._source_label.sizePolicy().horizontalPolicy()
+        == QSizePolicy.Policy.Expanding
+    )
+    assert window._source_label.width() == window._label.width()
+    assert window._source_label.width() == window._content.contentsRect().width()
+
+
+def test_long_content_is_capped_and_scrolls_on_hover_wheel(qtbot) -> None:
+    window = OverlayWindow(max_width=500, max_height=240)
+    qtbot.addWidget(window)
+    window.show_translation(
+        "source text " * 300,
+        "translation text " * 900,
+        "en",
+        "zh-CN",
+    )
+    qtbot.waitUntil(
+        lambda: window.content_scroll_area.verticalScrollBar().isVisible(),
+        timeout=1000,
+    )
+
+    scroll_area = window.content_scroll_area
+    scrollbar = scroll_area.verticalScrollBar()
+    assert window.height() == window.max_height
+    assert scrollbar.maximum() > 0
+    assert "width: 6px" in scroll_area.styleSheet()
+
+    viewport = scroll_area.viewport()
+    local_position = QPoint(12, 12)
+    wheel_event = QWheelEvent(
+        QPointF(local_position),
+        QPointF(viewport.mapToGlobal(local_position)),
+        QPoint(0, -120),
+        QPoint(0, -120),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.ScrollUpdate,
+        False,
+    )
+    QApplication.sendEvent(viewport, wheel_event)
+    qtbot.wait(30)
+
+    assert scrollbar.value() > 0
 
 
 def test_hide_and_show_overlay_state(qtbot) -> None:

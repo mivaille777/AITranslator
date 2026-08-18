@@ -1,13 +1,11 @@
-"""Persistent ChatGPT-style conversation history for Overlay chat."""
+"""Persistent ChatGPT-style conversation history backed by local SQLite."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import json
-import os
 from pathlib import Path
-import tempfile
+import sqlite3
 from uuid import uuid4
 
 from app.ai.chat.models import ChatContext, ChatMessage, ChatRole
@@ -15,7 +13,8 @@ from app.infrastructure.paths import writable_config_dir
 
 
 DEFAULT_MAX_CONVERSATIONS = 30
-DEFAULT_HISTORY_FILENAME = "chat_history.json"
+DEFAULT_HISTORY_FILENAME = "chat_history.sqlite3"
+SCHEMA_VERSION = 1
 
 
 def _now_iso() -> str:
@@ -53,75 +52,15 @@ class Conversation:
         self.session_id = uuid4().hex
         self.touch()
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "conversation_id": self.conversation_id,
-            "session_id": self.session_id,
-            "title": self.title,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "provider": self.provider,
-            "model": self.model,
-            "base_url": self.base_url,
-            "context": {
-                "source_text": self.context.source_text,
-                "translated_text": self.context.translated_text,
-            },
-            "messages": [
-                {"role": message.role.value, "content": message.content}
-                for message in self.messages
-            ],
-        }
-
-    @classmethod
-    def from_dict(cls, payload: object) -> "Conversation | None":
-        if not isinstance(payload, dict):
-            return None
-        try:
-            context_payload = payload.get("context", {})
-            if not isinstance(context_payload, dict):
-                context_payload = {}
-            messages: list[ChatMessage] = []
-            raw_messages = payload.get("messages", [])
-            if isinstance(raw_messages, list):
-                for item in raw_messages:
-                    if not isinstance(item, dict):
-                        continue
-                    try:
-                        role = ChatRole(str(item.get("role", "")))
-                    except ValueError:
-                        continue
-                    content = str(item.get("content", "")).strip()
-                    if content:
-                        messages.append(ChatMessage(role, content))
-            conversation_id = str(payload.get("conversation_id", "")).strip() or uuid4().hex
-            session_id = str(payload.get("session_id", "")).strip() or uuid4().hex
-            return cls(
-                conversation_id=conversation_id,
-                session_id=session_id,
-                title=str(payload.get("title", "新对话")).strip() or "新对话",
-                created_at=str(payload.get("created_at", "")).strip() or _now_iso(),
-                updated_at=str(payload.get("updated_at", "")).strip() or _now_iso(),
-                provider=str(payload.get("provider", "")).strip(),
-                model=str(payload.get("model", "")).strip(),
-                base_url=str(payload.get("base_url", "")).strip(),
-                context=ChatContext(
-                    source_text=str(context_payload.get("source_text", "")).strip(),
-                    translated_text=str(context_payload.get("translated_text", "")).strip(),
-                ),
-                messages=messages,
-            )
-        except Exception:
-            return None
-
 
 class ConversationManager:
-    """Maintain recent conversations and persist them as local user state.
+    """Maintain recent conversations and persist them in local SQLite.
 
-    The ordering mirrors ChatGPT-style recency: the active/recently updated
-    conversation is first. Titles are derived from the first user message, and
-    storage is local JSON under the writable AITranslator config directory.
-    API credentials are never written here.
+    The public in-memory API intentionally stays unchanged so the Overlay UI,
+    streaming controller, and history menu remain independent of the storage
+    implementation. SQLite stores conversation metadata separately from
+    ordered messages. No JSON history is read or migrated by this manager.
+    API credentials are never stored in the database.
     """
 
     def __init__(
@@ -131,7 +70,9 @@ class ConversationManager:
         storage_path: str | Path | None = None,
     ) -> None:
         self.max_sessions = max(1, int(max_sessions))
-        self.storage_path = Path(storage_path) if storage_path is not None else _default_history_path()
+        self.storage_path = (
+            Path(storage_path) if storage_path is not None else _default_history_path()
+        )
         self._sessions: list[Conversation] = []
         self._active_id: str | None = None
         self.load()
@@ -272,54 +213,213 @@ class ConversationManager:
         ):
             self._active_id = self._sessions[0].conversation_id if self._sessions else None
 
+    def _connect(self) -> sqlite3.Connection:
+        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.storage_path, timeout=5.0)
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 5000")
+        return connection
+
+    @staticmethod
+    def _ensure_schema(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS conversations (
+                conversation_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                base_url TEXT NOT NULL DEFAULT '',
+                source_text TEXT NOT NULL DEFAULT '',
+                translated_text TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
+                ON conversations(updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS messages (
+                message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                FOREIGN KEY(conversation_id)
+                    REFERENCES conversations(conversation_id)
+                    ON DELETE CASCADE,
+                UNIQUE(conversation_id, position)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_messages_conversation_position
+                ON messages(conversation_id, position);
+            """
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO app_state(key, value) VALUES('schema_version', ?)",
+            (str(SCHEMA_VERSION),),
+        )
+
+    @staticmethod
+    def _state_value(connection: sqlite3.Connection, key: str) -> str:
+        row = connection.execute(
+            "SELECT value FROM app_state WHERE key = ?",
+            (key,),
+        ).fetchone()
+        return str(row[0]) if row else ""
+
+    def _load_from_database(self, connection: sqlite3.Connection) -> None:
+        self._sessions = []
+        self._active_id = self._state_value(connection, "active_id") or None
+        rows = connection.execute(
+            """
+            SELECT conversation_id, session_id, title, created_at, updated_at,
+                   provider, model, base_url, source_text, translated_text
+            FROM conversations
+            ORDER BY updated_at DESC
+            LIMIT ?
+            """,
+            (self.max_sessions,),
+        ).fetchall()
+
+        for row in rows:
+            conversation_id = str(row[0])
+            messages: list[ChatMessage] = []
+            message_rows = connection.execute(
+                """
+                SELECT role, content
+                FROM messages
+                WHERE conversation_id = ?
+                ORDER BY position ASC
+                """,
+                (conversation_id,),
+            ).fetchall()
+            for role_value, content_value in message_rows:
+                try:
+                    role = ChatRole(str(role_value))
+                except ValueError:
+                    continue
+                content = str(content_value).strip()
+                if content:
+                    messages.append(ChatMessage(role, content))
+
+            self._sessions.append(
+                Conversation(
+                    conversation_id=conversation_id,
+                    session_id=str(row[1]) or uuid4().hex,
+                    title=str(row[2]) or "新对话",
+                    created_at=str(row[3]) or _now_iso(),
+                    updated_at=str(row[4]) or _now_iso(),
+                    provider=str(row[5] or ""),
+                    model=str(row[6] or ""),
+                    base_url=str(row[7] or ""),
+                    context=ChatContext(
+                        source_text=str(row[8] or ""),
+                        translated_text=str(row[9] or ""),
+                    ),
+                    messages=messages,
+                )
+            )
+        self._trim()
+
     def load(self) -> None:
         self._sessions = []
         self._active_id = None
         try:
-            payload = json.loads(self.storage_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        if not isinstance(payload, dict):
-            return
-        raw_items = payload.get("conversations", [])
-        if isinstance(raw_items, list):
-            for raw in raw_items:
-                item = Conversation.from_dict(raw)
-                if item is not None:
-                    self._sessions.append(item)
-        self._active_id = str(payload.get("active_id", "")).strip() or None
+            with self._connect() as connection:
+                self._ensure_schema(connection)
+                self._load_from_database(connection)
+        except (OSError, sqlite3.Error):
+            self._sessions = []
+            self._active_id = None
+
+    def _write_all(self, connection: sqlite3.Connection) -> None:
         self._trim()
+        live_ids = [item.conversation_id for item in self._sessions]
+        if live_ids:
+            placeholders = ",".join("?" for _ in live_ids)
+            connection.execute(
+                f"DELETE FROM conversations WHERE conversation_id NOT IN ({placeholders})",
+                live_ids,
+            )
+        else:
+            connection.execute("DELETE FROM conversations")
+
+        for item in self._sessions:
+            connection.execute(
+                """
+                INSERT INTO conversations(
+                    conversation_id, session_id, title, created_at, updated_at,
+                    provider, model, base_url, source_text, translated_text
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(conversation_id) DO UPDATE SET
+                    session_id = excluded.session_id,
+                    title = excluded.title,
+                    created_at = excluded.created_at,
+                    updated_at = excluded.updated_at,
+                    provider = excluded.provider,
+                    model = excluded.model,
+                    base_url = excluded.base_url,
+                    source_text = excluded.source_text,
+                    translated_text = excluded.translated_text
+                """,
+                (
+                    item.conversation_id,
+                    item.session_id,
+                    item.title,
+                    item.created_at,
+                    item.updated_at,
+                    item.provider,
+                    item.model,
+                    item.base_url,
+                    item.context.source_text,
+                    item.context.translated_text,
+                ),
+            )
+            connection.execute(
+                "DELETE FROM messages WHERE conversation_id = ?",
+                (item.conversation_id,),
+            )
+            if item.messages:
+                connection.executemany(
+                    """
+                    INSERT INTO messages(conversation_id, position, role, content)
+                    VALUES(?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            item.conversation_id,
+                            position,
+                            message.role.value,
+                            message.content,
+                        )
+                        for position, message in enumerate(item.messages)
+                    ],
+                )
+
+        connection.execute(
+            "INSERT OR REPLACE INTO app_state(key, value) VALUES('active_id', ?)",
+            (self._active_id or "",),
+        )
+        connection.execute(
+            "INSERT OR REPLACE INTO app_state(key, value) VALUES('schema_version', ?)",
+            (str(SCHEMA_VERSION),),
+        )
 
     def save(self) -> None:
-        self._trim()
-        payload = {
-            "version": 1,
-            "active_id": self._active_id,
-            "conversations": [item.to_dict() for item in self._sessions],
-        }
         try:
-            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-            temporary_path: Path | None = None
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                newline="\n",
-                prefix=f".{self.storage_path.stem}-",
-                suffix=".tmp",
-                dir=self.storage_path.parent,
-                delete=False,
-            ) as handle:
-                temporary_path = Path(handle.name)
-                json.dump(payload, handle, ensure_ascii=False, indent=2)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_path, self.storage_path)
-        except OSError:
-            try:
-                if temporary_path is not None:
-                    temporary_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            with self._connect() as connection:
+                self._ensure_schema(connection)
+                self._write_all(connection)
+        except (OSError, sqlite3.Error):
+            # History persistence must never take down the Overlay UI.
+            return
 
 
 __all__ = [
@@ -327,4 +427,5 @@ __all__ = [
     "ConversationManager",
     "DEFAULT_HISTORY_FILENAME",
     "DEFAULT_MAX_CONVERSATIONS",
+    "SCHEMA_VERSION",
 ]

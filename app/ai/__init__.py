@@ -22,6 +22,12 @@ from app.ai.prompts import (
     build_translate_prompt,
 )
 from app.ai.provider import AITextProvider, DeepSeekTextProvider
+from app.ai.service import (
+    AITextService,
+    DEFAULT_AI_POLISH_STYLE,
+    DEFAULT_AI_SOURCE_LANGUAGE,
+    DEFAULT_AI_TARGET_LANGUAGE,
+)
 
 
 __all__ = [
@@ -36,6 +42,10 @@ __all__ = [
     "AITextProvider",
     "AITextRequest",
     "AITextResult",
+    "AITextService",
+    "DEFAULT_AI_POLISH_STYLE",
+    "DEFAULT_AI_SOURCE_LANGUAGE",
+    "DEFAULT_AI_TARGET_LANGUAGE",
     "DEFAULT_DEEPSEEK_MODEL",
     "DEEPSEEK_BASE_URL",
     "DeepSeekClient",

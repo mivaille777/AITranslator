@@ -114,10 +114,21 @@ class SettingsWindow(QDialog):
         credential_note.setWordWrap(True)
         credential_note.setObjectName("AICredentialNote")
 
+        self.ai_chat_selection_capture_check = QCheckBox(
+            "Chat 输入框获得焦点后，鼠标划词自动填入"
+        )
+        self.ai_chat_selection_capture_check.setObjectName(
+            "AIChatSelectionCaptureCheck"
+        )
+        self.ai_chat_selection_capture_check.setToolTip(
+            "关闭后，Chat 输入框即使有光标，鼠标划词仍按普通翻译流程处理。"
+        )
+
         ai_form.addRow("Provider", self.ai_provider_combo)
         ai_form.addRow("Model", self.ai_model_combo)
         ai_form.addRow("Base URL", self.ai_base_url_edit)
         ai_form.addRow("API Key", self.ai_api_key_edit)
+        ai_form.addRow("划词输入", self.ai_chat_selection_capture_check)
         ai_form.addRow("", credential_note)
         root_layout.addWidget(self.ai_group)
 
@@ -383,6 +394,12 @@ class SettingsWindow(QDialog):
         )
         self._active_ai_provider = provider
         self.ai_api_key_edit.setText(self._read_saved_api_key(provider))
+        capture_enabled = (
+            get("ai", "chat_selection_capture_enabled", True)
+            if callable(get)
+            else True
+        )
+        self.ai_chat_selection_capture_check.setChecked(bool(capture_enabled))
 
         self.web_enabled_check.setChecked(
             bool(getattr(manager, "google_web_enabled", True))
@@ -555,6 +572,9 @@ class SettingsWindow(QDialog):
                 "provider": provider,
                 "model": model,
                 "base_url": base_url,
+                "chat_selection_capture_enabled": bool(
+                    self.ai_chat_selection_capture_check.isChecked()
+                ),
             },
             "trigger": {
                 "mode": str(self.trigger_mode_combo.currentData() or "hotkey"),

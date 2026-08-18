@@ -36,10 +36,15 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
     regenerate_requested = Signal(str)
 
     def __init__(self, parent=None) -> None:
-        super().__init__(parent)
+        # Qt can dispatch events from parent-class construction (for example,
+        # QWidget.hide() may synchronously reach this subclass eventFilter).
+        # Initialize every piece of state touched by overridden event/UI hooks
+        # before calling super() so construction is safe under re-entrant Qt
+        # event delivery.
         self._conversation_items: list[dict[str, object]] = []
         self._history_actions: list[tuple[QAction, str]] = []
         self._assistant_action_rows: dict[QWidget, tuple[QToolButton, ...]] = {}
+        super().__init__(parent)
 
         root = self.layout()
         top_item = root.itemAt(0) if root is not None else None
@@ -231,9 +236,13 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         return super().eventFilter(watched, event)
 
     def _assistant_row_for_widget(self, widget: object) -> QWidget | None:
+        # During QObject/QWidget construction Qt is allowed to call an
+        # overridden eventFilter before the subclass constructor has returned.
+        # Treat that phase as having no assistant action rows.
+        action_rows = getattr(self, "_assistant_action_rows", {})
         current = widget if isinstance(widget, QWidget) else None
         while current is not None and current is not self:
-            if current in self._assistant_action_rows:
+            if current in action_rows:
                 return current
             current = current.parentWidget()
         return None
@@ -243,22 +252,22 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             if not row.underMouse():
                 self._set_row_actions_visible(row, False)
         except RuntimeError:
-            self._assistant_action_rows.pop(row, None)
+            getattr(self, "_assistant_action_rows", {}).pop(row, None)
 
     def _set_row_actions_visible(self, row: QWidget, visible: bool) -> None:
-        for button in self._assistant_action_rows.get(row, ()):
+        for button in getattr(self, "_assistant_action_rows", {}).get(row, ()):
             try:
                 button.setVisible(bool(visible))
             except RuntimeError:
                 pass
 
     def clear_messages(self) -> None:
-        self._assistant_action_rows.clear()
+        getattr(self, "_assistant_action_rows", {}).clear()
         super().clear_messages()
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
-        for buttons in self._assistant_action_rows.values():
+        for buttons in getattr(self, "_assistant_action_rows", {}).values():
             if len(buttons) > 1:
                 self._update_regenerate_icon(buttons[1])
         self.setStyleSheet(

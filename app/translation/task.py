@@ -8,7 +8,6 @@ from typing import Any
 
 from PySide6.QtCore import QObject, QRunnable, Signal
 
-from app.agent.workflow import DEFAULT_AGENT_GRAPH
 from app.infrastructure.logging import sanitized_exception_info
 from app.models.translation import TranslationResult
 from app.translation.errors import TranslationError
@@ -100,7 +99,16 @@ class TranslationTask(QRunnable):
             self.signals.finished.emit(self)
 
     def _translate(self) -> TranslationResult:
-        """Run the translation node while preserving injected-manager support."""
+        """Run the translation node while preserving safe import boundaries.
+
+        ``app.agent.workflow`` itself imports translation-layer types. Importing
+        the shared graph at module import time therefore creates a cycle while
+        Python is still initialising ``app.translation``. Resolve the graph only
+        when the worker actually executes; by then both packages are fully
+        initialised and Python's module cache makes this effectively free.
+        """
+
+        from app.agent.workflow import DEFAULT_AGENT_GRAPH
 
         return DEFAULT_AGENT_GRAPH.run_translation(
             self.translation_manager,

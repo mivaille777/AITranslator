@@ -44,12 +44,21 @@ def compact_language_label(value: object, *, target: bool = False) -> str:
     return str(code)
 
 
+def full_language_label(value: object) -> str:
+    code = normalize_language_code(value)
+    for option_code, label, _compact in LANGUAGE_OPTIONS:
+        if option_code == code:
+            return label
+    return str(code)
+
+
 class OverlayLanguageBar(QWidget):
-    """Source selector + swap affordance + target selector.
+    """Source selector + smart swap + concrete target selector.
 
     Source language supports automatic detection. Target language deliberately
-    excludes ``auto``. The swap button is disabled while source is ``auto`` so
-    the UI can never create an invalid automatic target language.
+    excludes ``auto``. Once a translation provider reports the detected source
+    language, the source segment shows e.g. ``EN·Auto`` and the swap button can
+    use that concrete detected language without ever creating target=auto.
     """
 
     source_selected = Signal(str)
@@ -61,6 +70,7 @@ class OverlayLanguageBar(QWidget):
         self.setObjectName("OverlayLanguageBar")
         self._source_language = "auto"
         self._target_language = DEFAULT_TARGET_LANGUAGE
+        self._detected_source_language = ""
         self._palette = dict(OVERLAY_THEMES["dark"])
 
         layout = QHBoxLayout(self)
@@ -75,7 +85,7 @@ class OverlayLanguageBar(QWidget):
         self.source_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.source_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.source_button.setMinimumWidth(50)
-        self.source_button.setMaximumWidth(72)
+        self.source_button.setMaximumWidth(94)
         self.source_button.setFixedHeight(34)
         self.source_button.setSizePolicy(
             QSizePolicy.Policy.Preferred,
@@ -158,6 +168,16 @@ class OverlayLanguageBar(QWidget):
         return self._target_language
 
     @property
+    def detected_source_language(self) -> str:
+        return self._detected_source_language
+
+    @property
+    def effective_source_language(self) -> str:
+        if self._source_language == "auto" and self._detected_source_language:
+            return self._detected_source_language
+        return self._source_language
+
+    @property
     def source_actions(self) -> dict[str, QAction]:
         return dict(self._source_actions)
 
@@ -168,19 +188,52 @@ class OverlayLanguageBar(QWidget):
     def set_languages(self, source_language: object, target_language: object) -> tuple[str, str]:
         self._source_language = normalize_language_code(source_language)
         self._target_language = normalize_target_language_code(target_language)
-        self.source_button.setText(compact_language_label(self._source_language))
+        self._detected_source_language = ""
+        self._refresh_state()
+        return self._source_language, self._target_language
+
+    def set_detected_source_language(self, language: object) -> str:
+        """Attach a provider-detected concrete source to current Auto mode."""
+
+        if self._source_language != "auto":
+            self._detected_source_language = ""
+            self._refresh_state()
+            return ""
+        detected = normalize_language_code(language)
+        if detected == "auto":
+            detected = ""
+        self._detected_source_language = detected
+        self._refresh_state()
+        return detected
+
+    def _refresh_state(self) -> None:
+        if self._source_language == "auto" and self._detected_source_language:
+            self.source_button.setText(
+                f"{compact_language_label(self._detected_source_language)}·Auto"
+            )
+            self.source_button.setToolTip(
+                f"自动检测：{full_language_label(self._detected_source_language)}；点击选择源语言"
+            )
+        else:
+            self.source_button.setText(compact_language_label(self._source_language))
+            self.source_button.setToolTip("选择源语言")
         self.target_button.setText(
             compact_language_label(self._target_language, target=True)
         )
         self._sync_checks()
-        concrete_source = self._source_language != "auto"
-        self.swap_button.setEnabled(concrete_source)
-        self.swap_button.setToolTip(
-            "互换源语言与目标语言"
-            if concrete_source
-            else "自动检测不能作为目标语言，请先选择具体源语言"
-        )
-        return self._source_language, self._target_language
+
+        effective_source = self.effective_source_language
+        can_swap = effective_source != "auto"
+        self.swap_button.setEnabled(can_swap)
+        if self._source_language == "auto" and self._detected_source_language:
+            self.swap_button.setToolTip(
+                f"互换：{full_language_label(self._target_language)} ↔ "
+                f"{full_language_label(self._detected_source_language)}"
+            )
+        elif can_swap:
+            self.swap_button.setToolTip("互换源语言与目标语言")
+        else:
+            self.swap_button.setToolTip("请先翻译一次以检测源语言，或手动选择源语言")
 
     def _sync_checks(self) -> None:
         for code, action in self._source_actions.items():
@@ -277,5 +330,6 @@ __all__ = [
     "DEFAULT_TARGET_LANGUAGE",
     "OverlayLanguageBar",
     "compact_language_label",
+    "full_language_label",
     "normalize_target_language_code",
 ]

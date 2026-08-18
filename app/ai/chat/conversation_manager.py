@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -332,9 +333,10 @@ class ConversationManager:
         self._sessions = []
         self._active_id = None
         try:
-            with self._connect() as connection:
-                self._ensure_schema(connection)
-                self._load_from_database(connection)
+            with closing(self._connect()) as connection:
+                with connection:
+                    self._ensure_schema(connection)
+                    self._load_from_database(connection)
         except (OSError, sqlite3.Error):
             self._sessions = []
             self._active_id = None
@@ -414,9 +416,10 @@ class ConversationManager:
 
     def save(self) -> None:
         try:
-            with self._connect() as connection:
-                self._ensure_schema(connection)
-                self._write_all(connection)
+            with closing(self._connect()) as connection:
+                with connection:
+                    self._ensure_schema(connection)
+                    self._write_all(connection)
         except (OSError, sqlite3.Error):
             # History persistence must never take down the Overlay UI.
             return

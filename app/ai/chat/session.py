@@ -24,7 +24,7 @@ class ChatSession:
         return tuple(self._messages)
 
     def set_context(self, context: ChatContext) -> bool:
-        """Replace context and clear history when the reading context changes."""
+        """Replace context and rotate session identity when reading context changes."""
 
         normalized = ChatContext(
             source_text=str(context.source_text or "").strip(),
@@ -33,6 +33,7 @@ class ChatSession:
         changed = normalized != self.context
         if changed:
             self.context = normalized
+            self.session_id = uuid4().hex
             self.clear()
         return changed
 

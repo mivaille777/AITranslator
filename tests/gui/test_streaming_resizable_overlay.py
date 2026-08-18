@@ -9,6 +9,7 @@ from app.ai.resizable_overlay import (
     CHAT_MIN_RESIZE_WIDTH,
     ResizableConversationalAIOverlayWindow,
 )
+from app.overlay.resize_handles import RESIZE_CORNER_SIZE, RESIZE_EDGE_THICKNESS
 
 
 def test_chat_has_safe_minimum_width_and_drag_handle_never_overlaps_actions(qtbot) -> None:
@@ -26,6 +27,27 @@ def test_chat_has_safe_minimum_width_and_drag_handle_never_overlaps_actions(qtbo
         for button in window._header.findChildren(QToolButton):
             if button.parentWidget() is window._header and button.isVisible():
                 assert not handle_rect.intersects(button.geometry())
+
+
+def test_resize_hit_targets_are_large_and_cover_each_boundary(qtbot) -> None:
+    assert RESIZE_EDGE_THICKNESS >= 12
+    assert RESIZE_CORNER_SIZE >= 24
+
+    window = ResizableConversationalAIOverlayWindow(win32_adapter=MagicMock())
+    qtbot.addWidget(window)
+    window.show_translation("source", "translation", "en", "zh-CN")
+    qtbot.wait(20)
+
+    handles = window._resize_handles
+    assert handles["left"].width() == RESIZE_EDGE_THICKNESS
+    assert handles["right"].width() == RESIZE_EDGE_THICKNESS
+    assert handles["top"].height() == RESIZE_EDGE_THICKNESS
+    assert handles["bottom"].height() == RESIZE_EDGE_THICKNESS
+
+    for edge in ("top_left", "top_right", "bottom_left", "bottom_right"):
+        assert handles[edge].width() == RESIZE_CORNER_SIZE
+        assert handles[edge].height() == RESIZE_CORNER_SIZE
+        assert handles[edge].toolTip() == "拖动调整悬浮窗大小"
 
 
 def test_manual_boundary_resize_changes_window_and_scales_content_font(qtbot) -> None:

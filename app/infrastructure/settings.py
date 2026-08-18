@@ -29,6 +29,7 @@ ALLOWED_USER_KEYS: dict[str, set[str]] = {
         "provider",
         "model",
         "base_url",
+        "chat_selection_capture_enabled",
     },
     "trigger": {"mode", "hotkey", "debounce_ms"},
     "overlay": {

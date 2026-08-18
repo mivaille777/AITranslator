@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
+from PySide6.QtGui import QAction
 
 from app.ai.chat.models import ChatMessage
 from app.ai.chat_managed_ui import ManagedChatPanel
@@ -12,7 +13,7 @@ from app.ai.chat_overlay import (
     ConversationalAIOverlayManager,
     ConversationalAIOverlayWindow,
 )
-from app.overlay.context_menu import OVERLAY_THEMES
+from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
 from app.overlay.drag_handle import OverlayDragHandle
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
@@ -68,6 +69,31 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._drag_handle.show()
         self._position_drag_handle()
 
+        # Mirror the Settings-window checkbox with a fast context-menu toggle.
+        # Both controls persist the same non-secret ai.chat_selection_capture_enabled
+        # value, so users can change the behavior without reopening the dialog.
+        self._chat_capture_action = QAction(
+            "Chat 划词自动填入",
+            self._context_menu.settings_menu,
+        )
+        self._chat_capture_action.setObjectName(
+            "OverlayContextChatSelectionCaptureAction"
+        )
+        self._chat_capture_action.setCheckable(True)
+        self._chat_capture_action.setToolTip(
+            "Chat 输入框有光标时，将外部鼠标划词自动填入输入框"
+        )
+        self._chat_capture_action.triggered.connect(
+            self._set_chat_selection_capture_preference
+        )
+        self._context_menu.settings_menu.add_scrollable_action(
+            self._chat_capture_action
+        )
+        self._context_menu.aboutToShow.connect(
+            self._sync_chat_selection_capture_action
+        )
+        self._sync_chat_selection_capture_action()
+
         self._apply_theme(self._theme_name)
         self._resize_to_content()
 
@@ -78,6 +104,10 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
     @property
     def drag_handle(self) -> OverlayDragHandle:
         return self._drag_handle
+
+    @property
+    def chat_selection_capture_action(self) -> QAction:
+        return self._chat_capture_action
 
     def _position_drag_handle(self) -> None:
         handle = getattr(self, "_drag_handle", None)
@@ -169,6 +199,30 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
                 return True
         return bool(value)
 
+    def _sync_chat_selection_capture_action(self) -> None:
+        action = getattr(self, "_chat_capture_action", None)
+        if action is None:
+            return
+        blocked = action.blockSignals(True)
+        action.setChecked(self._selection_capture_setting_enabled())
+        action.blockSignals(blocked)
+
+    def _set_chat_selection_capture_preference(self, enabled: bool) -> None:
+        save = getattr(self._chat_config_manager, "save", None)
+        if callable(save):
+            try:
+                save(
+                    {
+                        "ai": {
+                            "chat_selection_capture_enabled": bool(enabled),
+                        }
+                    }
+                )
+            except (OSError, TypeError, ValueError):
+                self._sync_chat_selection_capture_action()
+                return
+        self._sync_chat_selection_capture_action()
+
     def is_chat_selection_capture_armed(self) -> bool:
         return bool(
             self._selection_capture_setting_enabled()
@@ -217,10 +271,12 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
     def _apply_theme(self, theme: str) -> None:
         super()._apply_theme(theme)
         handle = getattr(self, "_drag_handle", None)
-        if handle is None:
-            return
         palette = OVERLAY_THEMES[self._theme_name]
-        handle.set_theme_colors(palette["muted_text"], palette["accent"])
+        if handle is not None:
+            handle.set_theme_colors(palette["muted_text"], palette["accent"])
+        action = getattr(self, "_chat_capture_action", None)
+        if action is not None:
+            action.setIcon(symbol_icon("↪", palette["text"], size=18))
 
 
 class SelectionCaptureConversationalAIOverlayManager(ConversationalAIOverlayManager):

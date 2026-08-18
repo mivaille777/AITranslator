@@ -16,8 +16,8 @@ datas = [(str(default_config), "config")]
 
 # app imports are deliberately collected so the spec keeps working when a
 # later step adds a provider or UI module loaded through a factory. The
-# Windows input and COM modules are listed explicitly because some of their
-# imports are runtime-selected by pynput/pywin32.
+# Windows input, COM, and Credential Manager modules are listed explicitly
+# because some of their imports are runtime-selected by pynput/pywin32.
 hiddenimports = sorted(
     {
         *collect_submodules("app"),
@@ -29,6 +29,7 @@ hiddenimports = sorted(
         "win32api",
         "win32clipboard",
         "win32con",
+        "win32cred",
         "win32com.client",
         "win32com.client.dynamic",
         "pynput.keyboard._win32",

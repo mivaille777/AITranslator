@@ -89,7 +89,9 @@ class OverlayLanguageBar(QWidget):
         self.swap_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.swap_button.setAutoRaise(True)
         self.swap_button.setFixedSize(32, 34)
-        self.swap_button.clicked.connect(self.swap_requested.emit)
+        self.swap_button.clicked.connect(
+            lambda _checked=False: self.swap_requested.emit()
+        )
 
         self.target_button = QToolButton(self)
         self.target_button.setObjectName("OverlayTargetLanguageButton")

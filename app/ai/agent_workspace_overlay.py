@@ -164,8 +164,8 @@ class TranslationAgentDock(QFrame):
 
     def set_error(self, message: object) -> None:
         self.set_busy(False)
-        self.state_label.setText("请求失败")
         self.set_reply(str(message or "AI 请求失败。"), streaming=False)
+        self.state_label.setText("请求失败")
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         self.setStyleSheet(

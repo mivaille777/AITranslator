@@ -21,3 +21,42 @@ AITranslator 是一款面向 Windows 的桌面划词翻译工具，帮助你在�
 
 欢迎其他 GitHub 用户提出改进意见、报告问题或提交 Pull Request。你可以在仓库的 [Issues](https://github.com/mivaille777/AITranslator/issues) 中反馈想法和问题，也可以通过 [Pull Requests](https://github.com/mivaille777/AITranslator/pulls) 参与改进。
 
+## Development environment
+
+The supported baseline is Python 3.11. Create and activate an isolated virtual
+environment from PowerShell:
+
+```powershell
+python -m venv AITranslator
+.\AITranslator\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
+```
+
+If PowerShell blocks activation for the current session, use:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+## Verify the environment
+
+```powershell
+python scripts/verify_environment.py
+```
+
+The command reports the Python and Windows versions and verifies imports for
+PySide6, pywin32, pynput, cachetools, certifi, and uiautomation.
+
+## Run
+
+Normal startup enters the Qt event loop and can be interrupted with `Ctrl+C`:
+
+```powershell
+python -m app.main
+```
+
+Only one normal application process should be running. If another instance
+is already active, the second process exits and records
+`application_already_running` in the log. `--smoke-test` is exempt so it can
+be used while the application is running.

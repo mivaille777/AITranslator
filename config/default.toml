@@ -21,7 +21,7 @@ chat_selection_capture_enabled = true
 
 [google_web]
 enabled = true
-endpoint = "https://translate.google.com/translate_a/single"
+endpoint = "https://translate.googleapis.com/translate_a/single"
 timeout_ms = 8000
 # One bounded retry absorbs stale keep-alive sockets and short 429/5xx bursts.
 max_retries = 1

@@ -161,7 +161,7 @@ class TranslationAgentDock(QFrame):
             }}
             QPlainTextEdit#OverlayTranslationAgentInput {{
                 color: {palette['text']};
-                background-color: {palette['background']};
+                background-color: {palette['label_background']};
                 border: 1px solid {palette['border']};
                 border-radius: 7px;
                 padding: 6px 8px;
@@ -173,7 +173,7 @@ class TranslationAgentDock(QFrame):
             QPushButton#OverlayTranslationAgentSend,
             QPushButton#OverlayTranslationAgentStop {{
                 color: {palette['text']};
-                background-color: {palette['background']};
+                background-color: {palette['label_background']};
                 border: 1px solid {palette['border']};
                 border-radius: 7px;
             }}

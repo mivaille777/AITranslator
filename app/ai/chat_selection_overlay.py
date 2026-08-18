@@ -22,6 +22,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
     """Chat Overlay with robust dragging and compact ChatGPT-style controls."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self._chat_config_manager = kwargs.get("config_manager")
         super().__init__(*args, **kwargs)
 
         old_panel = self._chat_panel
@@ -61,10 +62,6 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
             lambda payload: self.context_action.emit("ai_chat_model", payload)
         )
 
-        # Keep the existing title drag affordance for compatibility and add a
-        # dedicated pill at the geometric center of the outer Overlay header.
-        # The centered handle stays in the same place even when Chat adds more
-        # controls on the right side of the toolbar.
         self._chat_panel.title_label.installEventFilter(self)
         self._drag_handle = OverlayDragHandle(self._header)
         self._drag_handle.installEventFilter(self)
@@ -149,9 +146,6 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._chat_panel.set_messages(messages)
         self._chat_panel.show()
 
-        # Chat needs keyboard focus, but window activation is kept separate
-        # from drag state. Resize synchronously before activation so the first
-        # mouse press on the header/title always starts a fresh drag gesture.
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
         self._resize_to_content(animate=False)
         self.show_overlay()
@@ -162,14 +156,28 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._position_drag_handle()
         QTimer.singleShot(0, self._chat_panel.focus_input)
 
+    def _selection_capture_setting_enabled(self) -> bool:
+        get = getattr(self._chat_config_manager, "get", None)
+        if not callable(get):
+            return True
+        value = get("ai", "chat_selection_capture_enabled", True)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+        return bool(value)
+
     def is_chat_selection_capture_armed(self) -> bool:
         return bool(
-            self._chat_open
+            self._selection_capture_setting_enabled()
+            and self._chat_open
             and self._chat_panel.selection_capture_armed
         )
 
     def insert_chat_selection(self, text: object) -> bool:
-        if not self._chat_open:
+        if not self._chat_open or not self._selection_capture_setting_enabled():
             return False
         inserted = self._chat_panel.insert_selected_text(text)
         if not inserted:

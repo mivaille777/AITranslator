@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeyEvent, QTextOption
+from PySide6.QtGui import QFont, QInputMethodEvent, QKeyEvent, QTextOption
 from PySide6.QtWidgets import QLabel, QSizePolicy, QTextEdit
 
 from app.ai.resizable_overlay import (
@@ -17,10 +17,10 @@ from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
 
 
-MANUAL_TRANSLATION_DEBOUNCE_MILLISECONDS = 420
+MANUAL_TRANSLATION_DEBOUNCE_MILLISECONDS = 560
 TRANSLATION_STATUS_FEEDBACK_MILLISECONDS = 1100
-SOURCE_EDITOR_MIN_HEIGHT = 48
-SOURCE_EDITOR_MAX_HEIGHT = 150
+SOURCE_EDITOR_MIN_HEIGHT = 44
+SOURCE_EDITOR_MAX_HEIGHT = 132
 
 
 class EditableSourceTextEdit(QTextEdit):
@@ -30,6 +30,7 @@ class EditableSourceTextEdit(QTextEdit):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self._ime_composing = False
         self.setObjectName("OverlaySourceLabel")
         self.setAcceptRichText(False)
         self.setUndoRedoEnabled(True)
@@ -41,6 +42,19 @@ class EditableSourceTextEdit(QTextEdit):
         self.setMinimumHeight(SOURCE_EDITOR_MIN_HEIGHT)
         self.setMaximumHeight(SOURCE_EDITOR_MAX_HEIGHT)
         self.textChanged.connect(self.adjust_editor_height)
+
+    @property
+    def ime_composing(self) -> bool:
+        """Whether an IME is currently showing uncommitted preedit text."""
+
+        return self._ime_composing
+
+    def inputMethodEvent(self, event: QInputMethodEvent) -> None:  # noqa: N802
+        # textChanged may fire while Chinese/Japanese/Korean IMEs are updating
+        # their preedit buffer. Mark that phase before Qt mutates the document
+        # so the Overlay can avoid translating every candidate composition.
+        self._ime_composing = bool(event.preeditString())
+        super().inputMethodEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt override
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (
@@ -73,7 +87,7 @@ class EditableSourceTextEdit(QTextEdit):
         document_height = self.document().documentLayout().documentSize().height()
         frame = self.frameWidth() * 2
         margins = self.contentsMargins()
-        desired = round(document_height + frame + margins.top() + margins.bottom() + 10)
+        desired = round(document_height + frame + margins.top() + margins.bottom() + 8)
         height = max(
             SOURCE_EDITOR_MIN_HEIGHT,
             min(SOURCE_EDITOR_MAX_HEIGHT, desired),
@@ -116,6 +130,7 @@ class EditableResizableConversationalAIOverlayWindow(
         self._translation_status_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
+        self._translation_status_label.setFixedHeight(16)
         self._translation_status_label.hide()
         self._content_layout.insertWidget(source_index + 1, self._translation_status_label)
         self._translation_status_timer = QTimer(self)
@@ -170,20 +185,22 @@ class EditableResizableConversationalAIOverlayWindow(
         self._source_text = self._source_editor.toPlainText()
         self._source_editor.adjust_editor_height()
         self.set_translation_status("输入中…")
-        self._manual_translation_timer.start()
+        self._manual_translation_timer.stop()
+        if not self._source_editor.ime_composing:
+            self._manual_translation_timer.start()
         if self._manual_size_locked:
             self._update_scroll_area_limits()
         else:
             self._resize_to_content(animate=False)
 
     def _translate_source_immediately(self) -> None:
-        if self._source_editor_programmatic:
+        if self._source_editor_programmatic or self._source_editor.ime_composing:
             return
         self._manual_translation_timer.stop()
         self._emit_manual_source_translation()
 
     def _emit_manual_source_translation(self) -> None:
-        if self._chat_open or not self._original_visible:
+        if self._chat_open or not self._original_visible or self._source_editor.ime_composing:
             return
         text = self._source_editor.toPlainText()
         self.set_translation_status("翻译中…" if text.strip() else "")
@@ -296,7 +313,7 @@ class EditableResizableConversationalAIOverlayWindow(
                 background-color: {source_background};
                 border: 1px solid {source_border};
                 border-radius: 7px;
-                padding: 6px 8px;
+                padding: 5px 8px;
                 selection-background-color: {palette['accent']};
             }}
             QTextEdit#OverlaySourceLabel:focus {{
@@ -326,8 +343,8 @@ class EditableResizableConversationalAIOverlayWindow(
             QLabel#OverlayTranslationStatus {{
                 color: {palette['muted_text']};
                 background: transparent;
-                padding: 0px 4px 2px 4px;
-                font-size: 11px;
+                padding: 0px 4px;
+                font-size: 10px;
             }}
             """
         )

@@ -23,8 +23,10 @@ chat_selection_capture_enabled = true
 enabled = true
 endpoint = "https://translate.google.com/translate_a/single"
 timeout_ms = 8000
-max_retries = 0
-min_interval_ms = 0
+# One bounded retry absorbs stale keep-alive sockets and short 429/5xx bursts.
+max_retries = 1
+# Keep automatic/manual live translation from creating back-to-back web hits.
+min_interval_ms = 120
 
 [cache]
 enabled = true

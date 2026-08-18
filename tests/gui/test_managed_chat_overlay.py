@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtWidgets import QApplication
 
 from app.ai.chat_selection_overlay import SelectionCaptureConversationalAIOverlayWindow
+from app.overlay.context_menu import OVERLAY_THEMES
 
 
 def test_chat_history_menu_switches_conversations(qtbot) -> None:
@@ -82,17 +84,52 @@ def test_first_chat_open_keeps_visible_drag_handle_operational(qtbot) -> None:
 
     assert window.chat_open
     assert not window.is_dragging
+    assert window.drag_handle.isVisible()
+    expected_center_x = window._header.width() // 2
+    actual_center_x = window.drag_handle.geometry().center().x()
+    assert abs(actual_center_x - expected_center_x) <= 1
 
     qtbot.mousePress(
-        window.chat_panel.title_label,
+        window.drag_handle,
         Qt.MouseButton.LeftButton,
-        pos=window.chat_panel.title_label.rect().center(),
+        pos=window.drag_handle.rect().center(),
     )
     assert window.is_dragging
 
     qtbot.mouseRelease(
-        window.chat_panel.title_label,
+        window.drag_handle,
         Qt.MouseButton.LeftButton,
-        pos=window.chat_panel.title_label.rect().center(),
+        pos=window.drag_handle.rect().center(),
     )
     assert not window.is_dragging
+
+
+def test_drag_handle_hover_theme_and_double_click_return_to_translation(qtbot) -> None:
+    window = SelectionCaptureConversationalAIOverlayWindow(win32_adapter=MagicMock())
+    qtbot.addWidget(window)
+    window.show_translation("source", "译文", "en", "zh-CN")
+    window.open_chat(provider="DeepSeek", model="deepseek-v4-flash")
+
+    for theme in ("dark", "soft", "contrast"):
+        window.set_theme(theme)
+        palette = OVERLAY_THEMES[theme]
+        assert window.drag_handle._normal_color.name().lower() == palette[
+            "muted_text"
+        ].lower()
+        assert window.drag_handle._hover_color.name().lower() == palette[
+            "accent"
+        ].lower()
+
+    QApplication.sendEvent(window.drag_handle, QEvent(QEvent.Type.Enter))
+    assert window.drag_handle._hovered
+    QApplication.sendEvent(window.drag_handle, QEvent(QEvent.Type.Leave))
+    assert not window.drag_handle._hovered
+
+    qtbot.mouseDClick(
+        window.drag_handle,
+        Qt.MouseButton.LeftButton,
+        pos=window.drag_handle.rect().center(),
+    )
+    assert not window.chat_open
+    assert window.chat_panel.isHidden()
+    assert not window.content_scroll_area.isHidden()

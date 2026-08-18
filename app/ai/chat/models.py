@@ -30,6 +30,8 @@ class ChatRequest:
     context: ChatContext
     history: tuple[ChatMessage, ...] = ()
     request_id: int = 0
+    tool_name: str = ""
+    tool_context: str = ""
 
 
 @dataclass(frozen=True, slots=True)

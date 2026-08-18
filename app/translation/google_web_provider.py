@@ -27,8 +27,8 @@ from app.translation.token.google_tk import generate_token
 
 DEFAULT_WEB_ENDPOINT = "https://translate.google.com/translate_a/single"
 DEFAULT_TIMEOUT_SECONDS = 8.0
-DEFAULT_MAX_RETRIES = 0
-DEFAULT_MIN_INTERVAL_SECONDS = 0.0
+DEFAULT_MAX_RETRIES = 1
+DEFAULT_MIN_INTERVAL_SECONDS = 0.12
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -80,7 +80,14 @@ def _create_ssl_context() -> ssl.SSLContext:
 
 
 class _PersistentWebRequester:
-    """Keep one HTTP/1.1 connection warm for repeated short translations."""
+    """Keep one HTTP/1.1 connection warm for repeated short translations.
+
+    A server can close an idle keep-alive socket without the client knowing.
+    If the first request on a *reused* connection fails at the transport layer,
+    discard that socket and transparently retry once on a fresh connection.
+    GET is idempotent and this reconnect does not count as provider-level retry
+    policy such as handling HTTP 429/5xx responses.
+    """
 
     def __init__(self) -> None:
         self._lock = Lock()
@@ -109,24 +116,36 @@ class _PersistentWebRequester:
         connection_key = (scheme, host, port)
 
         with self._lock:
+            reused_connection = bool(
+                self._connection is not None
+                and self._connection_key == connection_key
+            )
             connection = self._get_connection(connection_key, timeout)
             request_headers = dict(headers)
             request_headers.setdefault("Connection", "keep-alive")
             # Avoid compressed payload handling in this small transport. The
             # response is tiny, and identity encoding keeps parsing direct.
             request_headers.setdefault("Accept-Encoding", "identity")
-            try:
-                connection.timeout = timeout
-                connection.request("GET", target, headers=request_headers)
-                response = connection.getresponse()
-                body = response.read()
-                status_code = int(response.status)
-                if response.will_close:
+
+            attempts = 2 if reused_connection else 1
+            for attempt in range(attempts):
+                try:
+                    connection.timeout = timeout
+                    connection.request("GET", target, headers=request_headers)
+                    response = connection.getresponse()
+                    body = response.read()
+                    status_code = int(response.status)
+                    if response.will_close:
+                        self._close_locked()
+                    return WebResponse(status_code, body)
+                except (HTTPException, OSError):
                     self._close_locked()
-                return WebResponse(status_code, body)
-            except (HTTPException, OSError):
-                self._close_locked()
-                raise
+                    if reused_connection and attempt == 0:
+                        connection = self._get_connection(connection_key, timeout)
+                        continue
+                    raise
+
+        raise RuntimeError("unreachable persistent request state")
 
     def _get_connection(
         self,

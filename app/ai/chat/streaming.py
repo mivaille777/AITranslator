@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+from threading import Event
 from typing import Any, Iterator
 
 from openai import (
@@ -88,6 +89,7 @@ class StreamingAIChatService(AIChatService):
             payload["max_tokens"] = self.max_tokens
 
         received = False
+        response_stream: Any | None = None
         try:
             response_stream = create(**payload)
             for event in response_stream:
@@ -117,6 +119,13 @@ class StreamingAIChatService(AIChatService):
             raise
         except Exception as exc:
             raise AIResponseError("AI chat streaming request failed.") from exc
+        finally:
+            close = getattr(response_stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
 
         if not received:
             raise AIResponseError("AI chat provider returned empty streamed content.")
@@ -144,14 +153,29 @@ class StreamingAIChatTask(QRunnable):
         self.request = request
         self.logger = logger or logging.getLogger("desktop_translator")
         self.signals = StreamingAIChatTaskSignals()
+        self._cancel_event = Event()
         self.setAutoDelete(False)
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._cancel_event.is_set()
+
+    def cancel(self) -> None:
+        """Request cooperative cancellation without touching the GUI thread."""
+
+        self._cancel_event.set()
 
     def run(self) -> None:
         pieces: list[str] = []
+        iterator: Any | None = None
         try:
+            if self.is_cancelled:
+                return
             stream = getattr(self.chat_service, "stream", None)
             if not callable(stream):
                 result = self.chat_service.execute(self.request)
+                if self.is_cancelled:
+                    return
                 pieces.append(result.output_text)
                 self.signals.chunk.emit(
                     AIChatStreamChunk(
@@ -162,7 +186,10 @@ class StreamingAIChatTask(QRunnable):
                     )
                 )
             else:
-                for delta in stream(self.request):
+                iterator = iter(stream(self.request))
+                for delta in iterator:
+                    if self.is_cancelled:
+                        break
                     if not isinstance(delta, str) or not delta:
                         continue
                     pieces.append(delta)
@@ -176,6 +203,8 @@ class StreamingAIChatTask(QRunnable):
                         )
                     )
 
+            if self.is_cancelled:
+                return
             output = "".join(pieces).strip()
             if not output:
                 raise AIResponseError("AI chat provider returned empty content.")
@@ -190,22 +219,31 @@ class StreamingAIChatTask(QRunnable):
                 )
             )
         except AIError as exc:
-            self.signals.failed.emit(
-                AIChatTaskFailure(
-                    request_id=self.request.request_id,
-                    error=exc,
+            if not self.is_cancelled:
+                self.signals.failed.emit(
+                    AIChatTaskFailure(
+                        request_id=self.request.request_id,
+                        error=exc,
+                    )
                 )
-            )
         except Exception as exc:
-            error = AIResponseError("AI chat streaming request failed.")
-            error.__cause__ = exc
-            self.signals.failed.emit(
-                AIChatTaskFailure(
-                    request_id=self.request.request_id,
-                    error=error,
+            if not self.is_cancelled:
+                error = AIResponseError("AI chat streaming request failed.")
+                error.__cause__ = exc
+                self.signals.failed.emit(
+                    AIChatTaskFailure(
+                        request_id=self.request.request_id,
+                        error=error,
+                    )
                 )
-            )
         finally:
+            if self.is_cancelled:
+                close = getattr(iterator, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:
+                        pass
             self.signals.finished.emit(self)
 
 

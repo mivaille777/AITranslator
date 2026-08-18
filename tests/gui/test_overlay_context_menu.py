@@ -30,10 +30,26 @@ def test_right_click_opens_overlay_context_menu(qtbot) -> None:
     assert window.context_menu.isVisible()
     assert window.context_menu.actions_by_name["copy_original"].text() == "复制原文"
     assert window.context_menu.actions_by_name["copy_translation"].text() == "复制译文"
-    assert window.context_menu.actions_by_name["settings"].text() == "设置..."
+    assert window.context_menu.settings_menu.title() == "设置"
+    assert window.context_menu.actions_by_name["settings"].text() == "常规设置..."
+    assert (
+        window.context_menu.actions_by_name["ai_settings"].text()
+        == "AI 大模型与 API Key..."
+    )
     assert window.context_menu._background_opacity_menu.title() == "背景透明度"
     assert window.context_menu._text_opacity_menu.title() == "字体透明度"
     window.context_menu.close()
+
+
+def test_settings_submenu_emits_ai_settings_action(qtbot) -> None:
+    window = OverlayWindow(win32_adapter=MagicMock())
+    qtbot.addWidget(window)
+    events: list[tuple[str, object]] = []
+    window.context_action.connect(lambda key, value: events.append((key, value)))
+
+    window.context_menu.actions_by_name["ai_settings"].trigger()
+
+    assert ("ai_settings", None) in events
 
 
 def test_context_menu_has_no_shortcuts_and_uses_compact_width(qtbot) -> None:

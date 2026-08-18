@@ -110,6 +110,37 @@ class ConversationalAIOverlayWindow(AIOverlayWindow):
         self.raise_()
         QTimer.singleShot(0, self._chat_panel.focus_input)
 
+    def show_text(self, text: object | None) -> None:
+        if self._chat_open:
+            self.close_chat()
+        super().show_text(text)
+
+    def show_loading(
+        self,
+        source_text: object | None,
+        source_language: object = "auto",
+        target_language: object = "zh-CN",
+    ) -> None:
+        if self._chat_open:
+            self.close_chat()
+        super().show_loading(source_text, source_language, target_language)
+
+    def show_translation(
+        self,
+        source_text: object | None,
+        translated_text: object | None,
+        source_language: object = "auto",
+        target_language: object = "zh-CN",
+    ) -> None:
+        if self._chat_open:
+            self.close_chat()
+        super().show_translation(
+            source_text,
+            translated_text,
+            source_language,
+            target_language,
+        )
+
     def close_chat(self) -> None:
         if not self._chat_open:
             return

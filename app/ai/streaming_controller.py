@@ -12,7 +12,6 @@ from app.ai.chat.streaming import (
 )
 from app.ai.chat.task import AIChatTaskFailure
 from app.ai.chat_selection_controller import (
-    CHAT_MODEL_ERROR_TEXT,
     SelectionCaptureConversationalAIAppController,
 )
 from app.ai.errors import AIConfigurationError, AIError
@@ -111,11 +110,13 @@ class StreamingResizableAIAppController(
         super()._clear_ai_chat()
 
     def _select_chat_model(self, payload: object) -> None:
+        self._chat_request_versions.next_request_id()
         self._cancel_active_stream()
         super()._select_chat_model(payload)
 
     def _on_overlay_context_action(self, key: str, value: object) -> None:
         if key == "ai_chat_close":
+            self._chat_request_versions.next_request_id()
             self._cancel_active_stream()
         super()._on_overlay_context_action(key, value)
 

@@ -1,7 +1,8 @@
 """Minimal DeepSeek API connectivity smoke test.
 
-Stage 1 only validates that AITranslator can reach the DeepSeek OpenAI-compatible
-API. It intentionally does not modify translation providers or UI behavior.
+The smoke test now exercises the shared Stage 2 DeepSeekClient instead of
+calling the provider SDK directly. It still performs a real network request
+and therefore requires DEEPSEEK_API_KEY.
 
 Usage (PowerShell):
     $env:DEEPSEEK_API_KEY="your_api_key"
@@ -10,51 +11,27 @@ Usage (PowerShell):
 
 from __future__ import annotations
 
-import os
-import sys
-
-from openai import OpenAI
-
-
-MODEL = "deepseek-v4-flash"
-BASE_URL = "https://api.deepseek.com"
+from app.ai.client import DeepSeekClient
+from app.ai.errors import AIError
 
 
 def main() -> int:
-    api_key = os.getenv("DEEPSEEK_API_KEY")
-    if not api_key:
-        print("Missing DEEPSEEK_API_KEY environment variable.")
+    client: DeepSeekClient | None = None
+    try:
+        client = DeepSeekClient()
+        text = client.complete(
+            system_prompt="You are a concise assistant.",
+            user_prompt="Reply with exactly: DeepSeek API OK",
+            temperature=0.0,
+        )
+    except AIError as exc:
+        print(f"DeepSeek smoke test failed: {exc}")
         return 1
+    finally:
+        if client is not None:
+            client.close()
 
-    client = OpenAI(
-        api_key=api_key,
-        base_url=BASE_URL,
-        timeout=15.0,
-        max_retries=1,
-    )
-
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a concise assistant.",
-            },
-            {
-                "role": "user",
-                "content": "Reply with exactly: DeepSeek API OK",
-            },
-        ],
-        temperature=0,
-        extra_body={
-            "thinking": {
-                "type": "disabled",
-            },
-        },
-    )
-
-    text = response.choices[0].message.content or ""
-    print(text.strip())
+    print(text)
     return 0
 
 

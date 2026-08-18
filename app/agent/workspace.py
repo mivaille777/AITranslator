@@ -30,6 +30,9 @@ TRANSLATION_CANCELLED_TEXT = "好的，暂不切换，继续在当前 AI 对话�
 TRANSLATION_FINISHED_TEXT = "好的，翻译任务已结束，已返回完整 AI 对话。"
 CONFIRMATION_RETRY_TEXT = "请回复“确定”或“取消”，我再决定是否切换到翻译界面。"
 
+_CONTROL_MESSAGE_MAX_CHARS = 80
+_FINISH_MESSAGE_MAX_CHARS = 40
+
 
 class WorkspaceAgentState(TypedDict, total=False):
     """Short-term state for one UI-workspace orchestration thread."""
@@ -107,7 +110,11 @@ _REJECT_PHRASES = (
     "不要",
     "算了",
     "否",
+    "不是",
+    "不行",
     "不切换",
+    "不要切换",
+    "不用切换",
     "no",
     "n",
 )
@@ -166,14 +173,16 @@ class WorkspaceAgentGraph:
     def _classify(state: WorkspaceAgentState) -> WorkspaceAgentState:
         text = _normalize_message(state.get("user_message", ""))
         workspace = state.get("workspace", "chat")
-        if workspace == "translation" and _contains_phrase(
-            text,
-            _TRANSLATION_FINISH_PHRASES,
+        if (
+            workspace == "translation"
+            and len(text) <= _FINISH_MESSAGE_MAX_CHARS
+            and _contains_phrase(text, _TRANSLATION_FINISH_PHRASES)
         ):
             intent: WorkspaceIntent = "finish_translation"
-        elif workspace == "chat" and _contains_phrase(
-            text,
-            _TRANSLATION_REQUEST_PHRASES,
+        elif (
+            workspace == "chat"
+            and len(text) <= _CONTROL_MESSAGE_MAX_CHARS
+            and _contains_phrase(text, _TRANSLATION_REQUEST_PHRASES)
         ):
             intent = "request_translation"
         else:

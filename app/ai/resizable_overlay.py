@@ -114,12 +114,34 @@ class ResizableConversationalAIOverlayWindow(
         self.set_languages(self._source_language, normalized)
         return self._target_language
 
-    def swap_languages(self) -> tuple[str, str]:
-        """Swap concrete language directions without ever making target ``auto``."""
+    def set_detected_source_language(self, source_language: object) -> str:
+        """Show an Auto-detected concrete language without changing config."""
 
-        if self._source_language == "auto":
+        bar = getattr(self, "_language_bar", None)
+        if bar is None:
+            return ""
+        # ``show_translation`` receives the provider-detected language and the
+        # base Overlay therefore stores it as its presentation source. Restore
+        # the segmented control to Auto mode, then attach that detection as UI
+        # metadata so the user can still see Auto was the configured source.
+        bar.set_languages("auto", self._target_language)
+        detected = bar.set_detected_source_language(source_language)
+        self._position_drag_handle()
+        return detected
+
+    def swap_languages(self) -> tuple[str, str]:
+        """Swap concrete/effectively detected languages; target is never Auto."""
+
+        bar = getattr(self, "_language_bar", None)
+        if bar is not None:
+            source = bar.effective_source_language
+            target = bar.target_language
+        else:
+            source = self._source_language
+            target = self._target_language
+        if source == "auto":
             return self._source_language, self._target_language
-        return self.set_languages(self._target_language, self._source_language)
+        return self.set_languages(target, source)
 
     def _handle_context_action(self, key: str, value: object) -> None:
         if key == "target_language":
@@ -445,6 +467,12 @@ class ResizableConversationalAIOverlayManager(
                 config_manager=config_manager,
             )
         super().__init__(window=window)
+
+    def set_detected_source_language(self, source_language: object) -> str:
+        callback = getattr(self.window, "set_detected_source_language", None)
+        if not callable(callback):
+            return ""
+        return str(callback(source_language))
 
     def begin_chat_stream(self, request_id: int) -> None:
         callback = getattr(self.window, "begin_chat_stream", None)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import logging
 from typing import Any
 
@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, Signal
 from app.infrastructure.logging import sanitized_exception_info
 from app.models.translation import TranslationResult
 from app.translation.errors import TranslationError
+from app.translation.manager import TranslationManager
 
 
 class TranslationTaskSignals(QObject):
@@ -38,7 +39,13 @@ class TranslationTaskFailure:
 
 
 class TranslationTask(QRunnable):
-    """Run one translation intent through the shared LangGraph workflow."""
+    """Run one deterministic translation request on a ``QThreadPool`` worker.
+
+    Translation is a provider capability, not an agent reasoning step. The
+    LangGraph layer decides when a translation workspace should be entered and
+    coordinates conversational/HITL state, while this worker keeps the actual
+    provider call direct and predictable.
+    """
 
     def __init__(
         self,
@@ -51,9 +58,6 @@ class TranslationTask(QRunnable):
         logger: logging.Logger | None = None,
     ) -> None:
         super().__init__()
-        # Keep the Python task alive until the controller receives ``finished``
-        # and removes it from its active-task set. This also makes it safe to
-        # inspect the task in tests after QThreadPool has completed it.
         self.setAutoDelete(False)
         self.signals = TranslationTaskSignals()
         self.translation_manager = translation_manager
@@ -64,12 +68,14 @@ class TranslationTask(QRunnable):
         self.logger = logger or logging.getLogger("desktop_translator")
 
     def run(self) -> None:
-        """Execute the LangGraph translation branch on the pool worker."""
+        """Execute the synchronous manager call on the pool worker thread."""
 
         try:
             result = self._translate()
             if not isinstance(result, TranslationResult):
                 raise TranslationError("translation task returned unsupported result")
+            if result.request_id != self.request_id:
+                result = replace(result, request_id=self.request_id)
             self.signals.succeeded.emit(result)
         except TranslationError as exc:
             self.logger.error(
@@ -82,8 +88,6 @@ class TranslationTask(QRunnable):
                 TranslationTaskFailure(request_id=self.request_id, error=exc)
             )
         except Exception as exc:
-            # A plugin/provider can still fail outside the graph's expected
-            # domain. Convert that failure before it reaches Qt.
             error = TranslationError("translation task failed")
             error.__cause__ = exc
             self.logger.error(
@@ -99,23 +103,23 @@ class TranslationTask(QRunnable):
             self.signals.finished.emit(self)
 
     def _translate(self) -> TranslationResult:
-        """Run the translation node while preserving safe import boundaries.
+        """Call compatible managers directly, without routing through LangGraph."""
 
-        ``app.agent.workflow`` itself imports translation-layer types. Importing
-        the shared graph at module import time therefore creates a cycle while
-        Python is still initialising ``app.translation``. Resolve the graph only
-        when the worker actually executes; by then both packages are fully
-        initialised and Python's module cache makes this effectively free.
-        """
+        if isinstance(self.translation_manager, TranslationManager):
+            return self.translation_manager.translate(
+                self.source_text,
+                source_language=self.source_language,
+                target_language=self.target_language,
+                request_id=self.request_id,
+            )
 
-        from app.agent.workflow import DEFAULT_AGENT_GRAPH
+        if self.source_language is None and self.target_language is None:
+            return self.translation_manager.translate(self.source_text)
 
-        return DEFAULT_AGENT_GRAPH.run_translation(
-            self.translation_manager,
+        return self.translation_manager.translate(
             self.source_text,
             source_language=self.source_language,
             target_language=self.target_language,
-            request_id=self.request_id,
         )
 
 

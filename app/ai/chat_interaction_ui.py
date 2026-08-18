@@ -44,6 +44,7 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         self._conversation_items: list[dict[str, object]] = []
         self._history_actions: list[tuple[QAction, str]] = []
         self._assistant_action_rows: dict[QWidget, tuple[QToolButton, ...]] = {}
+        self._assistant_action_visibility: dict[QWidget, bool] = {}
         super().__init__(parent)
 
         root = self.layout()
@@ -212,9 +213,10 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         )
         actions.addWidget(regenerate_button)
 
-        copy_button.hide()
-        regenerate_button.hide()
         self._assistant_action_rows[row] = (copy_button, regenerate_button)
+        self._assistant_action_visibility[row] = False
+        row.setProperty("assistantActionsVisible", False)
+        self._set_row_actions_visible(row, False)
         row.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         row.installEventFilter(self)
         for child in row.findChildren(QWidget):
@@ -247,22 +249,44 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             current = current.parentWidget()
         return None
 
+    def assistant_actions_visible(self, row: QWidget) -> bool:
+        """Return the logical hover state independent of ancestor visibility.
+
+        ``QWidget.isVisible()`` includes every ancestor's current show state.
+        That is useful on-screen but unstable in headless/offscreen tests while
+        a QScrollArea is still laying itself out. This explicit state represents
+        the interaction contract: whether this row's action bar should be shown.
+        """
+
+        return bool(getattr(self, "_assistant_action_visibility", {}).get(row, False))
+
     def _hide_row_actions_if_left(self, row: QWidget) -> None:
         try:
             if not row.underMouse():
                 self._set_row_actions_visible(row, False)
         except RuntimeError:
             getattr(self, "_assistant_action_rows", {}).pop(row, None)
+            getattr(self, "_assistant_action_visibility", {}).pop(row, None)
 
     def _set_row_actions_visible(self, row: QWidget, visible: bool) -> None:
+        shown = bool(visible)
+        getattr(self, "_assistant_action_visibility", {})[row] = shown
+        try:
+            row.setProperty("assistantActionsVisible", shown)
+        except RuntimeError:
+            return
         for button in getattr(self, "_assistant_action_rows", {}).get(row, ()):
             try:
-                button.setVisible(bool(visible))
+                # setHidden() changes the button's own explicit visibility
+                # state without depending on whether the scroll-area ancestors
+                # have already been polished/shown by the platform plugin.
+                button.setHidden(not shown)
             except RuntimeError:
                 pass
 
     def clear_messages(self) -> None:
         getattr(self, "_assistant_action_rows", {}).clear()
+        getattr(self, "_assistant_action_visibility", {}).clear()
         super().clear_messages()
 
     def apply_palette(self, palette: dict[str, str]) -> None:

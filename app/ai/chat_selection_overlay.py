@@ -8,7 +8,7 @@ from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
 
 from app.ai.chat.models import ChatMessage
-from app.ai.chat_managed_ui import ManagedChatPanel
+from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
 from app.ai.chat_overlay import (
     ConversationalAIOverlayManager,
     ConversationalAIOverlayWindow,
@@ -32,7 +32,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         old_panel.setParent(None)
         old_panel.deleteLater()
 
-        self._chat_panel = ManagedChatPanel(self)
+        self._chat_panel = InteractiveManagedChatPanel(self)
         self._chat_panel.hide()
         self._layout.addWidget(self._chat_panel)
         self._chat_panel.message_submitted.connect(
@@ -59,8 +59,17 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
                 conversation_id,
             )
         )
+        self._chat_panel.conversation_rename_requested.connect(
+            lambda payload: self.context_action.emit("ai_chat_rename", payload)
+        )
         self._chat_panel.model_selected.connect(
             lambda payload: self.context_action.emit("ai_chat_model", payload)
+        )
+        self._chat_panel.stop_generation_requested.connect(
+            lambda: self.context_action.emit("ai_chat_stop", None)
+        )
+        self._chat_panel.regenerate_requested.connect(
+            lambda content: self.context_action.emit("ai_chat_regenerate", content)
         )
 
         self._chat_panel.title_label.installEventFilter(self)
@@ -98,7 +107,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._resize_to_content()
 
     @property
-    def chat_panel(self) -> ManagedChatPanel:
+    def chat_panel(self) -> InteractiveManagedChatPanel:
         return self._chat_panel
 
     @property

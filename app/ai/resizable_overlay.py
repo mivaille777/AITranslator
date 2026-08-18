@@ -13,6 +13,8 @@ from app.ai.chat_selection_overlay import (
     SelectionCaptureConversationalAIOverlayManager,
     SelectionCaptureConversationalAIOverlayWindow,
 )
+from app.overlay.context_menu import OVERLAY_THEMES
+from app.overlay.language_bar import OverlayLanguageBar, normalize_target_language_code
 from app.overlay.positioning import PositionManager, PositionMode
 from app.overlay.resize_handles import (
     OverlayResizeHandle,
@@ -45,10 +47,36 @@ class ResizableConversationalAIOverlayWindow(
         self._resize_start_font_size = 0
         super().__init__(*args, **kwargs)
 
+        # Replace the legacy combined ``Auto → 中文`` button only in the
+        # production Overlay. The old widget remains a private compatibility
+        # implementation detail in the base class but is removed from layout.
+        self._header_layout.removeWidget(self._language_button)
+        self._language_button.hide()
+        self._language_bar = OverlayLanguageBar(self._header)
+        self._language_bar.source_selected.connect(
+            lambda code: self._handle_context_action("source_language", code)
+        )
+        self._language_bar.target_selected.connect(
+            lambda code: self._handle_context_action("target_language", code)
+        )
+        self._language_bar.swap_requested.connect(
+            lambda: self._handle_context_action("swap_languages", None)
+        )
+        self._header_layout.insertWidget(0, self._language_bar, 0)
+        self._language_bar.set_languages(
+            self._source_language,
+            self._target_language,
+        )
+        self._language_bar.apply_palette(OVERLAY_THEMES[self._theme_name])
+
         self._resize_handles: dict[str, OverlayResizeHandle] = {}
         for edge in RESIZE_EDGES:
             handle = OverlayResizeHandle(edge, self)
             handle.installEventFilter(self)
+            handle.set_theme_colors(
+                OVERLAY_THEMES[self._theme_name]["border"],
+                OVERLAY_THEMES[self._theme_name]["accent"],
+            )
             handle.show()
             self._resize_handles[edge] = handle
         self._layout_resize_handles()
@@ -64,6 +92,42 @@ class ResizableConversationalAIOverlayWindow(
     def manual_size_locked(self) -> bool:
         return self._manual_size_locked
 
+    @property
+    def language_bar(self) -> OverlayLanguageBar:
+        return self._language_bar
+
+    def _update_language_button(self) -> None:
+        """Keep the compatibility button and the visible segmented bar in sync."""
+
+        super()._update_language_button()
+        bar = getattr(self, "_language_bar", None)
+        if bar is not None:
+            bar.set_languages(self._source_language, self._target_language)
+
+    def set_target_language(self, target_language: object) -> str:
+        """Set a concrete target language; automatic detection is source-only."""
+
+        normalized = normalize_target_language_code(
+            target_language,
+            fallback=self._target_language if self._target_language != "auto" else "zh-CN",
+        )
+        self.set_languages(self._source_language, normalized)
+        return self._target_language
+
+    def swap_languages(self) -> tuple[str, str]:
+        """Swap concrete language directions without ever making target ``auto``."""
+
+        if self._source_language == "auto":
+            return self._source_language, self._target_language
+        return self.set_languages(self._target_language, self._source_language)
+
+    def _handle_context_action(self, key: str, value: object) -> None:
+        if key == "target_language":
+            value = self.set_target_language(value)
+        elif key == "swap_languages":
+            value = self.swap_languages()
+        super()._handle_context_action(key, value)
+
     def _apply_responsive_minimum_width(self) -> None:
         minimum_width = (
             CHAT_MIN_RESIZE_WIDTH if self._chat_open else TRANSLATION_MIN_RESIZE_WIDTH
@@ -76,19 +140,33 @@ class ResizableConversationalAIOverlayWindow(
 
         handle = getattr(self, "_drag_handle", None)
         header = getattr(self, "_header", None)
+        language_bar = getattr(self, "_language_bar", None)
         language = getattr(self, "_language_button", None)
-        if handle is None or header is None or language is None:
+        if handle is None or header is None:
             return
 
-        left_limit = language.geometry().right() + MIN_DRAG_HANDLE_GAP
+        if language_bar is not None and language_bar.isVisible():
+            left_limit = language_bar.geometry().right() + MIN_DRAG_HANDLE_GAP
+            excluded = {
+                language_bar.source_button,
+                language_bar.swap_button,
+                language_bar.target_button,
+            }
+        elif language is not None:
+            left_limit = language.geometry().right() + MIN_DRAG_HANDLE_GAP
+            excluded = {language}
+        else:
+            left_limit = MIN_DRAG_HANDLE_GAP
+            excluded = set()
+
         right_limit = header.width() - MIN_DRAG_HANDLE_GAP
         right_buttons = [
             button
             for button in header.findChildren(QToolButton)
-            if button is not language
+            if button not in excluded
             and button.parentWidget() is header
             and button.isVisible()
-            and button.geometry().left() > language.geometry().left()
+            and button.geometry().left() > left_limit
         ]
         if right_buttons:
             right_limit = min(button.geometry().left() for button in right_buttons)
@@ -335,6 +413,15 @@ class ResizableConversationalAIOverlayWindow(
                 handle.show()
             self._layout_resize_handles()
         return result
+
+    def _apply_theme(self, theme: str) -> None:
+        super()._apply_theme(theme)
+        palette = OVERLAY_THEMES[self._theme_name]
+        bar = getattr(self, "_language_bar", None)
+        if bar is not None:
+            bar.apply_palette(palette)
+        for handle in getattr(self, "_resize_handles", {}).values():
+            handle.set_theme_colors(palette["border"], palette["accent"])
 
 
 class ResizableConversationalAIOverlayManager(

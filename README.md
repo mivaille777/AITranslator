@@ -1,6 +1,6 @@
 # AITranslator
 
-AITranslator 是一款面向 Windows 的桌面划词翻译与 AI 阅读助手。项目在传统桌面翻译基础上逐步演进为一个由 LangGraph 编排的轻量 AI Agent：用户可以划词翻译、手动编辑原文实时翻译，也可以围绕当前阅读上下文进入多轮 AI 对话。
+AITranslator 是一款面向 Windows 的桌面划词翻译与 AI 阅读助手。项目在传统桌面翻译基础上逐步演进为一个由 LangGraph 编排的轻量 Desktop Context Agent：用户可以划词翻译、手动编辑原文实时翻译、围绕当前阅读上下文进入多轮 AI 对话，并让 Agent 调用本地文档与 Web 工具。
 
 ## 功能
 
@@ -15,35 +15,32 @@ AITranslator 是一款面向 Windows 的桌面划词翻译与 AI 阅读助手。
 - AI 回答支持流式输出、停止生成、单条复制和重新生成。
 - 历史会话支持搜索、重命名、删除和切换。
 - AI 可以通过 Human-in-the-loop 工作流提议进入翻译工作区；用户确认后切换，翻译期间仍可通过紧凑 Agent Dock 继续对话，说“翻译完了”即可返回完整 Chat。
+- File / Document Agent Tool 支持 PDF、DOCX、TXT、Markdown：`open_file`、`read_document`、`extract_document_text`、`search_document`、`summarize_document`。
+- Web Agent Tool 支持 `web_search` 与 `web_read`；网页正文与搜索摘要作为 Tool Observation 注入 Chat，而不是伪装成用户消息。
 - 支持托盘运行、设置管理和翻译结果缓存。
 - 使用 Google Translate 网页翻译服务，无需配置 Google Cloud 凭据。
 
 ## LangGraph Agent architecture
 
-AITranslator 使用 LangGraph 作为应用层任务编排框架，而不是把 LangGraph 仅作为模型调用包装器。当前架构分成两个图层。
+AITranslator 使用 LangGraph 作为应用层任务编排框架，而不是把 LangGraph 仅作为模型调用包装器。当前主要由三个 Agent 图层组成。
 
-### 1. Execution Graph
+### 1. Chat Execution Graph
 
 ```text
-START
-  |
+ChatRequest
+   |
 prepare
-  |
-  +-------------------+
-  |                   |
-translation         chat
-  |                   |
-Google/Web         LLM stream
-translation        custom token stream
-  |                   |
-  +--------- END ------+
+   |
+ chat
+   |
+LLM custom token stream
+   |
+  END
 ```
 
-`app/agent/workflow.py` 定义共享 `AgentWorkflowState` 和 `AITranslatorAgentGraph`：
+`app/agent/workflow.py` 提供共享 Chat 执行图和 LangGraph `custom` stream。Qt worker 在后台运行 Graph，token 再通过 Qt Signal 增量渲染到悬浮窗。
 
-- `translation` 节点负责确定性的翻译执行；
-- `chat` 节点负责上下文对话和模型流式生成；
-- Chat token 通过 LangGraph `custom` stream 输出，再由 Qt Signal 增量渲染到悬浮窗。
+普通 Google/Web 翻译在生产路径中保持确定性的 `TranslationTask -> TranslationManager -> Provider`，不把带有 SQLite/HTTP connection/Lock 的运行时服务对象放入 Agent State。LangGraph 负责“何时使用翻译能力和工作区”，而不是替代稳定的翻译 Provider 执行层。
 
 ### 2. Workspace Agent Graph
 
@@ -75,9 +72,64 @@ Translation workspace + compact Agent Dock
 - Dock 中的普通 AI 问题会携带当前最新原文和译文作为 ChatContext；
 - 用户说“翻译完了 / 结束翻译”等结束意图后，Graph 产生 `return_to_chat`，恢复同一个 SQLite 会话的完整 Chat 页面。
 
-这种模式属于 Human-in-the-loop、Intent Routing、UI Tool Orchestration 与 Stateful Multi-turn Workflow 的组合。SQLite 负责长期会话历史；LangGraph checkpointer 负责当前进程内可暂停/恢复的短期 Workspace 状态；Qt Controller 负责实际 UI 副作用、请求版本控制和取消操作。
+### 3. Agent Tool Graph
 
-这种分层使后续增加 RAG、工具调用、网页/文档检索、任务规划或多 Agent 节点时，可以复用同一个“Agent 提议 → 用户批准 → Workspace Tool → 子任务 → 返回主会话”模式，而无需重写悬浮窗和底层 Provider。
+```text
+User message
+    |
+Tool intent classification
+    |
+    +---------------- Document ----------------+
+    | open_file / read_document                |
+    | extract_document_text / search_document  |
+    | summarize_document                       |
+    +------------------------------------------+
+    |
+    +------------------- Web ------------------+
+    | web_search / web_read                    |
+    +------------------------------------------+
+    |
+AgentToolRegistry.invoke()
+    |
+Tool Observation
+    |
+ChatRequest.tool_context
+    |
+LLM grounded answer
+```
+
+`app/agent/tool_runtime.py` 与 `app/agent/tools/` 提供统一 Tool Registry：
+
+- `open_file`：打开 PDF、DOCX、TXT 或 Markdown；没有路径时由 Qt Controller 打开系统文件选择器；
+- `read_document`：读取当前文档的有界文本片段；
+- `extract_document_text`：提取当前文档正文，设置最大文本边界；
+- `search_document`：在当前文档片段中检索关键词并返回带位置标签的证据；
+- `summarize_document`：确定性准备摘要证据，再交给 LLM 做推理总结；
+- `web_search`：通过公开搜索页面检索 Web 结果；
+- `web_read`：读取公开网页正文，并阻止 localhost、私网、保留地址等潜在 SSRF 目标。
+
+PDF/DOCX 解析、文档检索、Web Search 和 Web Read 都通过现有 QThreadPool 在 GUI 线程之外执行。Tool Observation 被单独放入 `ChatRequest.tool_context`，系统提示明确把文档/网页内容视为不可信数据，从而降低网页或文档中的 prompt injection 影响。当前打开文档只保存在进程内存，不会自动把本地文件正文写入 SQLite 会话数据库。
+
+这种模式属于 Human-in-the-loop、Intent Routing、Tool Routing、UI Tool Orchestration 与 Stateful Multi-turn Workflow 的组合。SQLite 负责长期会话历史；LangGraph checkpointer 负责当前进程内可暂停/恢复的短期 Workspace 状态；Qt Controller 负责实际 UI 副作用、请求版本控制和取消操作。
+
+## Agent Tool examples
+
+```text
+用户：打开文档
+Agent：弹出文件选择器 -> open_file
+
+用户：总结这个文档
+Agent：summarize_document -> Tool Observation -> LLM 总结
+
+用户：在文档里搜索 Safety Gate
+Agent：search_document("Safety Gate") -> LLM 基于匹配片段回答
+
+用户：联网搜索 LangGraph ToolNode 最新资料
+Agent：web_search("LangGraph ToolNode 最新资料") -> LLM 综合搜索结果回答
+
+用户：读取网页 https://example.com/article
+Agent：web_read(url) -> LLM 基于网页正文回答
+```
 
 ## DeepSeek / OpenAI-compatible AI
 

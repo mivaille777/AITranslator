@@ -20,6 +20,8 @@ from app.ai.resizable_overlay import ResizableConversationalAIOverlayManager
 from app.infrastructure.settings import SettingsManager
 from app.input.mouse_selection_manager import MOUSE_SELECTION_SOURCE
 from app.models.events import TranslationTriggerEvent
+from app.overlay.context_menu import normalize_language_code
+from app.overlay.language_bar import normalize_target_language_code
 
 
 STREAM_CHAT_ERROR_TEXT = "AI 对话请求失败。"
@@ -43,6 +45,7 @@ class StreamingResizableAIAppController(
             )
         self._active_stream_request_id: int | None = None
         super().__init__(*args, **kwargs)
+        self._normalize_runtime_language_pair(persist_invalid_target=True)
 
     def _connect_tray_signals(self) -> None:
         """Wire the renamed tray visibility action to real Overlay visibility."""
@@ -103,6 +106,141 @@ class StreamingResizableAIAppController(
             True,
         )
         self.logger.info("overlay_shown")
+
+    def _configured_language_pair(self) -> tuple[str, str]:
+        source = normalize_language_code(
+            getattr(
+                self.translation_manager,
+                "default_source_language",
+                getattr(self.config_manager, "translation_source_language", "auto"),
+            )
+        )
+        target_raw = getattr(
+            self.translation_manager,
+            "default_target_language",
+            getattr(self.config_manager, "translation_target_language", "zh-CN"),
+        )
+        target = normalize_target_language_code(target_raw)
+        return source, target
+
+    def _apply_language_pair(
+        self,
+        source_language: object,
+        target_language: object,
+        *,
+        persist: bool = True,
+    ) -> tuple[str, str]:
+        source = normalize_language_code(source_language)
+        target = normalize_target_language_code(target_language)
+
+        configure_languages = getattr(
+            self.translation_manager,
+            "configure_languages",
+            None,
+        )
+        if callable(configure_languages):
+            self._safe_call(
+                "translation_language_apply_failed",
+                configure_languages,
+                source,
+                target,
+            )
+        else:
+            if hasattr(self.translation_manager, "default_source_language"):
+                self.translation_manager.default_source_language = source
+            if hasattr(self.translation_manager, "default_target_language"):
+                self.translation_manager.default_target_language = target
+
+        set_languages = getattr(self.overlay_manager, "set_languages", None)
+        if callable(set_languages):
+            self._safe_call(
+                "overlay_language_display_apply_failed",
+                set_languages,
+                source,
+                target,
+            )
+
+        if persist:
+            save = getattr(self.config_manager, "save", None)
+            if callable(save):
+                try:
+                    save(
+                        {
+                            "translation": {
+                                "source_language": source,
+                                "target_language": target,
+                            }
+                        }
+                    )
+                except Exception as exc:
+                    self._log_exception("translation_language_setting_save_failed", exc)
+        return source, target
+
+    def _normalize_runtime_language_pair(self, *, persist_invalid_target: bool) -> None:
+        raw_target = getattr(
+            self.translation_manager,
+            "default_target_language",
+            getattr(self.config_manager, "translation_target_language", "zh-CN"),
+        )
+        source, target = self._configured_language_pair()
+        invalid_target = str(raw_target or "").strip().lower() == "auto"
+        self._apply_language_pair(
+            source,
+            target,
+            persist=bool(persist_invalid_target and invalid_target),
+        )
+
+    def _handle_language_action(self, key: str, value: object) -> bool:
+        if key == "source_language":
+            _current_source, current_target = self._configured_language_pair()
+            source = normalize_language_code(value)
+            self._apply_language_pair(source, current_target)
+            self.logger.info(
+                "translation_source_language_changed language=%s target=%s",
+                source,
+                current_target,
+            )
+            return True
+
+        if key == "target_language":
+            current_source, _current_target = self._configured_language_pair()
+            target = normalize_target_language_code(value)
+            self._apply_language_pair(current_source, target)
+            self.logger.info(
+                "translation_target_language_changed source=%s language=%s",
+                current_source,
+                target,
+            )
+            return True
+
+        if key == "swap_languages":
+            if isinstance(value, (tuple, list)) and len(value) == 2:
+                candidate_source = normalize_language_code(value[0])
+                candidate_target = normalize_target_language_code(value[1])
+            else:
+                current_source, current_target = self._configured_language_pair()
+                if current_source == "auto":
+                    return True
+                candidate_source = current_target
+                candidate_target = normalize_target_language_code(current_source)
+
+            # ``auto`` is valid only on the source side. The visible swap
+            # button is disabled in that state, but keep the controller guard
+            # too so synthetic/context events cannot persist an invalid pair.
+            if candidate_source == "auto" or str(candidate_target).lower() == "auto":
+                return True
+            source, target = self._apply_language_pair(
+                candidate_source,
+                candidate_target,
+            )
+            self.logger.info(
+                "translation_languages_swapped source=%s target=%s",
+                source,
+                target,
+            )
+            return True
+
+        return False
 
     def _is_ai_chat_open(self) -> bool:
         """Return whether the production Overlay is currently in Chat mode."""
@@ -169,6 +307,8 @@ class StreamingResizableAIAppController(
         super()._select_chat_model(payload)
 
     def _on_overlay_context_action(self, key: str, value: object) -> None:
+        if self._handle_language_action(key, value):
+            return
         if key == "ai_chat_close":
             self._chat_request_versions.next_request_id()
             self._cancel_active_stream()
@@ -309,6 +449,7 @@ class StreamingResizableAIAppController(
 
     def _apply_runtime_settings(self) -> None:
         super()._apply_runtime_settings()
+        self._normalize_runtime_language_pair(persist_invalid_target=True)
         if not self._chat_service_injected:
             self.chat_service = None
 

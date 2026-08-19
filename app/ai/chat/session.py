@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from app.ai.chat.models import ChatContext, ChatMessage, ChatRequest, ChatRole
+from app.ai.chat.models import (
+    ChatContext,
+    ChatMessage,
+    ChatRequest,
+    ChatRole,
+    ReadingContext,
+)
 
 
 DEFAULT_MAX_CHAT_MESSAGES = 20
@@ -26,9 +32,22 @@ class ChatSession:
     def set_context(self, context: ChatContext) -> bool:
         """Replace context and rotate session identity when reading context changes."""
 
+        reading = (
+            context.reading
+            if isinstance(context.reading, ReadingContext)
+            else ReadingContext()
+        )
         normalized = ChatContext(
             source_text=str(context.source_text or "").strip(),
             translated_text=str(context.translated_text or "").strip(),
+            reading=ReadingContext(
+                resource_url=str(reading.resource_url or "").strip(),
+                resource_title=str(reading.resource_title or "").strip(),
+                section_heading=str(reading.section_heading or "").strip(),
+                context_before=str(reading.context_before or "").strip(),
+                context_after=str(reading.context_after or "").strip(),
+                source_kind=str(reading.source_kind or "").strip(),
+            ),
         )
         changed = normalized != self.context
         if changed:

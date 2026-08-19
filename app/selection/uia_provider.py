@@ -8,7 +8,7 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from app.models.selection import SelectedText
+from app.models.selection import SelectedText, SelectionContext
 from app.selection.base import SelectionProvider
 from app.selection.errors import SelectionError
 
@@ -16,13 +16,18 @@ DEFAULT_UIA_TIMEOUT_SECONDS = 0.25
 
 
 class UIASelectionProvider(SelectionProvider):
-    """Read a focused UI Automation TextPattern with a bounded wait.
+    """Read a UI Automation TextPattern selection with a bounded wait.
+
+    Automatic mouse selection can supply a :class:`SelectionContext`. In that
+    mode the provider first resolves the control at the captured screen point
+    or foreground HWND, then falls back to the focused control. This is more
+    deterministic than relying on focus alone and never synthesizes Ctrl+C.
 
     The ``uiautomation`` package is imported only inside the worker. This
     keeps the provider importable in tests and lets an unavailable or broken
-    UIA control fall through to the next selection provider. A timed-out UIA
-    call cannot be cancelled safely, so the worker is deliberately daemonized
-    and the application waits only for the configured interval.
+    UIA control fall through to the next native provider. A timed-out UIA call
+    cannot be cancelled safely, so the worker is deliberately daemonized and
+    the application waits only for the configured interval.
     """
 
     def __init__(
@@ -38,6 +43,7 @@ class UIASelectionProvider(SelectionProvider):
         except (TypeError, ValueError):
             timeout = DEFAULT_UIA_TIMEOUT_SECONDS
         self.timeout_seconds = max(0.001, timeout)
+        self._uses_default_reader = automation_reader is None
         self._automation_reader = (
             automation_reader
             if automation_reader is not None
@@ -47,13 +53,31 @@ class UIASelectionProvider(SelectionProvider):
     def get_selected_text(self) -> SelectedText:
         """Return the focused TextPattern selection or a safe SelectionError."""
 
+        return self._get_selected_text(context=None)
+
+    def get_selected_text_with_context(
+        self,
+        context: SelectionContext | None,
+    ) -> SelectedText:
+        """Return selection using the captured external-window context first."""
+
+        return self._get_selected_text(context=context)
+
+    def _get_selected_text(
+        self,
+        *,
+        context: SelectionContext | None,
+    ) -> SelectedText:
         result: list[str | SelectedText] = []
         errors: list[Exception] = []
         completed = threading.Event()
 
         def worker() -> None:
             try:
-                result.append(self._automation_reader())
+                if self._uses_default_reader:
+                    result.append(self._read_with_uiautomation(context))
+                else:
+                    result.append(self._automation_reader())
             except Exception as exc:  # UIA and COM exceptions vary by control.
                 errors.append(exc)
             finally:
@@ -88,11 +112,7 @@ class UIASelectionProvider(SelectionProvider):
 
         try:
             selected = result[0]
-            text = (
-                selected.text
-                if isinstance(selected, SelectedText)
-                else str(selected)
-            )
+            text = selected.text if isinstance(selected, SelectedText) else str(selected)
             if not text.strip():
                 raise SelectionError("UIA selection is empty")
             return SelectedText(text=text, provider="uia")
@@ -104,8 +124,8 @@ class UIASelectionProvider(SelectionProvider):
             raise error
 
     @staticmethod
-    def _read_with_uiautomation() -> str:
-        """Read the current selection through the focused UIA TextPattern."""
+    def _read_with_uiautomation(context: SelectionContext | None = None) -> str:
+        """Read the current selection through UI Automation TextPattern."""
 
         automation = importlib.import_module("uiautomation")
 
@@ -119,20 +139,99 @@ class UIASelectionProvider(SelectionProvider):
             # that creates or uses Controls and TextPatterns. Keep all UIA
             # objects inside this context; none cross back to the GUI thread.
             with initializer_factory():
-                return UIASelectionProvider._read_from_automation(automation)
-        return UIASelectionProvider._read_from_automation(automation)
+                return UIASelectionProvider._read_from_automation(
+                    automation,
+                    context=context,
+                )
+        return UIASelectionProvider._read_from_automation(
+            automation,
+            context=context,
+        )
 
     @staticmethod
-    def _read_from_automation(automation: Any) -> str:
-        """Read a selection from an already initialized UIA context."""
+    def _read_from_automation(
+        automation: Any,
+        context: SelectionContext | None = None,
+    ) -> str:
+        """Read a selection from the best control in an initialized UIA context."""
+
+        controls: list[Any] = []
+        context_control = UIASelectionProvider._control_from_context(
+            automation,
+            context,
+        )
+        if context_control is not None:
+            controls.append(context_control)
 
         get_focused_control = getattr(automation, "GetFocusedControl", None)
-        if not callable(get_focused_control):
+        if callable(get_focused_control):
+            try:
+                focused_control = get_focused_control()
+            except Exception:
+                focused_control = None
+            if focused_control is not None and all(
+                focused_control is not control for control in controls
+            ):
+                controls.append(focused_control)
+
+        if not controls:
             raise SelectionError("UIA focused control is unavailable")
 
-        control = get_focused_control()
-        if control is None:
-            raise SelectionError("UIA focused control is unavailable")
+        last_error: SelectionError | None = None
+        for control in controls:
+            try:
+                return UIASelectionProvider._read_control_selection(
+                    automation,
+                    control,
+                )
+            except SelectionError as exc:
+                last_error = exc
+
+        if last_error is not None:
+            raise last_error
+        raise SelectionError("UIA text selection is unavailable")
+
+    @staticmethod
+    def _control_from_context(
+        automation: Any,
+        context: SelectionContext | None,
+    ) -> Any | None:
+        """Resolve the UIA control tied to the captured gesture without focus changes."""
+
+        if context is None:
+            return None
+
+        point = context.release_point
+        if point is not None:
+            control_from_point = getattr(automation, "ControlFromPoint", None)
+            if callable(control_from_point):
+                try:
+                    control = control_from_point(*point)
+                except TypeError:
+                    try:
+                        control = control_from_point(point)
+                    except Exception:
+                        control = None
+                except Exception:
+                    control = None
+                if control is not None:
+                    return control
+
+        if context.foreground_hwnd:
+            control_from_handle = getattr(automation, "ControlFromHandle", None)
+            if callable(control_from_handle):
+                try:
+                    control = control_from_handle(int(context.foreground_hwnd))
+                except Exception:
+                    control = None
+                if control is not None:
+                    return control
+
+        return None
+
+    @staticmethod
+    def _read_control_selection(automation: Any, control: Any) -> str:
+        """Read selected text from one control supporting TextPattern."""
 
         text_pattern = UIASelectionProvider._get_text_pattern(
             automation,

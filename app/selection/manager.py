@@ -121,11 +121,22 @@ class SelectionManager:
                         selected = contextual_capture(context)
                     else:
                         selected = provider.get_selected_text()
-                    self.logger.info(
-                        "selection_provider_used provider=%s mode=%s",
-                        selected.provider,
-                        mode,
-                    )
+
+                    # Keep the legacy full-path log signature stable for
+                    # existing integrations/tests. Native automatic capture
+                    # gets an explicit mode suffix so diagnostics still show
+                    # that the zero-keyboard path was used.
+                    if mode == "full":
+                        self.logger.info(
+                            "selection_provider_used provider=%s",
+                            selected.provider,
+                        )
+                    else:
+                        self.logger.info(
+                            "selection_provider_used provider=%s mode=%s",
+                            selected.provider,
+                            mode,
+                        )
                     return selected
                 except SelectionError as exc:
                     last_error = exc

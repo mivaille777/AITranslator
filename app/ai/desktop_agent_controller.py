@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QFileDialog
 
 from app.agent.desktop_tool_runtime import DesktopAgentToolCoordinator
@@ -12,7 +13,14 @@ from app.ai.agent_workspace_controller import AgentWorkspaceAppController
 from app.ai.desktop_agent_overlay import DesktopAgentOverlayManager
 from app.ai.chat import ChatRole
 from app.ai.tool_task import AgentToolTask
+from app.controller import INPUT_TEXT_ERROR_TEXT, SELECTION_ERROR_TEXT
 from app.infrastructure.settings import SettingsManager
+from app.input.mouse_selection_manager import MOUSE_SELECTION_SOURCE
+from app.models.events import TranslationTriggerEvent
+from app.models.selection import SelectionContext
+from app.selection.errors import SelectionError
+from app.selection.foreground import ForegroundApplicationDetector
+from app.translation.errors import TextNormalizationError
 
 
 class DesktopAgentAppController(AgentWorkspaceAppController):
@@ -22,6 +30,7 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         self,
         *args: Any,
         tool_runtime: DesktopAgentToolCoordinator | None = None,
+        foreground_detector: ForegroundApplicationDetector | Any | None = None,
         **kwargs: Any,
     ) -> None:
         if kwargs.get("overlay_manager") is None:
@@ -37,6 +46,9 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             tool_runtime=tool_runtime or DesktopAgentToolCoordinator(),
             **kwargs,
         )
+        self._selection_foreground_detector = (
+            foreground_detector or ForegroundApplicationDetector()
+        )
         # The base controller still exposes a legacy test-text tray route.
         # Production double-click/show intents should restore the real Overlay
         # exactly as it was instead of replacing its content with test text.
@@ -51,6 +63,100 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
     @property
     def workspace_root(self) -> str:
         return self.desktop_tool_runtime.workspace_root
+
+    def _capture_native_selection_context(self) -> SelectionContext:
+        """Freeze non-sensitive window/point metadata before hiding the Overlay."""
+
+        cursor = QCursor.pos()
+        detector = self._selection_foreground_detector
+
+        hwnd = None
+        window_handle = getattr(detector, "window_handle", None)
+        if callable(window_handle):
+            try:
+                hwnd = window_handle()
+            except Exception:
+                hwnd = None
+
+        process_name = None
+        executable_name = getattr(detector, "executable_name", None)
+        if callable(executable_name):
+            try:
+                process_name = executable_name()
+            except Exception:
+                process_name = None
+
+        return SelectionContext(
+            release_x=cursor.x(),
+            release_y=cursor.y(),
+            foreground_hwnd=hwnd,
+            process_name=str(process_name) if process_name else None,
+        )
+
+    def _on_translation_triggered(self, event: TranslationTriggerEvent) -> None:
+        """Use a zero-keyboard native capture path for automatic mouse selection."""
+
+        if event.source != MOUSE_SELECTION_SOURCE:
+            super()._on_translation_triggered(event)
+            return
+
+        self.logger.info("AUTO_SELECTION_TRIGGERED source=%s", event.source)
+        if not self._translation_enabled:
+            self.logger.info("auto_selection_ignored translation_paused")
+            return
+        if self._is_cursor_over_overlay():
+            self.logger.info("auto_selection_ignored overlay_hover")
+            return
+
+        # Capture routing metadata before changing any of our own window state.
+        # The automatic path is intentionally native-only: if Word/UIA cannot
+        # expose the selection, we fail without touching the clipboard and
+        # without synthesizing Ctrl+C/Ctrl+V.
+        context = self._capture_native_selection_context()
+        self._hide_overlay_for_selection()
+
+        capture_native = getattr(
+            self.selection_manager,
+            "get_selected_text_native",
+            None,
+        )
+        if not callable(capture_native):
+            self.logger.info("selection_failed native_capture_unavailable")
+            self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
+            return
+
+        try:
+            selected = capture_native(context=context)
+        except SelectionError as exc:
+            self.logger.info(
+                "selection_failed mode=native error_type=%s",
+                type(exc).__name__,
+            )
+            self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
+            return
+        except Exception as exc:
+            self._log_exception("native_selection_unexpected_error", exc)
+            self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
+            return
+
+        self.logger.info(
+            "selection_captured text_length=%s provider=%s mode=native",
+            len(selected.text),
+            selected.provider,
+        )
+        self._last_source_text = selected.text
+
+        try:
+            translatable_text = self._prepare_selected_text(selected.text)
+        except TextNormalizationError as exc:
+            self.logger.info(
+                "input_text_rejected error_type=%s",
+                type(exc).__name__,
+            )
+            self._show_translation_error(INPUT_TEXT_ERROR_TEXT, "InputError")
+            return
+
+        self._submit_translation(translatable_text)
 
     def _show_overlay_from_tray(self) -> None:
         """Restore the existing Overlay and synchronize tray visibility state."""

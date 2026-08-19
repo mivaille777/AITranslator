@@ -95,8 +95,11 @@ class ForegroundApplicationDetector:
             self._configure_api(user32, kernel32)
 
             process_id = wintypes.DWORD(0)
+            # ``argtypes`` on the real ctypes function performs HWND coercion;
+            # passing the plain integer also keeps injected/fake Win32 APIs
+            # simple and backwards compatible in tests.
             user32.GetWindowThreadProcessId(
-                wintypes.HWND(int(hwnd)),
+                int(hwnd),
                 ctypes.byref(process_id),
             )
             if not process_id.value:

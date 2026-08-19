@@ -11,7 +11,7 @@ from app.agent.desktop_tool_runtime import DesktopAgentToolCoordinator
 from app.agent.tool_runtime import AgentToolPlan
 from app.ai.agent_workspace_controller import AgentWorkspaceAppController
 from app.ai.desktop_agent_overlay import DesktopAgentOverlayManager
-from app.ai.chat import ChatRole
+from app.ai.chat import ChatContext, ChatRole, ReadingContext
 from app.ai.tool_task import AgentToolTask
 from app.controller import INPUT_TEXT_ERROR_TEXT, SELECTION_ERROR_TEXT
 from app.infrastructure.settings import SettingsManager
@@ -55,6 +55,9 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         self._selection_foreground_detector = (
             foreground_detector or ForegroundApplicationDetector()
         )
+        self._active_reading_context = ReadingContext()
+        self._reading_context_source_text = ""
+        self._reading_context_translation_text = ""
         # The base controller still exposes a legacy test-text tray route.
         # Production double-click/show intents should restore the real Overlay
         # exactly as it was instead of replacing its content with test text.
@@ -130,35 +133,66 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             process_name=str(process_name) if process_name else None,
         )
 
-    def _remember_browser_bridge_context(self, context: SelectionContext) -> None:
-        """Feed the extension's URL/title into the Agent's existing browser memory."""
+    def _set_reading_context(
+        self,
+        selected_text: str,
+        reading: ReadingContext,
+    ) -> None:
+        """Bind one bounded reading context to the selection that produced it."""
+
+        self._active_reading_context = reading
+        self._reading_context_source_text = str(selected_text or "").strip()
+        self._reading_context_translation_text = ""
+
+    def _remember_browser_bridge_context(
+        self,
+        context: SelectionContext,
+    ) -> object | None:
+        """Cache browser metadata and return the matched structured snapshot."""
 
         latest_snapshot = getattr(
             self.browser_selection_bridge,
             "latest_snapshot",
             None,
         )
+        if not callable(latest_snapshot):
+            return None
+        try:
+            snapshot = latest_snapshot(context=context)
+        except Exception:
+            return None
+
         remember_context = getattr(
             self.desktop_tool_runtime.browser_tools,
             "remember_context",
             None,
         )
-        if not callable(latest_snapshot) or not callable(remember_context):
-            return
-        try:
-            snapshot = latest_snapshot(context=context)
-        except Exception:
-            return
-        if not getattr(snapshot, "url", ""):
-            return
-        try:
-            remember_context(
-                snapshot.url,
-                getattr(snapshot, "title", ""),
-                source="selection_bridge",
-            )
-        except Exception as exc:
-            self._log_exception("browser_bridge_context_cache_failed", exc)
+        if callable(remember_context) and getattr(snapshot, "url", ""):
+            try:
+                remember_context(
+                    snapshot.url,
+                    getattr(snapshot, "title", ""),
+                    source="selection_bridge",
+                )
+            except Exception as exc:
+                self._log_exception("browser_bridge_context_cache_failed", exc)
+
+        self._set_reading_context(
+            getattr(snapshot, "text", ""),
+            ReadingContext(
+                resource_url=str(getattr(snapshot, "url", "") or "").strip(),
+                resource_title=str(getattr(snapshot, "title", "") or "").strip(),
+                section_heading=str(getattr(snapshot, "heading", "") or "").strip(),
+                context_before=str(
+                    getattr(snapshot, "context_before", "") or ""
+                ).strip(),
+                context_after=str(
+                    getattr(snapshot, "context_after", "") or ""
+                ).strip(),
+                source_kind="browser_selection",
+            ),
+        )
+        return snapshot
 
     def _capture_automatic_selection(
         self,
@@ -192,7 +226,42 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         )
         if not callable(capture_native):
             raise SelectionError("native selection capture is unavailable")
-        return capture_native(context=context)
+        selected = capture_native(context=context)
+        # A Word/UIA selection must not inherit URL/heading/context from the
+        # previous browser selection.
+        self._set_reading_context(
+            selected.text,
+            ReadingContext(source_kind=selected.provider),
+        )
+        return selected
+
+    def _current_reading_context(self) -> ChatContext:
+        """Return current selected text plus metadata tied to that exact selection."""
+
+        base = super()._current_reading_context()
+        source_text = str(base.source_text or "").strip()
+        if source_text and source_text == self._reading_context_source_text:
+            return ChatContext(
+                source_text=source_text,
+                translated_text=self._reading_context_translation_text,
+                reading=self._active_reading_context,
+            )
+        return base
+
+    def _sync_active_reading_context(self) -> None:
+        """Update the active conversation without deleting its message history."""
+
+        manager = getattr(self, "conversation_manager", None)
+        active = getattr(manager, "active", None)
+        if manager is None or active is None:
+            return
+        update = getattr(manager, "update_active_context", None)
+        if not callable(update):
+            return
+        try:
+            update(self._current_reading_context())
+        except Exception as exc:
+            self._log_exception("reading_context_sync_failed", exc)
 
     def _on_translation_triggered(self, event: TranslationTriggerEvent) -> None:
         """Use zero-keyboard browser/native capture for automatic mouse selection."""
@@ -209,9 +278,6 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             self.logger.info("auto_selection_ignored overlay_hover")
             return
 
-        # Stage 2 freezes this context inside MouseSelectionManager at physical
-        # mouse-up. Use that immutable snapshot directly; only legacy/custom
-        # emitters without a context fall back to a live read here.
         context = (
             event.selection_context
             if isinstance(event.selection_context, SelectionContext)
@@ -239,6 +305,7 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             selected.provider,
         )
         self._last_source_text = selected.text
+        self._sync_active_reading_context()
 
         try:
             translatable_text = self._prepare_selected_text(selected.text)
@@ -251,6 +318,29 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             return
 
         self._submit_translation(translatable_text)
+
+    def _show_translation(
+        self,
+        translated_text: str,
+        *,
+        source_text: str = "",
+        source_language: str = "auto",
+        target_language: str = "zh-CN",
+    ) -> None:
+        """Keep the persisted reading context synchronized with final translation."""
+
+        super()._show_translation(
+            translated_text,
+            source_text=source_text,
+            source_language=source_language,
+            target_language=target_language,
+        )
+        if (
+            str(source_text or "").strip()
+            and str(source_text or "").strip() == self._reading_context_source_text
+        ):
+            self._reading_context_translation_text = str(translated_text or "").strip()
+            self._sync_active_reading_context()
 
     def _show_overlay_from_tray(self) -> None:
         """Restore the existing Overlay and synchronize tray visibility state."""

@@ -75,7 +75,7 @@ def _read_foreground_browser() -> tuple[str, str]:
 
 
 class BrowserContextTools:
-    """Capture the last external browser before the Agent window takes focus."""
+    """Capture and remember the external webpage the Agent is working with."""
 
     def __init__(
         self,
@@ -86,6 +86,39 @@ class BrowserContextTools:
         self._lock = RLock()
         self._last_url = ""
         self._last_title = ""
+
+    def remember_context(
+        self,
+        url: object,
+        title: object = "",
+        *,
+        source: str = "browser_bridge",
+    ) -> ToolResult:
+        """Persist a validated URL/title supplied by a trusted local browser source."""
+
+        candidate = _normalize_candidate(url)
+        parsed = urlparse(candidate) if candidate else None
+        if not candidate or parsed is None or not parsed.hostname:
+            return ToolResult(
+                "get_active_browser_context",
+                False,
+                "浏览器上下文中的网页地址无效。",
+            )
+        safe_title = str(title or "").strip()[:1024]
+        with self._lock:
+            self._last_url = candidate
+            self._last_title = safe_title
+        return ToolResult(
+            "get_active_browser_context",
+            True,
+            candidate,
+            {
+                "url": candidate,
+                "title": safe_title,
+                "cached": False,
+                "source": str(source or "browser_bridge"),
+            },
+        )
 
     def capture_foreground(self) -> ToolResult:
         try:
@@ -102,14 +135,13 @@ class BrowserContextTools:
                 False,
                 "当前前台窗口没有可读取的网页地址。",
             )
-        with self._lock:
-            self._last_url = url
-            self._last_title = title
+        remembered = self.remember_context(url, title, source="uia_address_bar")
+        if remembered.ok:
+            return remembered
         return ToolResult(
             "get_active_browser_context",
-            True,
-            url,
-            {"url": url, "title": title, "cached": False},
+            False,
+            "当前前台窗口没有可读取的网页地址。",
         )
 
     def get_active_browser_context(self) -> ToolResult:

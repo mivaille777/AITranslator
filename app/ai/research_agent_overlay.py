@@ -36,6 +36,33 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
     def research_actions(self) -> dict[str, QAction]:
         return dict(self._research_actions)
 
+    def _set_content(
+        self,
+        source_text: object | None,
+        translated_text: object | None,
+        source_language: object,
+        target_language: object,
+        *,
+        animate: bool = False,
+    ) -> None:
+        """Keep source-bound research actions aligned with displayed content."""
+
+        super()._set_content(
+            source_text,
+            translated_text,
+            source_language,
+            target_language,
+            animate=animate,
+        )
+        # OverlayWindow changes source/translation state through _set_content,
+        # but its generic menu has no knowledge of Stage-6 research actions.
+        # Refresh here so a newly displayed selection immediately enables
+        # Save Note, while replacing it with source-less text disables the
+        # action again.  The guards in _sync_context_menu_state keep this safe
+        # during base-class construction before reading actions are installed.
+        if hasattr(self, "_context_menu"):
+            self._sync_context_menu_state()
+
     def _install_research_actions(self) -> None:
         menu = self.context_menu.ai_menu
         menu.addSeparator()

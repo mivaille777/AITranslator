@@ -65,26 +65,33 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         return self.desktop_tool_runtime.workspace_root
 
     def _capture_native_selection_context(self) -> SelectionContext:
-        """Freeze non-sensitive window/point metadata before hiding the Overlay."""
+        """Compatibility fallback when a caller did not freeze mouse-up context."""
 
         cursor = QCursor.pos()
         detector = self._selection_foreground_detector
 
         hwnd = None
-        window_handle = getattr(detector, "window_handle", None)
-        if callable(window_handle):
+        process_name = None
+        snapshot = getattr(detector, "snapshot", None)
+        if callable(snapshot):
             try:
-                hwnd = window_handle()
+                hwnd, process_name = snapshot()
             except Exception:
                 hwnd = None
-
-        process_name = None
-        executable_name = getattr(detector, "executable_name", None)
-        if callable(executable_name):
-            try:
-                process_name = executable_name()
-            except Exception:
                 process_name = None
+        else:
+            window_handle = getattr(detector, "window_handle", None)
+            if callable(window_handle):
+                try:
+                    hwnd = window_handle()
+                except Exception:
+                    hwnd = None
+            executable_name = getattr(detector, "executable_name", None)
+            if callable(executable_name):
+                try:
+                    process_name = executable_name()
+                except Exception:
+                    process_name = None
 
         return SelectionContext(
             release_x=cursor.x(),
@@ -108,11 +115,14 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             self.logger.info("auto_selection_ignored overlay_hover")
             return
 
-        # Capture routing metadata before changing any of our own window state.
-        # The automatic path is intentionally native-only: if Word/UIA cannot
-        # expose the selection, we fail without touching the clipboard and
-        # without synthesizing Ctrl+C/Ctrl+V.
-        context = self._capture_native_selection_context()
+        # Stage 2 freezes this context inside MouseSelectionManager at physical
+        # mouse-up. Use that immutable snapshot directly; only legacy/custom
+        # emitters without a context fall back to a live read here.
+        context = (
+            event.selection_context
+            if isinstance(event.selection_context, SelectionContext)
+            else self._capture_native_selection_context()
+        )
         self._hide_overlay_for_selection()
 
         capture_native = getattr(

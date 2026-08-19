@@ -306,6 +306,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
                 color: {palette['muted_text']};
             }}
             QMenu#OverlayChatHistoryMenu,
+            QMenu#OverlayChatHistoryConversationMenu,
             QMenu#OverlayChatModelMenu {{
                 background-color: {palette['menu_background']};
                 color: {palette['text']};
@@ -314,11 +315,13 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
                 padding: 6px;
             }}
             QMenu#OverlayChatHistoryMenu::item,
+            QMenu#OverlayChatHistoryConversationMenu::item,
             QMenu#OverlayChatModelMenu::item {{
                 padding: 7px 12px;
                 border-radius: 5px;
             }}
             QMenu#OverlayChatHistoryMenu::item:selected,
+            QMenu#OverlayChatHistoryConversationMenu::item:selected,
             QMenu#OverlayChatModelMenu::item:selected {{
                 background-color: {palette['hover']};
             }}

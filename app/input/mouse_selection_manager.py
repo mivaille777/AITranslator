@@ -136,9 +136,11 @@ class MouseSelectionManager(QObject):
             if overlay_hit_test is not None
             else lambda _x, _y: False
         )
-        self._foreground_executable_reader = (
-            foreground_executable_reader or _read_foreground_executable_name
-        )
+        # Keep explicit injected readers distinguishable from the production
+        # defaults. Tests/integrations that intentionally inject a process
+        # reader must stay authoritative even when the real desktop has some
+        # unrelated foreground window at test time.
+        self._foreground_executable_reader = foreground_executable_reader
         self._foreground_snapshot_reader = (
             foreground_snapshot_reader or _read_foreground_snapshot
         )
@@ -479,15 +481,20 @@ class MouseSelectionManager(QObject):
         except Exception:
             pass
 
-        # Preserve the older injectable executable reader for tests and
-        # unusual platforms where only process-name detection is available.
-        if not process_name:
+        # Explicit injected process readers remain authoritative. Production
+        # construction does not inject one, so the normal runtime keeps the
+        # single atomic snapshot above and only performs a fallback read if the
+        # snapshot could not resolve a process name.
+        process_reader = self._foreground_executable_reader
+        if process_reader is not None:
             try:
-                fallback_process = self._foreground_executable_reader()
+                explicit_process = process_reader()
             except Exception:
-                fallback_process = None
-            if fallback_process:
-                process_name = str(fallback_process)
+                explicit_process = None
+            if explicit_process:
+                process_name = str(explicit_process)
+        elif not process_name:
+            process_name = _read_foreground_executable_name()
 
         return SelectionContext(
             press_x=int(press_position[0]),
@@ -571,8 +578,11 @@ class MouseSelectionManager(QObject):
 
         value = process_name
         if not value:
+            reader = self._foreground_executable_reader
+            if reader is None:
+                reader = _read_foreground_executable_name
             try:
-                value = self._foreground_executable_reader()
+                value = reader()
             except Exception:
                 return None
         if not value:

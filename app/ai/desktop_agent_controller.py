@@ -37,6 +37,12 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             tool_runtime=tool_runtime or DesktopAgentToolCoordinator(),
             **kwargs,
         )
+        # The base controller still exposes a legacy test-text tray route.
+        # Production double-click/show intents should restore the real Overlay
+        # exactly as it was instead of replacing its content with test text.
+        self.tray_manager.show_overlay_requested.connect(
+            self._show_overlay_from_tray,
+        )
 
     @property
     def desktop_tool_runtime(self) -> DesktopAgentToolCoordinator:
@@ -45,6 +51,24 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
     @property
     def workspace_root(self) -> str:
         return self.desktop_tool_runtime.workspace_root
+
+    def _show_overlay_from_tray(self) -> None:
+        """Restore the existing Overlay and synchronize tray visibility state."""
+
+        if self._shutdown:
+            return
+        try:
+            self.overlay_manager.show_overlay()
+        except Exception as exc:
+            self._log_exception("overlay_tray_restore_failed", exc)
+            return
+
+        self._overlay_visible = True
+        try:
+            self.tray_manager.set_overlay_visible(True)
+        except Exception as exc:
+            self._log_exception("tray_overlay_visibility_update_failed", exc)
+        self.logger.info("overlay_shown_from_tray")
 
     def _capture_browser_context(self) -> None:
         try:

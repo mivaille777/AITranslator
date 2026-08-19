@@ -26,7 +26,7 @@ class OverlayDragHandle(QWidget):
         self._hovered = False
         self._normal_color = QColor("#CBD5E1")
         self._hover_color = QColor("#60A5FA")
-        self.setToolTip("拖动悬浮窗；双击返回翻译页面")
+        self.setToolTip("拖动悬浮窗；双击收起为 AI Agent 小螃蟹")
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
         return QSize(DRAG_HANDLE_WIDTH, DRAG_HANDLE_HEIGHT)

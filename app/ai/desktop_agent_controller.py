@@ -12,11 +12,13 @@ from app.agent.tool_runtime import AgentToolPlan
 from app.ai.agent_workspace_controller import AgentWorkspaceAppController
 from app.ai.desktop_agent_overlay import DesktopAgentOverlayManager
 from app.ai.chat import ChatContext, ChatRole, ReadingContext
+from app.ai.streaming_controller import StreamingResizableAIAppController
 from app.ai.tool_task import AgentToolTask
 from app.controller import INPUT_TEXT_ERROR_TEXT, SELECTION_ERROR_TEXT
 from app.infrastructure.settings import SettingsManager
 from app.input.mouse_selection_manager import MOUSE_SELECTION_SOURCE
 from app.models.events import TranslationTriggerEvent
+from app.models.reading_actions import READING_ACTION_KEYS, reading_action_prompt
 from app.models.selection import SelectedText, SelectionContext
 from app.selection.browser_bridge import BrowserSelectionBridge
 from app.selection.errors import SelectionError
@@ -26,6 +28,7 @@ from app.translation.errors import TextNormalizationError
 
 CHAT_SELECTION_ERROR_TEXT = "无法读取选中的文本。"
 CHAT_SELECTION_INPUT_ERROR_TEXT = "选中的文本为空或超过输入限制。"
+READING_ACTION_INPUT_ERROR_TEXT = "请先选中一段需要阅读处理的文本。"
 
 
 class DesktopAgentAppController(AgentWorkspaceAppController):
@@ -439,7 +442,64 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         self._capture_browser_context()
         super()._open_ai_chat()
 
+    def _submit_reading_action(self, key: str) -> bool:
+        """Run one built-in Reading Action directly against the current context."""
+
+        if key not in READING_ACTION_KEYS:
+            return False
+        source_text = str(self._last_source_text or "").strip()
+        if not source_text:
+            self._show_translation_error(
+                READING_ACTION_INPUT_ERROR_TEXT,
+                "ReadingActionInputError",
+            )
+            return True
+
+        # If a conversation already exists, make the new selection immediately
+        # visible to it without deleting previous turns. If there is no active
+        # conversation, open_chat() creates one from _current_reading_context().
+        self._sync_active_reading_context()
+        if not self._is_ai_chat_open():
+            self._open_ai_chat()
+        self._sync_active_reading_context()
+
+        target_language = "zh-CN"
+        configured_pair = getattr(self, "_configured_language_pair", None)
+        if callable(configured_pair):
+            try:
+                _source_language, target_language = configured_pair()
+            except Exception:
+                target_language = "zh-CN"
+        prompt = reading_action_prompt(
+            key,
+            target_language=target_language,
+        )
+        if not prompt:
+            return True
+
+        reading = self._current_reading_context().reading
+        self.logger.info(
+            "reading_action_submitted action=%s source_kind=%s has_page_context=%s",
+            key,
+            reading.source_kind or "unknown",
+            bool(
+                reading.resource_title
+                or reading.section_heading
+                or reading.context_before
+                or reading.context_after
+            ),
+        )
+
+        # A quick reading action is already an explicit user intent. Bypass the
+        # Agent workspace/tool planner so words such as "翻译" cannot be
+        # misclassified as a request to switch UI workspaces. The normal
+        # streaming chat path still records the user turn and response.
+        StreamingResizableAIAppController._submit_chat_message(self, prompt)
+        return True
+
     def _on_overlay_context_action(self, key: str, value: object) -> None:
+        if self._submit_reading_action(key):
+            return
         if key == "agent_capture_browser_context":
             self._capture_browser_context()
             return
@@ -513,4 +573,9 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             )
 
 
-__all__ = ["DesktopAgentAppController"]
+__all__ = [
+    "CHAT_SELECTION_ERROR_TEXT",
+    "CHAT_SELECTION_INPUT_ERROR_TEXT",
+    "READING_ACTION_INPUT_ERROR_TEXT",
+    "DesktopAgentAppController",
+]

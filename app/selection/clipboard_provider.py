@@ -16,9 +16,10 @@ from app.selection.errors import SelectionError
 
 DEFAULT_TIMEOUT_SECONDS = 1.5
 DEFAULT_POLL_INTERVAL_SECONDS = 0.02
-# GlobalHotKeys can invoke the callback before Windows has fully released the
-# Alt key. A slightly longer guard prevents the synthetic Ctrl+C from being
-# interpreted as Alt+C by the foreground application.
+# Keep a small grace period after a trigger/selection release. Besides the
+# legacy hotkey path, this gives applications a moment to finish publishing a
+# selection and gives a user's immediate Ctrl+C a chance to win before we
+# synthesize any keyboard input.
 DEFAULT_COPY_DELAY_SECONDS = 0.15
 DEFAULT_COPY_ATTEMPTS = 2
 DEFAULT_RESTORE_GUARD_SECONDS = 0.03
@@ -31,14 +32,15 @@ def _new_clipboard_sentinel() -> str:
 
 
 class ClipboardSelectionProvider(SelectionProvider):
-    """Read a foreground selection without stealing a newer user copy.
+    """Read a foreground selection without stealing the user's copy shortcut.
 
-    Clipboard selection is the final fallback after Word/UIA providers. It
-    temporarily sends Ctrl+C, but restores the previous clipboard only while
-    the clipboard still contains the temporary value produced by this
-    operation. If the user or another application performs a newer copy while
-    capture is in progress, that newer clipboard state wins and is never
-    overwritten by AITranslator's cleanup.
+    Clipboard selection is the final fallback after Word/UIA providers. It may
+    temporarily send Ctrl+C, but only after the real keyboard chord is idle.
+    If the user performs Ctrl+C while capture is waiting, that newer clipboard
+    value is accepted directly and no synthetic Ctrl+C is injected.
+
+    Cleanup restores the old clipboard only while AITranslator can still prove
+    it owns the temporary clipboard value. User/application writes always win.
     """
 
     def __init__(
@@ -79,57 +81,134 @@ class ClipboardSelectionProvider(SelectionProvider):
         selected: SelectedText | None = None
         owned_token: object | None = None
         owned_text: str | None = None
+        preserve_current_clipboard = False
 
         try:
-            # GlobalHotKeys invokes the callback while Alt is still physically
-            # down. Give the modifier time to be released before sending Ctrl+C
-            # to the foreground application.
+            # Record the clipboard before the settle/grace window. If the user
+            # presses Ctrl+C in that window, use that fresh value directly.
+            baseline_token = self._safe_change_token()
+            baseline_text = self._safe_read_text()
             if self.copy_delay_seconds:
                 self._sleeper(self.copy_delay_seconds)
 
             snapshot = self.clipboard_adapter.snapshot()
             snapshot_captured = True
+            current_token = self._safe_change_token()
+            current_text = self._safe_read_text()
 
-            # Comparing against the old clipboard is ambiguous when the user
-            # selects exactly the text that was already on the clipboard. Put
-            # a random sentinel in place first, then wait for our synthetic
-            # Ctrl+C to replace it.
-            sentinel = _new_clipboard_sentinel()
-            self.clipboard_adapter.write_text(sentinel)
-            sentinel_token = self.clipboard_adapter.get_change_token()
-            owned_token = sentinel_token
-            owned_text = sentinel
+            if self._external_text_changed(
+                baseline_token,
+                baseline_text,
+                current_token,
+                current_text,
+            ):
+                selected = SelectedText(text=current_text, provider="clipboard")
+                preserve_current_clipboard = True
+            else:
+                # CopyCommandAdapter uses GetAsyncKeyState on Windows. Waiting
+                # here *before* writing the sentinel means a real Ctrl+C can
+                # publish normally without competing with our clipboard write.
+                before_wait_token = current_token
+                before_wait_text = current_text
+                if not self._wait_for_safe_copy_chord():
+                    raise SelectionError("physical copy shortcut is busy")
 
-            copy_succeeded = False
-            attempt_timeout = self.timeout_seconds / self.copy_attempts
-            for attempt in range(self.copy_attempts):
-                self.copy_command_adapter.send_copy()
-                if self._wait_for_clipboard_change(
-                    sentinel_token,
-                    sentinel,
-                    timeout_seconds=attempt_timeout,
+                after_wait_token = self._safe_change_token()
+                after_wait_text = self._safe_read_text()
+                if self._external_text_changed(
+                    before_wait_token,
+                    before_wait_text,
+                    after_wait_token,
+                    after_wait_text,
                 ):
-                    copy_succeeded = True
-                    break
-                if attempt + 1 < self.copy_attempts:
-                    self._sleeper(self.poll_interval_seconds)
+                    selected = SelectedText(
+                        text=after_wait_text,
+                        provider="clipboard",
+                    )
+                    preserve_current_clipboard = True
+                elif self._clipboard_changed(
+                    before_wait_token,
+                    before_wait_text,
+                    after_wait_token,
+                    after_wait_text,
+                ):
+                    # A newer non-text/empty user clipboard write is still
+                    # authoritative; never overwrite it with our sentinel.
+                    preserve_current_clipboard = True
+                    raise SelectionError("clipboard changed during user copy")
 
-            if not copy_succeeded:
-                raise SelectionError("clipboard did not change before timeout")
+            if selected is None:
+                sentinel = _new_clipboard_sentinel()
+                self.clipboard_adapter.write_text(sentinel)
+                sentinel_token = self.clipboard_adapter.get_change_token()
+                owned_token = sentinel_token
+                owned_text = sentinel
 
-            text = self.clipboard_adapter.read_text()
-            owned_token = self.clipboard_adapter.get_change_token()
-            owned_text = str(text)
-            if not owned_text.strip():
-                raise SelectionError("selected text is empty")
-            selected = SelectedText(text=owned_text, provider="clipboard")
+                copy_succeeded = False
+                attempt_timeout = self.timeout_seconds / self.copy_attempts
+                for attempt in range(self.copy_attempts):
+                    # Check the real keys for every retry. A user may start a
+                    # Ctrl+C between attempts; if so we wait and then consume
+                    # the user's clipboard result instead of injecting again.
+                    before_wait_token = self._safe_change_token()
+                    before_wait_text = self._safe_read_text()
+                    if not self._wait_for_safe_copy_chord():
+                        raise SelectionError("physical copy shortcut is busy")
+                    after_wait_token = self._safe_change_token()
+                    after_wait_text = self._safe_read_text()
+
+                    if self._external_text_changed(
+                        before_wait_token,
+                        before_wait_text,
+                        after_wait_token,
+                        after_wait_text,
+                    ):
+                        selected = SelectedText(
+                            text=after_wait_text,
+                            provider="clipboard",
+                        )
+                        preserve_current_clipboard = True
+                        copy_succeeded = True
+                        break
+
+                    # If the sentinel disappeared for any other reason, another
+                    # clipboard owner won the race. Abort instead of replacing
+                    # the user's/application's newer clipboard state.
+                    if (
+                        after_wait_token != sentinel_token
+                        or after_wait_text != sentinel
+                    ):
+                        preserve_current_clipboard = True
+                        raise SelectionError("clipboard changed before synthetic copy")
+
+                    self.copy_command_adapter.send_copy()
+                    if self._wait_for_clipboard_change(
+                        sentinel_token,
+                        sentinel,
+                        timeout_seconds=attempt_timeout,
+                    ):
+                        copy_succeeded = True
+                        break
+                    if attempt + 1 < self.copy_attempts:
+                        self._sleeper(self.poll_interval_seconds)
+
+                if not copy_succeeded:
+                    raise SelectionError("clipboard did not change before timeout")
+
+                if selected is None:
+                    text = self.clipboard_adapter.read_text()
+                    owned_token = self.clipboard_adapter.get_change_token()
+                    owned_text = str(text)
+                    if not owned_text.strip():
+                        raise SelectionError("selected text is empty")
+                    selected = SelectedText(text=owned_text, provider="clipboard")
         except SelectionError as exc:
             operation_error = exc
         except Exception as exc:
             operation_error = SelectionError("clipboard selection failed")
             operation_error.__cause__ = exc
 
-        if snapshot_captured:
+        if snapshot_captured and not preserve_current_clipboard:
             try:
                 if self.restore_guard_seconds:
                     # Give a physical user Ctrl+C immediately following the
@@ -154,6 +233,60 @@ class ClipboardSelectionProvider(SelectionProvider):
         if selected is None:  # pragma: no cover - defensive invariant
             raise SelectionError("selected text was not produced")
         return selected
+
+    def _wait_for_safe_copy_chord(self) -> bool:
+        waiter = getattr(self.copy_command_adapter, "wait_until_safe", None)
+        if not callable(waiter):
+            return True
+        try:
+            return bool(waiter())
+        except Exception as exc:
+            error = SelectionError("keyboard state check failed")
+            error.__cause__ = exc
+            raise error
+
+    def _safe_change_token(self) -> object | None:
+        try:
+            return self.clipboard_adapter.get_change_token()
+        except Exception:
+            return None
+
+    def _safe_read_text(self) -> str:
+        try:
+            value = self.clipboard_adapter.read_text()
+        except Exception:
+            return ""
+        return "" if value is None else str(value)
+
+    @staticmethod
+    def _clipboard_changed(
+        before_token: object | None,
+        before_text: str,
+        after_token: object | None,
+        after_text: str,
+    ) -> bool:
+        if before_token is not None and after_token is not None:
+            if before_token != after_token:
+                return True
+        return before_text != after_text
+
+    @classmethod
+    def _external_text_changed(
+        cls,
+        before_token: object | None,
+        before_text: str,
+        after_token: object | None,
+        after_text: str,
+    ) -> bool:
+        return (
+            bool(after_text.strip())
+            and cls._clipboard_changed(
+                before_token,
+                before_text,
+                after_token,
+                after_text,
+            )
+        )
 
     def _clipboard_still_owned(
         self,

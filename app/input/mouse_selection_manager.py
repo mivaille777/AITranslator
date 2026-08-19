@@ -10,13 +10,14 @@ from threading import Lock
 from time import monotonic
 from typing import Any
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from pynput import mouse
 
 from app.infrastructure.config import ConfigManager
 from app.models.events import TranslationTriggerEvent
 
 DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS = 0.25
+DEFAULT_SELECTION_SETTLE_SECONDS = 0.08
 DEFAULT_DRAG_THRESHOLD_PIXELS = 4
 MOUSE_SELECTION_SOURCE = "mouse_selection"
 LOGGER_NAME = "desktop_translator"
@@ -51,14 +52,16 @@ class MouseSelectionState(str, Enum):
 
 
 class MouseSelectionManager(QObject):
-    """Emit one trigger after a left-button drag and release.
+    """Emit one trigger after a stable left-button drag selection.
 
     The pynput listener owns its own background thread. Its callback performs
-    only small state transitions and emits a Qt signal; selection capture and
-    translation remain in the existing application/controller path.
+    only small state transitions. A real settle interval is then scheduled on
+    the Qt thread before selection capture so Chromium/Electron/rich-text
+    controls can finish committing their selection after mouse-up.
     """
 
     triggered = Signal(object)
+    _capture_requested = Signal(object)
 
     def __init__(
         self,
@@ -68,6 +71,7 @@ class MouseSelectionManager(QObject):
         listener_factory: Callable[..., Any] | None = None,
         clock: Callable[[], float] | None = None,
         debounce_seconds: float | None = None,
+        settle_seconds: float | None = None,
         drag_threshold_pixels: int = DEFAULT_DRAG_THRESHOLD_PIXELS,
         overlay_hit_test: Callable[[int, int], bool] | None = None,
         foreground_executable_reader: Callable[[], str | None] | None = None,
@@ -85,7 +89,23 @@ class MouseSelectionManager(QObject):
                 DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS,
             )
         )
-        self._debounce_seconds = self._coerce_debounce(configured_debounce)
+        configured_settle = (
+            settle_seconds
+            if settle_seconds is not None
+            else getattr(
+                self.config_manager,
+                "auto_selection_settle_seconds",
+                DEFAULT_SELECTION_SETTLE_SECONDS,
+            )
+        )
+        self._debounce_seconds = self._coerce_seconds(
+            configured_debounce,
+            DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS,
+        )
+        self._settle_seconds = self._coerce_seconds(
+            configured_settle,
+            DEFAULT_SELECTION_SETTLE_SECONDS,
+        )
         self._drag_threshold_pixels = max(1, int(drag_threshold_pixels))
         self._listener_factory = listener_factory or mouse.Listener
         self._clock = clock or monotonic
@@ -107,19 +127,31 @@ class MouseSelectionManager(QObject):
         self._dragging = False
         self._press_position: tuple[int, int] | None = None
         self._last_trigger_at: float | None = None
+        self._last_gesture_signature: tuple[int, int, int, int] | None = None
+        self._capture_generation = 0
+        self._capture_requested.connect(self._schedule_capture)
 
     @staticmethod
-    def _coerce_debounce(value: object) -> float:
+    def _coerce_seconds(value: object, fallback: float) -> float:
         try:
             seconds = float(value)
             if not math.isfinite(seconds):
-                raise ValueError("debounce must be finite")
+                raise ValueError("seconds must be finite")
         except (TypeError, ValueError):
-            seconds = DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS
+            seconds = fallback
         return max(0.0, seconds)
 
+    @staticmethod
+    def _coerce_debounce(value: object) -> float:
+        """Compatibility wrapper retained for existing integrations/tests."""
+
+        return MouseSelectionManager._coerce_seconds(
+            value,
+            DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS,
+        )
+
     def reconfigure(self, debounce_seconds: float | None = None) -> bool:
-        """Apply the duplicate-selection interval for future gestures."""
+        """Apply the duplicate-event interval for future gestures."""
 
         value = (
             debounce_seconds
@@ -138,9 +170,15 @@ class MouseSelectionManager(QObject):
 
     @property
     def debounce_seconds(self) -> float:
-        """Return the configured leading-edge debounce interval."""
+        """Return the configured duplicate-event suppression interval."""
 
         return self._debounce_seconds
+
+    @property
+    def settle_seconds(self) -> float:
+        """Return the mouse-up selection stabilization interval."""
+
+        return self._settle_seconds
 
     @property
     def is_running(self) -> bool:
@@ -169,14 +207,17 @@ class MouseSelectionManager(QObject):
         )
         with self._lock:
             self._listener = listener
+            self._capture_generation += 1
             self._reset_gesture_locked()
             self._last_trigger_at = None
+            self._last_gesture_signature = None
 
         try:
             listener.start()
         except Exception:
             with self._lock:
                 self._listener = None
+                self._capture_generation += 1
                 self._reset_gesture_locked()
             stop = getattr(listener, "stop", None)
             if callable(stop):
@@ -188,13 +229,15 @@ class MouseSelectionManager(QObject):
         return True
 
     def stop(self) -> None:
-        """Stop the listener and discard any partially completed gesture."""
+        """Stop the listener and discard pending/partial gestures."""
 
         with self._lock:
             listener = self._listener
             self._listener = None
+            self._capture_generation += 1
             self._reset_gesture_locked()
             self._last_trigger_at = None
+            self._last_gesture_signature = None
 
         if listener is None:
             return
@@ -235,8 +278,10 @@ class MouseSelectionManager(QObject):
         with self._lock:
             if self._listener is listener:
                 self._listener = None
+                self._capture_generation += 1
                 self._reset_gesture_locked()
                 self._last_trigger_at = None
+                self._last_gesture_signature = None
         try:
             self.start()
         except Exception as exc:
@@ -277,6 +322,7 @@ class MouseSelectionManager(QObject):
         except Exception as exc:
             # A listener callback must not terminate the global pynput thread.
             with self._lock:
+                self._capture_generation += 1
                 self._reset_gesture_locked()
             self.logger.error(
                 "mouse_selection_callback_failed error_type=%s",
@@ -289,6 +335,9 @@ class MouseSelectionManager(QObject):
         with self._lock:
             if self._listener is None:
                 return
+            # A new physical selection supersedes a previous reply that is
+            # still inside the short settle window.
+            self._capture_generation += 1
             self._button_down = True
             self._ignored_gesture = ignored
             self._dragging = False
@@ -300,6 +349,7 @@ class MouseSelectionManager(QObject):
             )
 
     def _handle_left_release(self, x: int, y: int) -> None:
+        capture_payload: tuple[TranslationTriggerEvent, int] | None = None
         with self._lock:
             if self._listener is None or not self._button_down:
                 return
@@ -311,12 +361,13 @@ class MouseSelectionManager(QObject):
             # cannot trigger translation and hide the displayed result.
             ignored = self._ignored_gesture or self._is_overlay_point(x, y)
             dragged = self._dragging or self._has_moved_locked(x, y)
+            press_position = self._press_position
             self._button_down = False
             self._ignored_gesture = False
             self._dragging = False
             self._press_position = None
 
-            if ignored or not dragged:
+            if ignored or not dragged or press_position is None:
                 self._state = MouseSelectionState.IDLE
                 return
 
@@ -330,25 +381,92 @@ class MouseSelectionManager(QObject):
                 return
 
             now = self._clock()
+            gesture_signature = (
+                int(press_position[0]),
+                int(press_position[1]),
+                int(x),
+                int(y),
+            )
+            # pynput/Windows can occasionally deliver a duplicate gesture
+            # callback. Suppress only an *identical* gesture inside the
+            # configured window. A fast drag over a different piece of text is
+            # a new user action and must not be dropped merely because it
+            # happened within 250 ms.
             if (
                 self._last_trigger_at is not None
+                and self._last_gesture_signature == gesture_signature
                 and now - self._last_trigger_at < self._debounce_seconds
             ):
                 self._state = MouseSelectionState.IDLE
                 return
 
             self._last_trigger_at = now
+            self._last_gesture_signature = gesture_signature
+            self._capture_generation += 1
+            generation = self._capture_generation
             self._state = MouseSelectionState.WAITING_DEBOUNCE
-            self._state = MouseSelectionState.CAPTURE_SELECTION
             event = TranslationTriggerEvent(
                 hotkey=MOUSE_SELECTION_SOURCE,
                 source=MOUSE_SELECTION_SOURCE,
             )
+            capture_payload = (event, generation)
 
-        self.triggered.emit(event)
+        if capture_payload is None:
+            return
+        if self._settle_seconds <= 0:
+            self._emit_settled_capture(*capture_payload)
+            return
+        # Emitting from pynput's thread to this QObject schedules the receiver
+        # on the Qt thread, where QTimer is safe and tied to the GUI lifecycle.
+        self._capture_requested.emit(capture_payload)
+
+    def _schedule_capture(self, payload: object) -> None:
+        """Schedule selection capture after mouse-up state has settled."""
+
+        try:
+            event, generation = payload  # type: ignore[misc]
+        except (TypeError, ValueError):
+            return
+        if not isinstance(event, TranslationTriggerEvent):
+            return
+        try:
+            generation_value = int(generation)
+        except (TypeError, ValueError):
+            return
+        delay_ms = max(0, round(self._settle_seconds * 1000))
+        QTimer.singleShot(
+            delay_ms,
+            lambda current=event, token=generation_value: self._emit_settled_capture(
+                current,
+                token,
+            ),
+        )
+
+    def _emit_settled_capture(
+        self,
+        event: TranslationTriggerEvent,
+        generation: int,
+    ) -> None:
+        """Emit only if no newer mouse gesture invalidated this selection."""
+
         with self._lock:
-            if self._state == MouseSelectionState.CAPTURE_SELECTION:
-                self._state = MouseSelectionState.IDLE
+            if (
+                self._listener is None
+                or generation != self._capture_generation
+                or self._state != MouseSelectionState.WAITING_DEBOUNCE
+            ):
+                return
+            self._state = MouseSelectionState.CAPTURE_SELECTION
+
+        try:
+            self.triggered.emit(event)
+        finally:
+            with self._lock:
+                if (
+                    generation == self._capture_generation
+                    and self._state == MouseSelectionState.CAPTURE_SELECTION
+                ):
+                    self._state = MouseSelectionState.IDLE
 
     def _has_moved_locked(self, x: int, y: int) -> bool:
         if self._press_position is None:
@@ -399,6 +517,7 @@ class MouseSelectionManager(QObject):
 __all__ = [
     "DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS",
     "DEFAULT_DRAG_THRESHOLD_PIXELS",
+    "DEFAULT_SELECTION_SETTLE_SECONDS",
     "MOUSE_SELECTION_SOURCE",
     "MouseSelectionManager",
     "MouseSelectionState",

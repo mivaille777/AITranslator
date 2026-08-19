@@ -232,11 +232,37 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
                 continue
         self.messages_content.updateGeometry()
 
+    def _schedule_scroll_message_to_start(self, row: QWidget) -> None:
+        """Defer reply positioning until Qt has committed wrapped row geometry."""
+
+        def after_first_layout_pass() -> None:
+            try:
+                self._fit_message_rows_to_viewport()
+                self.messages_layout.activate()
+                row_layout = row.layout()
+                if row_layout is not None:
+                    row_layout.activate()
+            except RuntimeError:
+                return
+            # Word-wrapped QLabel height and the scroll range can settle one
+            # event-loop turn after the row enters the QScrollArea. Measure the
+            # final row position on the next turn instead of using stale y().
+            QTimer.singleShot(
+                0,
+                lambda current=row: self._scroll_message_to_start(current),
+            )
+
+        QTimer.singleShot(0, after_first_layout_pass)
+
     def _scroll_message_to_start(self, row: QWidget) -> None:
         """Show the beginning of a completed reply instead of only its tail."""
 
         try:
             self._fit_message_rows_to_viewport()
+            self.messages_layout.activate()
+            row_layout = row.layout()
+            if row_layout is not None:
+                row_layout.activate()
             bar = self.messages_scroll.verticalScrollBar()
             margins = self.messages_layout.contentsMargins()
             target = max(bar.minimum(), row.y() - margins.top())
@@ -256,10 +282,9 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         if role_value == ChatRole.USER.value:
             return
 
-        # Base append_message schedules a scroll-to-bottom. Schedule this after
-        # it so a long completed answer opens at its beginning, making the full
-        # response discoverable without appearing to have lost the first lines.
-        QTimer.singleShot(0, lambda current=row: self._scroll_message_to_start(current))
+        # Base append_message schedules a scroll-to-bottom. Position the reply
+        # only after wrapped Markdown geometry and the scrollbar range settle.
+        self._schedule_scroll_message_to_start(row)
 
         raw = str(text).strip()
         copy_buttons = row.findChildren(QToolButton, "OverlayChatMessageCopyButton")

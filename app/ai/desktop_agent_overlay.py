@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from app.ai.agent_workspace_overlay import AgentWorkspaceOverlayManager, AgentWorkspaceOverlayWindow
+from app.overlay.context_menu import OVERLAY_THEMES
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
 
@@ -17,7 +18,12 @@ AGENT_CRAB_SIZE = 56
 
 
 class AgentCrabWindow(QWidget):
-    """Tiny original line-art crab used as the persistent Desktop Agent handle."""
+    """Tiny original line-art crab used as the persistent Desktop Agent handle.
+
+    The mini surface intentionally consumes the same palette dictionary as the
+    full Overlay. This keeps dark, soft and contrast themes visually coherent
+    instead of giving the collapsed Agent its own unrelated hard-coded colors.
+    """
 
     restore_requested = Signal()
 
@@ -37,6 +43,39 @@ class AgentCrabWindow(QWidget):
         self._drag_offset = QPoint()
         self._hovered = False
         self.setMouseTracking(True)
+
+        self._panel_color = QColor("#1E293B")
+        self._hover_panel_color = QColor("#334155")
+        self._border_color = QColor("#334155")
+        self._line_color = QColor("#CBD5E1")
+        self._accent_color = QColor("#60A5FA")
+
+    @staticmethod
+    def _palette_color(palette: dict[str, str], key: str, fallback: str) -> QColor:
+        color = QColor(str(palette.get(key, fallback)))
+        return color if color.isValid() else QColor(fallback)
+
+    def set_theme_palette(self, palette: dict[str, str]) -> None:
+        """Apply one existing Overlay palette to the collapsed Agent surface."""
+
+        self._panel_color = self._palette_color(palette, "menu_background", "#1E293B")
+        self._hover_panel_color = self._palette_color(palette, "hover", "#334155")
+        self._border_color = self._palette_color(palette, "border", "#334155")
+        self._line_color = self._palette_color(palette, "muted_text", "#CBD5E1")
+        self._accent_color = self._palette_color(palette, "accent", "#60A5FA")
+        self.update()
+
+    @property
+    def theme_colors(self) -> dict[str, str]:
+        """Expose the resolved palette for GUI regression tests."""
+
+        return {
+            "panel": self._panel_color.name().upper(),
+            "hover": self._hover_panel_color.name().upper(),
+            "border": self._border_color.name().upper(),
+            "line": self._line_color.name().upper(),
+            "accent": self._accent_color.name().upper(),
+        }
 
     def enterEvent(self, event) -> None:  # noqa: N802
         del event
@@ -83,14 +122,20 @@ class AgentCrabWindow(QWidget):
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        panel = QColor("#111827")
-        panel.setAlpha(238 if self._hovered else 220)
-        painter.setPen(QPen(QColor("#475569"), 1.2))
+
+        panel = QColor(self._hover_panel_color if self._hovered else self._panel_color)
+        painter.setPen(QPen(self._border_color, 1.2))
         painter.setBrush(panel)
         painter.drawRoundedRect(QRectF(2.5, 2.5, 51, 51), 15, 15)
 
-        accent = QColor("#F97316" if self._hovered else "#FB923C")
-        pen = QPen(accent, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        line = QColor(self._accent_color if self._hovered else self._line_color)
+        pen = QPen(
+            line,
+            2.0,
+            Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap,
+            Qt.PenJoinStyle.RoundJoin,
+        )
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawArc(QRectF(16, 20, 24, 19), 0, 180 * 16)
@@ -104,7 +149,7 @@ class AgentCrabWindow(QWidget):
         painter.drawArc(QRectF(38, 24, 10, 10), -110 * 16, 220 * 16)
         painter.drawLine(23, 20, 23, 16)
         painter.drawLine(33, 20, 33, 16)
-        painter.setBrush(accent)
+        painter.setBrush(line)
         painter.drawEllipse(QRectF(21.5, 14.5, 3, 3))
         painter.drawEllipse(QRectF(31.5, 14.5, 3, 3))
         painter.end()
@@ -118,6 +163,7 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
         self._interactive_mode_suspended_lock = False
         super().__init__(*args, **kwargs)
         self._agent_crab = AgentCrabWindow()
+        self._agent_crab.set_theme_palette(OVERLAY_THEMES[self._theme_name])
         self._agent_crab.restore_requested.connect(self.restore_from_agent_crab)
 
     @property
@@ -127,6 +173,12 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
     @property
     def agent_crab(self) -> AgentCrabWindow:
         return self._agent_crab
+
+    def _apply_theme(self, theme: str) -> None:
+        super()._apply_theme(theme)
+        crab = getattr(self, "_agent_crab", None)
+        if crab is not None:
+            crab.set_theme_palette(OVERLAY_THEMES[self._theme_name])
 
     def _enter_interactive_window_mode(self) -> None:
         if self.is_locked:

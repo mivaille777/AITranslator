@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from app.infrastructure.config import ConfigManager
-from app.models.selection import SelectedText
+from app.models.selection import SelectedText, SelectionContext
 from app.selection.base import SelectionProvider
 from app.selection.clipboard_provider import ClipboardSelectionProvider
 from app.selection.errors import SelectionError
@@ -20,7 +20,14 @@ LOGGER_NAME = "desktop_translator"
 
 
 class SelectionManager:
-    """Keep application code independent of the active selection provider."""
+    """Route selection capture across native and compatibility providers.
+
+    ``get_selected_text()`` retains the existing full fallback chain for
+    explicit/hotkey translation. ``get_selected_text_native()`` is the safe
+    automatic-mouse path: it uses only providers that read the target
+    application's selection directly and can therefore guarantee that no
+    synthetic Ctrl+C is emitted.
+    """
 
     def __init__(
         self,
@@ -34,6 +41,8 @@ class SelectionManager:
     ) -> None:
         self._provider_override = provider
         if provider is not None:
+            self.native_providers: tuple[SelectionProvider, ...] = (provider,)
+            self.clipboard_provider: SelectionProvider | None = None
             self.providers: tuple[SelectionProvider, ...] = (provider,)
         else:
             resolved_config = config_manager or ConfigManager()
@@ -42,15 +51,23 @@ class SelectionManager:
                 "selection_uia_timeout_seconds",
                 DEFAULT_UIA_TIMEOUT_SECONDS,
             )
-            self.providers = (
-                word_provider if word_provider is not None else WordSelectionProvider(),
+            resolved_word = (
+                word_provider if word_provider is not None else WordSelectionProvider()
+            )
+            resolved_uia = (
                 uia_provider
                 if uia_provider is not None
-                else UIASelectionProvider(timeout_seconds=uia_timeout_seconds),
+                else UIASelectionProvider(timeout_seconds=uia_timeout_seconds)
+            )
+            resolved_clipboard = (
                 clipboard_provider
                 if clipboard_provider is not None
-                else ClipboardSelectionProvider(),
+                else ClipboardSelectionProvider()
             )
+            self.native_providers = (resolved_word, resolved_uia)
+            self.clipboard_provider = resolved_clipboard
+            self.providers = (*self.native_providers, resolved_clipboard)
+
         # Preserve the Step5 ``provider`` attribute for callers that supplied
         # one explicitly; for the default chain it identifies the first tier.
         self.provider = self.providers[0]
@@ -64,26 +81,58 @@ class SelectionManager:
         return self._busy
 
     def get_selected_text(self) -> SelectedText:
-        """Return the current selection from the configured provider."""
+        """Return selection using the complete compatibility fallback chain."""
 
+        return self._capture_from(self.providers, context=None, mode="full")
+
+    def get_selected_text_native(
+        self,
+        *,
+        context: SelectionContext | None = None,
+    ) -> SelectedText:
+        """Return selection without clipboard writes or synthetic keyboard input."""
+
+        return self._capture_from(
+            self.native_providers,
+            context=context,
+            mode="native",
+        )
+
+    def _capture_from(
+        self,
+        providers: tuple[SelectionProvider, ...],
+        *,
+        context: SelectionContext | None,
+        mode: str,
+    ) -> SelectedText:
         if self._busy:
             raise SelectionError("selection already in progress")
         self._busy = True
         try:
             last_error: SelectionError | None = None
-            for provider in self.providers:
+            for provider in providers:
                 try:
-                    selected = provider.get_selected_text()
+                    contextual_capture = getattr(
+                        provider,
+                        "get_selected_text_with_context",
+                        None,
+                    )
+                    if context is not None and callable(contextual_capture):
+                        selected = contextual_capture(context)
+                    else:
+                        selected = provider.get_selected_text()
                     self.logger.info(
-                        "selection_provider_used provider=%s",
+                        "selection_provider_used provider=%s mode=%s",
                         selected.provider,
+                        mode,
                     )
                     return selected
                 except SelectionError as exc:
                     last_error = exc
                     self.logger.debug(
-                        "selection_provider_failed provider=%s error_type=%s",
+                        "selection_provider_failed provider=%s mode=%s error_type=%s",
                         type(provider).__name__,
+                        mode,
                         type(exc).__name__,
                     )
                 except Exception as exc:
@@ -91,16 +140,20 @@ class SelectionManager:
                     error.__cause__ = exc
                     last_error = error
                     self.logger.debug(
-                        "selection_provider_failed provider=%s error_type=%s",
+                        "selection_provider_failed provider=%s mode=%s error_type=%s",
                         type(provider).__name__,
+                        mode,
                         type(exc).__name__,
                     )
 
             if last_error is not None:
-                self.logger.info("selection_provider_failed_all")
+                self.logger.info("selection_provider_failed_all mode=%s", mode)
                 raise last_error
             raise SelectionError("no selection provider is configured")
         finally:
             self._busy = False
 
     select = get_selected_text
+
+
+__all__ = ["SelectionManager"]

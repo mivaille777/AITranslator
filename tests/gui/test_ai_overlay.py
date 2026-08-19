@@ -13,8 +13,10 @@ def test_ai_button_and_context_submenu_expose_translate_and_polish(qtbot) -> Non
     events: list[tuple[str, object]] = []
     window.context_action.connect(lambda key, value: events.append((key, value)))
 
-    # No selected/source text means AI actions are intentionally unavailable.
-    assert not window.ai_button.isEnabled()
+    # The AI entry point remains available for Chat, while text-dependent
+    # translation/polish actions stay disabled until source text exists.
+    assert window.ai_button.isEnabled()
+    assert window.context_menu.ai_menu.isEnabled()
     assert not window.context_menu.actions_by_name["ai_translate"].isEnabled()
     assert not window.context_menu.actions_by_name["ai_polish"].isEnabled()
 
@@ -42,8 +44,12 @@ def test_ai_actions_disable_when_overlay_no_longer_has_source_text(qtbot) -> Non
 
     window.show_text("provider error")
 
-    assert not window.ai_button.isEnabled()
-    assert not window.context_menu.ai_menu.isEnabled()
+    # Chat remains reachable through the AI button/menu, but operations that
+    # require source text must become unavailable again.
+    assert window.ai_button.isEnabled()
+    assert window.context_menu.ai_menu.isEnabled()
+    assert not window.context_menu.actions_by_name["ai_translate"].isEnabled()
+    assert not window.context_menu.actions_by_name["ai_polish"].isEnabled()
 
 
 def test_ai_button_uses_current_theme_accent(qtbot) -> None:

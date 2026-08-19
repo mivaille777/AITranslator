@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from app.controller import AppController
 from app.ui.tray import TrayManager
@@ -73,6 +73,20 @@ def test_show_overlay_action_emits_real_visibility_intent(qapp: QApplication) ->
 
     manager.actions["show_overlay"].trigger()
 
+    assert events == ["show"]
+
+
+def test_double_clicking_tray_icon_emits_show_overlay_intent(qapp: QApplication) -> None:
+    manager = _make_tray(qapp)
+    events: list[str] = []
+    manager.show_overlay_requested.connect(lambda: events.append("show"))
+
+    # A normal click must not restore the Overlay; only the OS double-click
+    # activation should emit the visibility intent.
+    manager.tray_icon.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+    assert events == []
+
+    manager.tray_icon.activated.emit(QSystemTrayIcon.ActivationReason.DoubleClick)
     assert events == ["show"]
 
 

@@ -9,13 +9,13 @@ from pathlib import Path
 import sqlite3
 from uuid import uuid4
 
-from app.ai.chat.models import ChatContext, ChatMessage, ChatRole
+from app.ai.chat.models import ChatContext, ChatMessage, ChatRole, ReadingContext
 from app.infrastructure.paths import writable_config_dir
 
 
 DEFAULT_MAX_CONVERSATIONS = 30
 DEFAULT_HISTORY_FILENAME = "chat_history.sqlite3"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _now_iso() -> str:
@@ -31,6 +31,22 @@ def _title_from_message(message: str, *, max_chars: int = 36) -> str:
     if not compact:
         return "新对话"
     return compact if len(compact) <= max_chars else compact[: max_chars - 1].rstrip() + "…"
+
+
+def _normalized_context(context: ChatContext) -> ChatContext:
+    reading = context.reading if isinstance(context.reading, ReadingContext) else ReadingContext()
+    return ChatContext(
+        source_text=str(context.source_text or "").strip(),
+        translated_text=str(context.translated_text or "").strip(),
+        reading=ReadingContext(
+            resource_url=str(reading.resource_url or "").strip(),
+            resource_title=str(reading.resource_title or "").strip(),
+            section_heading=str(reading.section_heading or "").strip(),
+            context_before=str(reading.context_before or "").strip(),
+            context_after=str(reading.context_after or "").strip(),
+            source_kind=str(reading.source_kind or "").strip(),
+        ),
+    )
 
 
 @dataclass
@@ -57,11 +73,9 @@ class Conversation:
 class ConversationManager:
     """Maintain recent conversations and persist them in local SQLite.
 
-    The public in-memory API intentionally stays unchanged so the Overlay UI,
-    streaming controller, and history menu remain independent of the storage
-    implementation. SQLite stores conversation metadata separately from
-    ordered messages. No JSON history is read or migrated by this manager.
-    API credentials are never stored in the database.
+    SQLite stores conversation metadata separately from ordered messages. The
+    schema is migrated in place; Stage-4 reading context adds only bounded page
+    metadata/surrounding text and never stores API credentials.
     """
 
     def __init__(
@@ -119,7 +133,7 @@ class ConversationManager:
             provider=str(provider).strip(),
             model=str(model).strip(),
             base_url=str(base_url).strip(),
-            context=context or ChatContext(),
+            context=_normalized_context(context or ChatContext()),
         )
         self._sessions.insert(0, session)
         self._active_id = session.conversation_id
@@ -158,14 +172,32 @@ class ConversationManager:
 
     def set_context(self, context: ChatContext) -> Conversation:
         active = self.ensure_active(context=context)
-        normalized = ChatContext(
-            source_text=str(context.source_text or "").strip(),
-            translated_text=str(context.translated_text or "").strip(),
-        )
+        normalized = _normalized_context(context)
         if active.context != normalized and not active.messages:
             active.context = normalized
             active.rotate_session()
             self.save()
+        return active
+
+    def update_active_context(
+        self,
+        context: ChatContext,
+        *,
+        rotate_empty_session: bool = False,
+    ) -> Conversation:
+        """Update current reading context without discarding conversation history."""
+
+        active = self.ensure_active(context=context)
+        normalized = _normalized_context(context)
+        if active.context == normalized:
+            return active
+        active.context = normalized
+        if rotate_empty_session and not active.messages:
+            active.rotate_session()
+        else:
+            active.touch()
+        self._sort_recent()
+        self.save()
         return active
 
     def set_model(
@@ -240,7 +272,13 @@ class ConversationManager:
                 model TEXT NOT NULL DEFAULT '',
                 base_url TEXT NOT NULL DEFAULT '',
                 source_text TEXT NOT NULL DEFAULT '',
-                translated_text TEXT NOT NULL DEFAULT ''
+                translated_text TEXT NOT NULL DEFAULT '',
+                resource_url TEXT NOT NULL DEFAULT '',
+                resource_title TEXT NOT NULL DEFAULT '',
+                section_heading TEXT NOT NULL DEFAULT '',
+                context_before TEXT NOT NULL DEFAULT '',
+                context_after TEXT NOT NULL DEFAULT '',
+                context_source_kind TEXT NOT NULL DEFAULT ''
             );
 
             CREATE INDEX IF NOT EXISTS idx_conversations_updated_at
@@ -262,6 +300,28 @@ class ConversationManager:
                 ON messages(conversation_id, position);
             """
         )
+
+        # Existing Stage-3 installations already have the v1 table. SQLite's
+        # CREATE TABLE IF NOT EXISTS does not add new columns, so migrate them
+        # individually and leave all existing rows/messages untouched.
+        existing_columns = {
+            str(row[1])
+            for row in connection.execute("PRAGMA table_info(conversations)").fetchall()
+        }
+        migrations = (
+            ("resource_url", "TEXT NOT NULL DEFAULT ''"),
+            ("resource_title", "TEXT NOT NULL DEFAULT ''"),
+            ("section_heading", "TEXT NOT NULL DEFAULT ''"),
+            ("context_before", "TEXT NOT NULL DEFAULT ''"),
+            ("context_after", "TEXT NOT NULL DEFAULT ''"),
+            ("context_source_kind", "TEXT NOT NULL DEFAULT ''"),
+        )
+        for column, definition in migrations:
+            if column not in existing_columns:
+                connection.execute(
+                    f"ALTER TABLE conversations ADD COLUMN {column} {definition}"
+                )
+
         connection.execute(
             "INSERT OR REPLACE INTO app_state(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),),
@@ -281,7 +341,9 @@ class ConversationManager:
         rows = connection.execute(
             """
             SELECT conversation_id, session_id, title, created_at, updated_at,
-                   provider, model, base_url, source_text, translated_text
+                   provider, model, base_url, source_text, translated_text,
+                   resource_url, resource_title, section_heading,
+                   context_before, context_after, context_source_kind
             FROM conversations
             ORDER BY updated_at DESC
             LIMIT ?
@@ -323,6 +385,14 @@ class ConversationManager:
                     context=ChatContext(
                         source_text=str(row[8] or ""),
                         translated_text=str(row[9] or ""),
+                        reading=ReadingContext(
+                            resource_url=str(row[10] or ""),
+                            resource_title=str(row[11] or ""),
+                            section_heading=str(row[12] or ""),
+                            context_before=str(row[13] or ""),
+                            context_after=str(row[14] or ""),
+                            source_kind=str(row[15] or ""),
+                        ),
                     ),
                     messages=messages,
                 )
@@ -354,12 +424,15 @@ class ConversationManager:
             connection.execute("DELETE FROM conversations")
 
         for item in self._sessions:
+            reading = item.context.reading
             connection.execute(
                 """
                 INSERT INTO conversations(
                     conversation_id, session_id, title, created_at, updated_at,
-                    provider, model, base_url, source_text, translated_text
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    provider, model, base_url, source_text, translated_text,
+                    resource_url, resource_title, section_heading,
+                    context_before, context_after, context_source_kind
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(conversation_id) DO UPDATE SET
                     session_id = excluded.session_id,
                     title = excluded.title,
@@ -369,7 +442,13 @@ class ConversationManager:
                     model = excluded.model,
                     base_url = excluded.base_url,
                     source_text = excluded.source_text,
-                    translated_text = excluded.translated_text
+                    translated_text = excluded.translated_text,
+                    resource_url = excluded.resource_url,
+                    resource_title = excluded.resource_title,
+                    section_heading = excluded.section_heading,
+                    context_before = excluded.context_before,
+                    context_after = excluded.context_after,
+                    context_source_kind = excluded.context_source_kind
                 """,
                 (
                     item.conversation_id,
@@ -382,6 +461,12 @@ class ConversationManager:
                     item.base_url,
                     item.context.source_text,
                     item.context.translated_text,
+                    reading.resource_url,
+                    reading.resource_title,
+                    reading.section_heading,
+                    reading.context_before,
+                    reading.context_after,
+                    reading.source_kind,
                 ),
             )
             connection.execute(

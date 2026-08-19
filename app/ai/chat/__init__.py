@@ -6,6 +6,7 @@ from app.ai.chat.models import (
     ChatRequest,
     ChatResult,
     ChatRole,
+    ReadingContext,
 )
 from app.ai.chat.service import AIChatService
 from app.ai.chat.session import ChatSession
@@ -22,4 +23,5 @@ __all__ = [
     "ChatResult",
     "ChatRole",
     "ChatSession",
+    "ReadingContext",
 ]

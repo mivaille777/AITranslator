@@ -17,7 +17,8 @@ from app.controller import INPUT_TEXT_ERROR_TEXT, SELECTION_ERROR_TEXT
 from app.infrastructure.settings import SettingsManager
 from app.input.mouse_selection_manager import MOUSE_SELECTION_SOURCE
 from app.models.events import TranslationTriggerEvent
-from app.models.selection import SelectionContext
+from app.models.selection import SelectedText, SelectionContext
+from app.selection.browser_bridge import BrowserSelectionBridge
 from app.selection.errors import SelectionError
 from app.selection.foreground import ForegroundApplicationDetector
 from app.translation.errors import TextNormalizationError
@@ -31,6 +32,7 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         *args: Any,
         tool_runtime: DesktopAgentToolCoordinator | None = None,
         foreground_detector: ForegroundApplicationDetector | Any | None = None,
+        browser_selection_bridge: BrowserSelectionBridge | Any | None = None,
         **kwargs: Any,
     ) -> None:
         if kwargs.get("overlay_manager") is None:
@@ -41,11 +43,15 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             kwargs["overlay_manager"] = DesktopAgentOverlayManager(
                 config_manager=resolved_config,
             )
+        bridge = browser_selection_bridge or BrowserSelectionBridge(
+            logger=kwargs.get("logger"),
+        )
         super().__init__(
             *args,
             tool_runtime=tool_runtime or DesktopAgentToolCoordinator(),
             **kwargs,
         )
+        self.browser_selection_bridge = bridge
         self._selection_foreground_detector = (
             foreground_detector or ForegroundApplicationDetector()
         )
@@ -63,6 +69,30 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
     @property
     def workspace_root(self) -> str:
         return self.desktop_tool_runtime.workspace_root
+
+    def start(self, *, start_hotkey: bool = True) -> None:
+        """Start the local browser bridge before enabling selection listeners."""
+
+        if start_hotkey and not self._shutdown:
+            try:
+                self.browser_selection_bridge.start()
+            except Exception as exc:
+                # Browser extension capture is an optimization. Stage-2 UIA
+                # remains fully usable when the local bridge cannot bind.
+                self._log_exception("browser_selection_bridge_start_failed", exc)
+        super().start(start_hotkey=start_hotkey)
+
+    def shutdown(self) -> None:
+        """Stop the browser receiver and then release the normal app services."""
+
+        bridge = getattr(self, "browser_selection_bridge", None)
+        stop = getattr(bridge, "stop", None)
+        if callable(stop):
+            try:
+                stop()
+            except Exception as exc:
+                self._log_exception("browser_selection_bridge_stop_failed", exc)
+        super().shutdown()
 
     def _capture_native_selection_context(self) -> SelectionContext:
         """Compatibility fallback when a caller did not freeze mouse-up context."""
@@ -100,8 +130,41 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             process_name=str(process_name) if process_name else None,
         )
 
+    def _capture_automatic_selection(
+        self,
+        context: SelectionContext,
+    ) -> SelectedText:
+        """Prefer the DOM bridge, then fall back to zero-keyboard native APIs."""
+
+        bridge_capture = getattr(
+            self.browser_selection_bridge,
+            "get_selected_text_with_context",
+            None,
+        )
+        if callable(bridge_capture):
+            try:
+                selected = bridge_capture(context)
+            except SelectionError as exc:
+                self.logger.debug(
+                    "browser_selection_bridge_miss error_type=%s",
+                    type(exc).__name__,
+                )
+            except Exception as exc:
+                self._log_exception("browser_selection_bridge_capture_failed", exc)
+            else:
+                return selected
+
+        capture_native = getattr(
+            self.selection_manager,
+            "get_selected_text_native",
+            None,
+        )
+        if not callable(capture_native):
+            raise SelectionError("native selection capture is unavailable")
+        return capture_native(context=context)
+
     def _on_translation_triggered(self, event: TranslationTriggerEvent) -> None:
-        """Use a zero-keyboard native capture path for automatic mouse selection."""
+        """Use zero-keyboard browser/native capture for automatic mouse selection."""
 
         if event.source != MOUSE_SELECTION_SOURCE:
             super()._on_translation_triggered(event)
@@ -125,32 +188,22 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         )
         self._hide_overlay_for_selection()
 
-        capture_native = getattr(
-            self.selection_manager,
-            "get_selected_text_native",
-            None,
-        )
-        if not callable(capture_native):
-            self.logger.info("selection_failed native_capture_unavailable")
-            self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
-            return
-
         try:
-            selected = capture_native(context=context)
+            selected = self._capture_automatic_selection(context)
         except SelectionError as exc:
             self.logger.info(
-                "selection_failed mode=native error_type=%s",
+                "selection_failed mode=zero_keyboard error_type=%s",
                 type(exc).__name__,
             )
             self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
             return
         except Exception as exc:
-            self._log_exception("native_selection_unexpected_error", exc)
+            self._log_exception("automatic_selection_unexpected_error", exc)
             self._show_translation_error(SELECTION_ERROR_TEXT, "SelectionError")
             return
 
         self.logger.info(
-            "selection_captured text_length=%s provider=%s mode=native",
+            "selection_captured text_length=%s provider=%s mode=zero_keyboard",
             len(selected.text),
             selected.provider,
         )

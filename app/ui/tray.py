@@ -133,6 +133,7 @@ class TrayManager(QObject):
         self._hide_overlay_action.triggered.connect(self._emit_hide_overlay)
         self._settings_action.triggered.connect(self._emit_settings)
         self._exit_action.triggered.connect(self._emit_exit)
+        self._tray_icon.activated.connect(self._on_tray_activated)
 
     @staticmethod
     def _create_action(
@@ -229,3 +230,12 @@ class TrayManager(QObject):
 
     def _emit_exit(self, _checked: bool = False) -> None:
         self.exit_requested.emit()
+
+    def _on_tray_activated(
+        self,
+        reason: QSystemTrayIcon.ActivationReason,
+    ) -> None:
+        """Request the existing Overlay when the tray icon is double-clicked."""
+
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.show_overlay_requested.emit()

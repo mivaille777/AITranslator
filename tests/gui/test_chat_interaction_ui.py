@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtWidgets import QLineEdit, QMenu, QToolButton
+from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QSizePolicy, QToolButton
 
 from app.ai.chat.models import ChatRole
 from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
 from app.ai.editable_overlay import EditableResizableConversationalAIOverlayWindow
+from app.overlay.context_menu import OVERLAY_THEMES
 
 
 def test_production_overlay_constructs_interactive_chat_without_reentrant_crash(qtbot) -> None:
@@ -113,3 +114,55 @@ def test_assistant_actions_are_hover_only_and_regenerate_selected_reply(qtbot) -
     with qtbot.waitSignal(panel.regenerate_requested) as blocker:
         qtbot.mouseClick(regenerate, Qt.MouseButton.LeftButton)
     assert blocker.args == ["**Rendered** answer"]
+
+
+def test_message_surface_uses_opaque_theme_background_and_wraps_long_markdown(qtbot) -> None:
+    panel = InteractiveManagedChatPanel()
+    qtbot.addWidget(panel)
+    panel.resize(560, 430)
+    panel.apply_palette(OVERLAY_THEMES["dark"])
+    panel.show()
+
+    long_reply = (
+        "### 三种方法对比\n\n"
+        + "这是用于验证长文本不会越过 AI 对话框可见边界的中文 Markdown 内容。" * 18
+    )
+    panel.append_message(ChatRole.ASSISTANT, long_reply)
+    qtbot.waitUntil(lambda: panel.messages_scroll.viewport().width() > 100, timeout=1000)
+    qtbot.wait(50)
+
+    row = panel._message_rows[-1]
+    body = row.findChild(QLabel, "OverlayChatMessageBody")
+    assert body is not None
+    assert body.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Ignored
+    assert row.width() <= panel.messages_scroll.viewport().width()
+    assert body.width() <= panel.messages_scroll.viewport().width()
+
+    stylesheet = panel.styleSheet()
+    assert "QScrollArea#OverlayChatMessagesScroll" in stylesheet
+    assert (
+        f"background-color: {OVERLAY_THEMES['dark']['menu_background']};"
+        in stylesheet
+    )
+
+
+def test_completed_long_reply_opens_at_its_beginning_instead_of_tail(qtbot) -> None:
+    panel = InteractiveManagedChatPanel()
+    qtbot.addWidget(panel)
+    panel.resize(520, 430)
+    panel.show()
+
+    panel.append_message(ChatRole.USER, "请解释这个算法。")
+    long_reply = "\n".join(
+        f"{index}. 这是第 {index} 条详细说明，用来制造足够长的回答。"
+        for index in range(1, 45)
+    )
+    panel.append_message(ChatRole.ASSISTANT, long_reply)
+    qtbot.wait(80)
+
+    bar = panel.messages_scroll.verticalScrollBar()
+    row = panel._message_rows[-1]
+    assert bar.maximum() > 0
+    assert bar.value() < bar.maximum()
+    visible_offset = row.y() - bar.value()
+    assert -8 <= visible_offset <= 24

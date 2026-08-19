@@ -7,9 +7,11 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QMenu,
     QPushButton,
+    QSizePolicy,
     QToolButton,
     QWidget,
     QWidgetAction,
@@ -79,6 +81,19 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         self.stop_button.clicked.connect(self.stop_generation_requested.emit)
         send_index = input_row.indexOf(self.send_button)
         input_row.insertWidget(max(0, send_index), self.stop_button)
+
+        # Word-wrapped Markdown labels report a wide preferred size. Let the
+        # scroll viewport own the available width instead so long Chinese text,
+        # inline Markdown, and tables cannot silently extend beyond the visible
+        # conversation surface while the horizontal scrollbar is disabled.
+        self.messages_content.setMinimumWidth(0)
+        self.messages_content.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
+        self.messages_scroll.viewport().installEventFilter(self)
+        self.stream_layout_changed.connect(self._schedule_message_layout_sync)
+        self._schedule_message_layout_sync()
 
     def set_busy(self, busy: bool) -> None:
         super().set_busy(busy)
@@ -177,17 +192,75 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             }
         )
 
+    def _schedule_message_layout_sync(self) -> None:
+        QTimer.singleShot(0, self._fit_message_rows_to_viewport)
+
+    def _fit_message_rows_to_viewport(self) -> None:
+        """Keep every message inside the visible scroll viewport width."""
+
+        viewport_width = self.messages_scroll.viewport().width()
+        if viewport_width <= 16:
+            return
+        margins = self.messages_layout.contentsMargins()
+        available_width = max(
+            1,
+            viewport_width - margins.left() - margins.right(),
+        )
+        rows = list(self._message_rows)
+        streaming_row = getattr(self, "_streaming_row", None)
+        if streaming_row is not None:
+            rows.append(streaming_row)
+
+        for row in rows:
+            try:
+                row.setMinimumWidth(0)
+                row.setMaximumWidth(available_width)
+                row.setSizePolicy(
+                    QSizePolicy.Policy.Expanding,
+                    QSizePolicy.Policy.Preferred,
+                )
+                body = row.findChild(QLabel, "OverlayChatMessageBody")
+                if body is not None:
+                    body.setMinimumWidth(0)
+                    body.setMaximumWidth(available_width)
+                    body.setSizePolicy(
+                        QSizePolicy.Policy.Ignored,
+                        QSizePolicy.Policy.Preferred,
+                    )
+                    body.updateGeometry()
+            except RuntimeError:
+                continue
+        self.messages_content.updateGeometry()
+
+    def _scroll_message_to_start(self, row: QWidget) -> None:
+        """Show the beginning of a completed reply instead of only its tail."""
+
+        try:
+            self._fit_message_rows_to_viewport()
+            bar = self.messages_scroll.verticalScrollBar()
+            margins = self.messages_layout.contentsMargins()
+            target = max(bar.minimum(), row.y() - margins.top())
+            bar.setValue(min(bar.maximum(), target))
+        except RuntimeError:
+            return
+
     def append_message(self, role: ChatRole | str, text: str) -> None:
         before = len(self._message_rows)
         super().append_message(role, text)
         if len(self._message_rows) <= before:
             return
 
+        row = self._message_rows[-1]
+        self._schedule_message_layout_sync()
         role_value = role.value if isinstance(role, ChatRole) else str(role).lower()
         if role_value == ChatRole.USER.value:
             return
 
-        row = self._message_rows[-1]
+        # Base append_message schedules a scroll-to-bottom. Schedule this after
+        # it so a long completed answer opens at its beginning, making the full
+        # response discoverable without appearing to have lost the first lines.
+        QTimer.singleShot(0, lambda current=row: self._scroll_message_to_start(current))
+
         raw = str(text).strip()
         copy_buttons = row.findChildren(QToolButton, "OverlayChatMessageCopyButton")
         copy_button = copy_buttons[0] if copy_buttons else None
@@ -228,6 +301,14 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         button.setIcon(symbol_icon("↻", color, size=MESSAGE_ACTION_ICON_SIZE))
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        messages_scroll = getattr(self, "messages_scroll", None)
+        if (
+            messages_scroll is not None
+            and watched is messages_scroll.viewport()
+            and event.type() == QEvent.Type.Resize
+        ):
+            self._schedule_message_layout_sync()
+
         row = self._assistant_row_for_widget(watched)
         if row is not None:
             event_type = event.type()
@@ -329,6 +410,14 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             QLineEdit#OverlayChatHistorySearch:focus {{
                 border-color: {palette['accent']};
             }}
+            QScrollArea#OverlayChatMessagesScroll {{
+                background-color: {palette['menu_background']};
+                border: 1px solid {palette['border']};
+                border-radius: 8px;
+            }}
+            QWidget#OverlayChatMessagesContent {{
+                background-color: {palette['menu_background']};
+            }}
             QToolButton#OverlayChatMessageRegenerateButton {{
                 background-color: transparent;
                 border: 1px solid transparent;
@@ -341,6 +430,7 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             }}
             """
         )
+        self._schedule_message_layout_sync()
 
 
 __all__ = ["InteractiveManagedChatPanel"]

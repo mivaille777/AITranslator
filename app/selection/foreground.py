@@ -13,7 +13,7 @@ _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
 
 class ForegroundApplicationDetector:
-    """Return the executable name for the current foreground window."""
+    """Return foreground-window metadata without activating another process."""
 
     def __init__(
         self,
@@ -27,6 +27,25 @@ class ForegroundApplicationDetector:
         self._kernel32 = kernel32
         self._platform_name = platform_name or sys.platform
         self._executable_name_reader = executable_name_reader
+
+    def window_handle(self) -> int | None:
+        """Return the current foreground HWND as an integer when available."""
+
+        if self._platform_name != "win32":
+            return None
+        try:
+            user32 = self._load_user32()
+            get_foreground_window = user32.GetForegroundWindow
+            try:
+                get_foreground_window.restype = wintypes.HWND
+            except (AttributeError, TypeError):
+                pass
+            hwnd = get_foreground_window()
+            if not hwnd:
+                return None
+            return int(hwnd)
+        except (AttributeError, OSError, OverflowError, TypeError, ValueError):
+            return None
 
     def executable_name(self) -> str | None:
         """Return a basename such as ``WINWORD.EXE`` or ``None`` on failure."""

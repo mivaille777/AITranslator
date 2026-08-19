@@ -6,6 +6,7 @@ import sqlite3
 from app.ai.chat.conversation_manager import ConversationManager, SCHEMA_VERSION
 from app.ai.chat.models import ChatContext, ChatRequest, ReadingContext
 from app.ai.chat.service import build_chat_prompt
+from app.ai.chat.session import ChatSession
 
 
 def _reading_context() -> ReadingContext:
@@ -46,6 +47,21 @@ def test_reading_context_is_encoded_as_reference_data_in_chat_prompt() -> None:
         "context_after": "The language model then refines candidates locally.",
         "source_kind": "browser_selection",
     }
+
+
+def test_in_memory_chat_session_preserves_reading_context() -> None:
+    session = ChatSession()
+    context = ChatContext(
+        source_text="selected sentence",
+        translated_text="选中的句子",
+        reading=_reading_context(),
+    )
+
+    assert session.set_context(context)
+    request = session.request("解释它", request_id=1)
+
+    assert request.context.reading == _reading_context()
+    assert request.context.reading.section_heading == "3. Methodology"
 
 
 def test_reading_context_persists_with_conversation_history(tmp_path) -> None:

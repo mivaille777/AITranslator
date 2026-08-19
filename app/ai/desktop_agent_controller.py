@@ -130,6 +130,36 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             process_name=str(process_name) if process_name else None,
         )
 
+    def _remember_browser_bridge_context(self, context: SelectionContext) -> None:
+        """Feed the extension's URL/title into the Agent's existing browser memory."""
+
+        latest_snapshot = getattr(
+            self.browser_selection_bridge,
+            "latest_snapshot",
+            None,
+        )
+        remember_context = getattr(
+            self.desktop_tool_runtime.browser_tools,
+            "remember_context",
+            None,
+        )
+        if not callable(latest_snapshot) or not callable(remember_context):
+            return
+        try:
+            snapshot = latest_snapshot(context=context)
+        except Exception:
+            return
+        if not getattr(snapshot, "url", ""):
+            return
+        try:
+            remember_context(
+                snapshot.url,
+                getattr(snapshot, "title", ""),
+                source="selection_bridge",
+            )
+        except Exception as exc:
+            self._log_exception("browser_bridge_context_cache_failed", exc)
+
     def _capture_automatic_selection(
         self,
         context: SelectionContext,
@@ -152,6 +182,7 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             except Exception as exc:
                 self._log_exception("browser_selection_bridge_capture_failed", exc)
             else:
+                self._remember_browser_bridge_context(context)
                 return selected
 
         capture_native = getattr(

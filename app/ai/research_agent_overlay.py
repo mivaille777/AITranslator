@@ -80,6 +80,14 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
             return
 
         has_source = bool(str(getattr(self, "_source_text", "") or "").strip())
+
+        # Stage 5 could rely on disabling the complete AI submenu when no
+        # source existed. Stage 6 deliberately keeps that submenu reachable so
+        # users can open recent notes. Therefore every source-bound action must
+        # now carry its own enabled state instead of inheriting the menu state.
+        for action in getattr(self, "_reading_actions", {}).values():
+            action.setEnabled(has_source)
+
         save_action = actions.get(RESEARCH_NOTE_SAVE)
         if save_action is not None:
             save_action.setEnabled(has_source)
@@ -87,9 +95,9 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         if recent_action is not None:
             recent_action.setEnabled(True)
 
-        # Stage 5 disables the whole AI menu when no source exists. Research
-        # memory is also a navigation surface, so keep the menu reachable while
-        # the source-bound AI actions themselves remain disabled.
+        # Base set_ai_enabled() already keeps AI translate/polish disabled when
+        # source text is absent. Re-enable only the submenu container so the
+        # source-independent Recent Notes action remains reachable.
         self.context_menu.ai_menu.setEnabled(True)
 
 

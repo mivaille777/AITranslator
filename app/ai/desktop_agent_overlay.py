@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QEvent, QPoint, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -27,7 +27,10 @@ class AgentCrabWindow(QWidget):
         self.setObjectName("DesktopAgentCrab")
         self.setFixedSize(AGENT_CRAB_SIZE, AGENT_CRAB_SIZE)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
+        # The crab must not steal focus from Chrome/Edge; this lets the
+        # Controller snapshot the page that was active immediately before the
+        # user re-opens the Agent.
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.setToolTip("AI Agent · 双击打开对话；拖动移动")
         self._dragging = False
@@ -90,7 +93,6 @@ class AgentCrabWindow(QWidget):
         pen = QPen(accent, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        # Original minimal crab silhouette: rounded shell, eyes, claws and legs.
         painter.drawArc(QRectF(16, 20, 24, 19), 0, 180 * 16)
         painter.drawLine(18, 30, 15, 34)
         painter.drawLine(38, 30, 41, 34)
@@ -191,6 +193,9 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
     def restore_from_agent_crab(self) -> None:
         if not self._collapsed_to_crab:
             return
+        # Synchronous signal: the Controller snapshots Chrome/Edge while the
+        # no-activate crab is still the only Agent surface on screen.
+        self.context_action.emit("agent_capture_browser_context", None)
         self._collapsed_to_crab = False
         self._agent_crab.hide()
         if self._chat_open:
@@ -199,13 +204,9 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
             self.activateWindow()
             self.raise_()
             return
-        # The mini icon is the Agent entry point: restoring a non-chat view
-        # asks the Controller to open the active conversation.
         self.context_action.emit("ai_chat", None)
 
     def show_overlay(self) -> None:
-        # Background translation/tool completion must not unexpectedly expand a
-        # window the user intentionally collapsed.
         if self._collapsed_to_crab:
             return
         super().show_overlay()

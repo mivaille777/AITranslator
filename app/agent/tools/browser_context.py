@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from threading import RLock
 from typing import Any
 from urllib.parse import urlparse
 
@@ -75,14 +76,19 @@ def _read_foreground_browser() -> tuple[str, str]:
 
 
 class BrowserContextTools:
+    """Capture the last external browser before the Agent window takes focus."""
+
     def __init__(
         self,
         *,
         reader: Callable[[], tuple[str, str]] | None = None,
     ) -> None:
         self._reader = reader or _read_foreground_browser
+        self._lock = RLock()
+        self._last_url = ""
+        self._last_title = ""
 
-    def get_active_browser_context(self) -> ToolResult:
+    def capture_foreground(self) -> ToolResult:
         try:
             url, title = self._reader()
         except Exception as exc:
@@ -95,13 +101,36 @@ class BrowserContextTools:
             return ToolResult(
                 "get_active_browser_context",
                 False,
-                "没有从当前前台窗口读取到网页地址。请切换到 Chrome/Edge 页面后重试，或直接提供 URL。",
+                "当前前台窗口没有可读取的网页地址。",
             )
+        with self._lock:
+            self._last_url = url
+            self._last_title = title
         return ToolResult(
             "get_active_browser_context",
             True,
             url,
-            {"url": url, "title": title},
+            {"url": url, "title": title, "cached": False},
+        )
+
+    def get_active_browser_context(self) -> ToolResult:
+        captured = self.capture_foreground()
+        if captured.ok:
+            return captured
+        with self._lock:
+            url = self._last_url
+            title = self._last_title
+        if url:
+            return ToolResult(
+                "get_active_browser_context",
+                True,
+                url,
+                {"url": url, "title": title, "cached": True},
+            )
+        return ToolResult(
+            "get_active_browser_context",
+            False,
+            "没有保存到当前网页地址。请先切换到 Chrome/Edge 页面再打开 AI，或直接提供 URL。",
         )
 
 

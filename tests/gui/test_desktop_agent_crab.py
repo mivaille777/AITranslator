@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QLabel
 
 from app.ai.chat.models import ChatMessage, ChatRole
 from app.ai.desktop_agent_overlay import DesktopAgentOverlayWindow
+from app.overlay.context_menu import OVERLAY_THEMES
 
 
 def test_chat_messages_remain_mouse_selectable(qtbot) -> None:
@@ -45,3 +46,27 @@ def test_double_click_handle_collapses_to_crab_and_restores_chat(qtbot) -> None:
     assert window.isVisible()
     assert not window.agent_crab.isVisible()
     assert window.chat_panel.message_count == 1
+
+
+def test_agent_crab_follows_overlay_theme(qtbot) -> None:
+    window = DesktopAgentOverlayWindow()
+    qtbot.addWidget(window)
+
+    dark = OVERLAY_THEMES["dark"]
+    assert window.agent_crab.theme_colors == {
+        "panel": dark["menu_background"].upper(),
+        "hover": dark["hover"].upper(),
+        "border": dark["border"].upper(),
+        "line": dark["muted_text"].upper(),
+        "accent": dark["accent"].upper(),
+    }
+
+    window.set_theme("contrast")
+    contrast = OVERLAY_THEMES["contrast"]
+    assert window.agent_crab.theme_colors == {
+        "panel": contrast["menu_background"].upper(),
+        "hover": contrast["hover"].upper(),
+        "border": contrast["border"].upper(),
+        "line": contrast["muted_text"].upper(),
+        "accent": contrast["accent"].upper(),
+    }

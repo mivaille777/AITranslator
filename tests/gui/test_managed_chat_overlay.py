@@ -40,12 +40,17 @@ def test_chat_history_menu_switches_conversations(qtbot) -> None:
         "c1",
     )
 
-    switch_action = next(
+    conversation_action = next(
         action
         for action in window.chat_panel.history_menu.actions()
         if action.text() == "PID 鲁棒性"
     )
-    switch_action.trigger()
+    conversation_menu = conversation_action.menu()
+    assert conversation_menu is not None
+    open_action = next(
+        action for action in conversation_menu.actions() if action.text() == "打开"
+    )
+    open_action.trigger()
 
     assert ("ai_chat_switch", "c2") in events
 

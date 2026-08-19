@@ -48,9 +48,8 @@ def _read_foreground_browser() -> tuple[str, str]:
         control, depth = queue.pop(0)
         visited += 1
         name = str(getattr(control, "Name", "") or "").strip().lower()
-        control_type = str(getattr(control, "ControlTypeName", "") or "").lower()
         likely_address = any(item in name for item in _ADDRESS_NAMES)
-        if likely_address or "editcontrol" in control_type:
+        if likely_address:
             values: list[object] = []
             try:
                 pattern = control.GetValuePattern()

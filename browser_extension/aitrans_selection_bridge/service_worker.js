@@ -6,11 +6,14 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     return;
   }
 
+  const frameUrl = message.payload.frame_url || message.payload.url || "";
   const payload = {
     ...message.payload,
     version: 1,
     type: "selection",
-    tab_url: sender?.tab?.url || ""
+    url: sender?.tab?.url || message.payload.url || "",
+    title: sender?.tab?.title || message.payload.title || "",
+    frame_url: frameUrl
   };
 
   fetch(BRIDGE_URL, {

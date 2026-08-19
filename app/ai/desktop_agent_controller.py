@@ -16,7 +16,7 @@ from app.infrastructure.settings import SettingsManager
 
 
 class DesktopAgentAppController(AgentWorkspaceAppController):
-    """Extend the existing Agent with a sandboxed local workspace runtime."""
+    """Extend the existing Agent with browser context and local workspace access."""
 
     def __init__(
         self,
@@ -45,6 +45,29 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
     @property
     def workspace_root(self) -> str:
         return self.desktop_tool_runtime.workspace_root
+
+    def _capture_browser_context(self) -> None:
+        try:
+            result = self.desktop_tool_runtime.browser_tools.capture_foreground()
+        except Exception as exc:
+            self._log_exception("agent_browser_context_capture_failed", exc)
+            return
+        if result.ok:
+            self.logger.info(
+                "agent_browser_context_captured host_available=true"
+            )
+
+    def _open_ai_chat(self) -> None:
+        # Capture the external browser before open_chat() activates the Agent
+        # window. Later messages such as “总结这个网页” can use this snapshot.
+        self._capture_browser_context()
+        super()._open_ai_chat()
+
+    def _on_overlay_context_action(self, key: str, value: object) -> None:
+        if key == "agent_capture_browser_context":
+            self._capture_browser_context()
+            return
+        super()._on_overlay_context_action(key, value)
 
     def _start_agent_tool(
         self,

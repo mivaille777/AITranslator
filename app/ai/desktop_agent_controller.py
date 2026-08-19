@@ -24,6 +24,10 @@ from app.selection.foreground import ForegroundApplicationDetector
 from app.translation.errors import TextNormalizationError
 
 
+CHAT_SELECTION_ERROR_TEXT = "无法读取选中的文本。"
+CHAT_SELECTION_INPUT_ERROR_TEXT = "选中的文本为空或超过输入限制。"
+
+
 class DesktopAgentAppController(AgentWorkspaceAppController):
     """Extend the existing Agent with browser context and local workspace access."""
 
@@ -58,9 +62,6 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         self._active_reading_context = ReadingContext()
         self._reading_context_source_text = ""
         self._reading_context_translation_text = ""
-        # The base controller still exposes a legacy test-text tray route.
-        # Production double-click/show intents should restore the real Overlay
-        # exactly as it was instead of replacing its content with test text.
         self.tray_manager.show_overlay_requested.connect(
             self._show_overlay_from_tray,
         )
@@ -80,8 +81,6 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             try:
                 self.browser_selection_bridge.start()
             except Exception as exc:
-                # Browser extension capture is an optimization. Stage-2 UIA
-                # remains fully usable when the local bridge cannot bind.
                 self._log_exception("browser_selection_bridge_start_failed", exc)
         super().start(start_hotkey=start_hotkey)
 
@@ -227,8 +226,6 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         if not callable(capture_native):
             raise SelectionError("native selection capture is unavailable")
         selected = capture_native(context=context)
-        # A Word/UIA selection must not inherit URL/heading/context from the
-        # previous browser selection.
         self._set_reading_context(
             selected.text,
             ReadingContext(source_kind=selected.provider),
@@ -263,11 +260,78 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
         except Exception as exc:
             self._log_exception("reading_context_sync_failed", exc)
 
+    def _capture_mouse_selection_into_chat_zero_keyboard(
+        self,
+        event: TranslationTriggerEvent,
+    ) -> bool:
+        """Insert an external selection into Chat without clipboard injection."""
+
+        if self._is_cursor_over_overlay():
+            self.logger.info("chat_selection_capture_ignored overlay_hover")
+            return True
+        context = (
+            event.selection_context
+            if isinstance(event.selection_context, SelectionContext)
+            else self._capture_native_selection_context()
+        )
+        try:
+            selected = self._capture_automatic_selection(context)
+        except SelectionError as exc:
+            self.logger.info(
+                "chat_selection_capture_failed mode=zero_keyboard error_type=%s",
+                type(exc).__name__,
+            )
+            self._chat_overlay_call("set_chat_error", CHAT_SELECTION_ERROR_TEXT)
+            return True
+        except Exception as exc:
+            self._log_exception("chat_selection_capture_failed", exc)
+            self._chat_overlay_call("set_chat_error", CHAT_SELECTION_ERROR_TEXT)
+            return True
+
+        self._last_source_text = selected.text
+        self._sync_active_reading_context()
+        try:
+            prepared = self._prepare_selected_text(selected.text)
+        except TextNormalizationError as exc:
+            self.logger.info(
+                "chat_selection_input_rejected error_type=%s",
+                type(exc).__name__,
+            )
+            self._chat_overlay_call("set_chat_error", CHAT_SELECTION_INPUT_ERROR_TEXT)
+            return True
+        if not str(prepared).strip():
+            self._chat_overlay_call("set_chat_error", CHAT_SELECTION_INPUT_ERROR_TEXT)
+            return True
+
+        inserted = bool(self._chat_overlay_call("insert_chat_selection", prepared))
+        if inserted:
+            self.logger.info(
+                "chat_selection_inserted text_length=%s provider=%s mode=zero_keyboard",
+                len(prepared),
+                selected.provider,
+            )
+        else:
+            self._chat_overlay_call("set_chat_error", CHAT_SELECTION_ERROR_TEXT)
+        return True
+
     def _on_translation_triggered(self, event: TranslationTriggerEvent) -> None:
         """Use zero-keyboard browser/native capture for automatic mouse selection."""
 
         if event.source != MOUSE_SELECTION_SOURCE:
             super()._on_translation_triggered(event)
+            return
+
+        # Preserve the production Chat guard that the Desktop Agent overrides.
+        # An open Chat is never kicked back to translation by a normal drag.
+        if self._is_ai_chat_open():
+            if self._is_chat_selection_capture_armed():
+                self.logger.info(
+                    "CHAT_SELECTION_CAPTURE_TRIGGERED source=%s mode=zero_keyboard",
+                    event.source,
+                )
+                self._capture_mouse_selection_into_chat_zero_keyboard(event)
+            else:
+                self.logger.info("auto_selection_ignored chat_open")
             return
 
         self.logger.info("AUTO_SELECTION_TRIGGERED source=%s", event.source)
@@ -372,8 +436,6 @@ class DesktopAgentAppController(AgentWorkspaceAppController):
             )
 
     def _open_ai_chat(self) -> None:
-        # Capture the external browser before open_chat() activates the Agent
-        # window. Later messages such as “总结这个网页” can use this snapshot.
         self._capture_browser_context()
         super()._open_ai_chat()
 

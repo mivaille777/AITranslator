@@ -15,6 +15,7 @@ from pynput import mouse
 
 from app.infrastructure.config import ConfigManager
 from app.models.events import TranslationTriggerEvent
+from app.models.selection import SelectionContext
 
 DEFAULT_AUTO_SELECTION_DEBOUNCE_SECONDS = 0.25
 DEFAULT_SELECTION_SETTLE_SECONDS = 0.08
@@ -41,6 +42,22 @@ def _read_foreground_executable_name() -> str | None:
         return None
 
 
+def _read_foreground_snapshot() -> tuple[int | None, str | None]:
+    """Capture foreground HWND/process metadata from one native window sample."""
+
+    try:
+        from app.selection.foreground import ForegroundApplicationDetector
+
+        detector = ForegroundApplicationDetector()
+        snapshot = getattr(detector, "snapshot", None)
+        if callable(snapshot):
+            hwnd, process_name = snapshot()
+            return hwnd, process_name
+        return detector.window_handle(), detector.executable_name()
+    except Exception:
+        return None, None
+
+
 class MouseSelectionState(str, Enum):
     """States used while recognizing one left-button selection gesture."""
 
@@ -55,9 +72,10 @@ class MouseSelectionManager(QObject):
     """Emit one trigger after a stable left-button drag selection.
 
     The pynput listener owns its own background thread. Its callback performs
-    only small state transitions. A real settle interval is then scheduled on
-    the Qt thread before selection capture so Chromium/Electron/rich-text
-    controls can finish committing their selection after mouse-up.
+    only small state transitions. The foreground HWND/process and gesture
+    coordinates are frozen at physical mouse-up, before Qt can show/hide any
+    AITranslator window. A real settle interval is then scheduled on the Qt
+    thread so Chromium/Electron/rich-text controls can commit their selection.
     """
 
     triggered = Signal(object)
@@ -75,6 +93,9 @@ class MouseSelectionManager(QObject):
         drag_threshold_pixels: int = DEFAULT_DRAG_THRESHOLD_PIXELS,
         overlay_hit_test: Callable[[int, int], bool] | None = None,
         foreground_executable_reader: Callable[[], str | None] | None = None,
+        foreground_snapshot_reader: Callable[
+            [], tuple[int | None, str | None]
+        ] | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
         super().__init__(parent)
@@ -117,6 +138,9 @@ class MouseSelectionManager(QObject):
         )
         self._foreground_executable_reader = (
             foreground_executable_reader or _read_foreground_executable_name
+        )
+        self._foreground_snapshot_reader = (
+            foreground_snapshot_reader or _read_foreground_snapshot
         )
 
         self._lock = Lock()
@@ -371,7 +395,16 @@ class MouseSelectionManager(QObject):
                 self._state = MouseSelectionState.IDLE
                 return
 
-            screen_capture_process = self._screen_capture_process_name()
+            now = self._clock()
+            context = self._capture_selection_context(
+                press_position,
+                int(x),
+                int(y),
+                captured_at=now,
+            )
+            screen_capture_process = self._screen_capture_process_name(
+                context.process_name
+            )
             if screen_capture_process is not None:
                 self._state = MouseSelectionState.IDLE
                 self.logger.info(
@@ -380,7 +413,6 @@ class MouseSelectionManager(QObject):
                 )
                 return
 
-            now = self._clock()
             gesture_signature = (
                 int(press_position[0]),
                 int(press_position[1]),
@@ -408,6 +440,7 @@ class MouseSelectionManager(QObject):
             event = TranslationTriggerEvent(
                 hotkey=MOUSE_SELECTION_SOURCE,
                 source=MOUSE_SELECTION_SOURCE,
+                selection_context=context,
             )
             capture_payload = (event, generation)
 
@@ -419,6 +452,52 @@ class MouseSelectionManager(QObject):
         # Emitting from pynput's thread to this QObject schedules the receiver
         # on the Qt thread, where QTimer is safe and tied to the GUI lifecycle.
         self._capture_requested.emit(capture_payload)
+
+    def _capture_selection_context(
+        self,
+        press_position: tuple[int, int],
+        release_x: int,
+        release_y: int,
+        *,
+        captured_at: float,
+    ) -> SelectionContext:
+        """Freeze gesture/window routing metadata at the physical release."""
+
+        hwnd: int | None = None
+        process_name: str | None = None
+        try:
+            snapshot = self._foreground_snapshot_reader()
+            if isinstance(snapshot, tuple) and len(snapshot) >= 2:
+                raw_hwnd, raw_process = snapshot[0], snapshot[1]
+                if raw_hwnd:
+                    try:
+                        hwnd = int(raw_hwnd)
+                    except (TypeError, ValueError, OverflowError):
+                        hwnd = None
+                if raw_process:
+                    process_name = str(raw_process)
+        except Exception:
+            pass
+
+        # Preserve the older injectable executable reader for tests and
+        # unusual platforms where only process-name detection is available.
+        if not process_name:
+            try:
+                fallback_process = self._foreground_executable_reader()
+            except Exception:
+                fallback_process = None
+            if fallback_process:
+                process_name = str(fallback_process)
+
+        return SelectionContext(
+            press_x=int(press_position[0]),
+            press_y=int(press_position[1]),
+            release_x=int(release_x),
+            release_y=int(release_y),
+            foreground_hwnd=hwnd,
+            process_name=process_name,
+            captured_at=float(captured_at),
+        )
 
     def _schedule_capture(self, payload: object) -> None:
         """Schedule selection capture after mouse-up state has settled."""
@@ -484,13 +563,18 @@ class MouseSelectionManager(QObject):
             # overlay itself remains non-triggering when its hit test works.
             return False
 
-    def _screen_capture_process_name(self) -> str | None:
+    def _screen_capture_process_name(
+        self,
+        process_name: str | None = None,
+    ) -> str | None:
         """Return a known Windows screen-capture foreground process name."""
 
-        try:
-            value = self._foreground_executable_reader()
-        except Exception:
-            return None
+        value = process_name
+        if not value:
+            try:
+                value = self._foreground_executable_reader()
+            except Exception:
+                return None
         if not value:
             return None
         normalized = str(value).replace("\\", "/").rsplit("/", 1)[-1].casefold()

@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPen
+from PySide6.QtGui import QAction, QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from app.ai.agent_workspace_overlay import AgentWorkspaceOverlayManager, AgentWorkspaceOverlayWindow
-from app.overlay.context_menu import OVERLAY_THEMES
+from app.models.reading_actions import READING_ACTION_SPECS
+from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
 
@@ -162,6 +163,8 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
         self._collapsed_to_crab = False
         self._interactive_mode_suspended_lock = False
         super().__init__(*args, **kwargs)
+        self._reading_actions: dict[str, QAction] = {}
+        self._install_reading_actions()
         self._agent_crab = AgentCrabWindow()
         self._agent_crab.set_theme_palette(OVERLAY_THEMES[self._theme_name])
         self._agent_crab.restore_requested.connect(self.restore_from_agent_crab)
@@ -174,11 +177,61 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
     def agent_crab(self) -> AgentCrabWindow:
         return self._agent_crab
 
+    @property
+    def reading_actions(self) -> dict[str, QAction]:
+        """Return the Academic Companion quick actions installed in the AI menu."""
+
+        return dict(self._reading_actions)
+
+    def _install_reading_actions(self) -> None:
+        """Add Stage-5 reading actions without coupling the base Overlay to AI."""
+
+        menu = self.context_menu.ai_menu
+        menu.addSeparator()
+        palette = OVERLAY_THEMES[self._theme_name]
+        action_index = getattr(self.context_menu, "_actions", None)
+        for spec in READING_ACTION_SPECS:
+            action = QAction(spec.label, menu)
+            action.setObjectName(
+                f"OverlayContext{spec.key.title().replace('_', '')}Action"
+            )
+            action.setIcon(symbol_icon(spec.symbol, palette["text"], size=18))
+            action.triggered.connect(
+                lambda _checked=False, action_key=spec.key: (
+                    self.context_menu.action_requested.emit(action_key, None)
+                )
+            )
+            menu.addAction(action)
+            self._reading_actions[spec.key] = action
+            if isinstance(action_index, dict):
+                action_index[spec.key] = action
+        self._apply_reading_action_theme()
+        self._sync_context_menu_state()
+
+    def _apply_reading_action_theme(self) -> None:
+        actions = getattr(self, "_reading_actions", None)
+        if not actions:
+            return
+        palette = OVERLAY_THEMES[self._theme_name]
+        for spec in READING_ACTION_SPECS:
+            action = actions.get(spec.key)
+            if action is not None:
+                action.setIcon(symbol_icon(spec.symbol, palette["text"], size=18))
+
     def _apply_theme(self, theme: str) -> None:
         super()._apply_theme(theme)
+        self._apply_reading_action_theme()
         crab = getattr(self, "_agent_crab", None)
         if crab is not None:
             crab.set_theme_palette(OVERLAY_THEMES[self._theme_name])
+
+    def _sync_context_menu_state(self) -> None:
+        """Disable all AI/reading actions when no selected source text exists."""
+
+        super()._sync_context_menu_state()
+        context_menu = getattr(self, "_context_menu", None)
+        if context_menu is not None:
+            context_menu.set_ai_enabled(bool(str(self._source_text or "").strip()))
 
     def _enter_interactive_window_mode(self) -> None:
         if self.is_locked:

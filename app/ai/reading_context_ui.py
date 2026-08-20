@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QSize, QTimer, Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -16,12 +16,14 @@ from app.ai.chat.models import ChatContext, ReadingContext
 from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
 from app.ui.design_tokens import (
     CONTROL,
+    ICON,
     LAYOUT,
     MOTION,
     RADIUS,
     SPACING,
     TYPOGRAPHY,
 )
+from app.ui.svg_icons import svg_icon
 
 
 _CONTEXT_EXCERPT_LIMIT = 220
@@ -94,7 +96,7 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(SPACING.sm)
-        self.reading_context_source = QLabel("📄 Reading", self.reading_context_card)
+        self.reading_context_source = QLabel("Reading", self.reading_context_card)
         self.reading_context_source.setObjectName("OverlayReadingContextSource")
         self.reading_context_title = QLabel("", self.reading_context_card)
         self.reading_context_title.setObjectName("OverlayReadingContextTitle")
@@ -102,9 +104,13 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         self.reading_context_title.setWordWrap(False)
         self.reading_context_expand = QToolButton(self.reading_context_card)
         self.reading_context_expand.setObjectName("OverlayReadingContextExpand")
-        self.reading_context_expand.setText("⌄")
+        self.reading_context_expand.setText("")
         self.reading_context_expand.setToolTip("查看 Reading Context")
         self.reading_context_expand.setCheckable(True)
+        self.reading_context_expand.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonIconOnly
+        )
+        self.reading_context_expand.setIconSize(QSize(ICON.sm, ICON.sm))
         self.reading_context_expand.setFixedSize(
             CONTROL.compact_height,
             CONTROL.compact_height - SPACING.xs,
@@ -139,11 +145,20 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         self.reading_context_details.hide()
         card_layout.addWidget(self.reading_context_details)
 
+        # The production transcript owns these inherited navigation controls,
+        # so replace the remaining font arrows with semantic vector icons here.
+        self.jump_to_bottom_button.setText("")
+        self.jump_to_bottom_button.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonIconOnly
+        )
+        self.jump_to_bottom_button.setIconSize(QSize(ICON.md, ICON.md))
+
         root = self.layout()
         if root is not None:
             root.insertWidget(1, self.reading_context_card)
 
         self.reading_context_expand.toggled.connect(self._toggle_reading_details)
+        self._update_reading_context_icons()
         self.reading_context_card.hide()
 
     def _stabilize_chat_header(self) -> None:
@@ -180,6 +195,24 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         self.font_button.setFixedWidth(_CHAT_FONT_BUTTON_WIDTH)
         self.clear_button.setFixedWidth(_CHAT_CLEAR_BUTTON_WIDTH)
         self.delete_chat_button.setFixedWidth(_CHAT_DELETE_BUTTON_WIDTH)
+
+    def _update_reading_context_icons(self) -> None:
+        palette = getattr(self, "_palette", {})
+        muted = palette.get(
+            "chrome_muted_text",
+            palette.get("muted_text", "#CBD5E1"),
+        )
+        if hasattr(self, "reading_context_expand"):
+            icon_name = (
+                "chevron_up" if self._reading_details_expanded else "chevron_down"
+            )
+            self.reading_context_expand.setIcon(
+                svg_icon(icon_name, muted, size=ICON.sm)
+            )
+        if hasattr(self, "jump_to_bottom_button"):
+            self.jump_to_bottom_button.setIcon(
+                svg_icon("down", muted, size=ICON.md)
+            )
 
     def set_identity(self, provider: str, model: str) -> None:
         """Elide long model names inside their own bounded toolbar control."""
@@ -344,7 +377,7 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
             return
 
         source_name = _source_label(reading.source_kind)
-        self.reading_context_source.setText(f"📄 {source_name}")
+        self.reading_context_source.setText(source_name)
         title = _trim(reading.resource_title, 84) or (
             "当前页面" if has_page_context and not source else "当前阅读选区"
         )
@@ -390,11 +423,12 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         self._reading_details_expanded = bool(expanded)
         has_details = bool(self.reading_context_details.text())
         self.reading_context_details.setVisible(self._reading_details_expanded and has_details)
-        self.reading_context_expand.setText("⌃" if self._reading_details_expanded else "⌄")
+        self._update_reading_context_icons()
         QTimer.singleShot(0, self.refresh_adaptive_height)
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
+        self._update_reading_context_icons()
         chrome_background = palette.get("chrome_background", palette["menu_background"])
         chrome_border = palette.get("chrome_border", palette["border"])
         chrome_hover = palette.get("chrome_hover", palette["hover"])

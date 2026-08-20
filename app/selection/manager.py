@@ -62,26 +62,25 @@ class SelectionManager:
                 if uia_provider is not None
                 else UIASelectionProvider(timeout_seconds=uia_timeout_seconds)
             )
-            resolved_browser_pdf = (
-                browser_pdf_provider
-                if browser_pdf_provider is not None
-                else BrowserPdfSelectionProvider()
-            )
             resolved_clipboard = (
                 clipboard_provider
                 if clipboard_provider is not None
                 else ClipboardSelectionProvider()
             )
-            # Preserve the legacy native/full provider tuples for explicit and
-            # hotkey selection. The browser/PDF retry tier is automatic-only:
-            # it needs the frozen mouse-up SelectionContext to decide whether
-            # it is applicable and must never introduce clipboard behavior.
             self.native_providers = (resolved_word, resolved_uia)
-            self.automatic_native_providers = (
-                resolved_word,
-                resolved_browser_pdf,
-                resolved_uia,
-            )
+
+            # Production gets the dedicated browser/PDF retry tier. Existing
+            # tests/integrations that explicitly inject their own UIA provider
+            # retain the historical Word -> injected UIA ordering unless they
+            # also explicitly supply a browser_pdf_provider.
+            automatic: list[SelectionProvider] = [resolved_word]
+            if browser_pdf_provider is not None:
+                automatic.append(browser_pdf_provider)
+            elif uia_provider is None:
+                automatic.append(BrowserPdfSelectionProvider())
+            automatic.append(resolved_uia)
+            self.automatic_native_providers = tuple(automatic)
+
             self.clipboard_provider = resolved_clipboard
             self.providers = (*self.native_providers, resolved_clipboard)
 
@@ -139,10 +138,6 @@ class SelectionManager:
                     else:
                         selected = provider.get_selected_text()
 
-                    # Keep the legacy full-path log signature stable for
-                    # existing integrations/tests. Native automatic capture
-                    # gets an explicit mode suffix so diagnostics still show
-                    # that the zero-keyboard path was used.
                     if mode == "full":
                         self.logger.info(
                             "selection_provider_used provider=%s",

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Stage 1 capability set for the main AITranslator window.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

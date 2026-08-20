@@ -9,20 +9,43 @@ This directory contains the React + TypeScript desktop client used by the WebReB
 - `127.0.0.1:8765` remains reserved for the existing Browser Selection Bridge.
 - `DesktopAdapter` isolates React from Tauri/Electron-specific APIs.
 - Normal translation stays deterministic and does not run through LangGraph.
+- AI Quick Actions and Companion Chat reuse the existing provider-independent Python AI services.
+
+## Stage 3 frontend boundaries
+
+The main React workspace is split by feature instead of accumulating business orchestration in `App.tsx`:
+
+```text
+src/
+├── App.tsx                         # composition only
+├── features/
+│   ├── reading/                    # browser reading-context presentation
+│   ├── system/                     # runtime/backend/provider status
+│   └── translation/                # translation state, behavior and workspace UI
+├── components/                     # cross-feature overlay/companion surfaces
+├── shared/components/              # small reusable UI primitives
+├── api/                            # FastAPI client contracts
+└── desktop/                        # Tauri/browser native capability adapters
+```
+
+`useTranslationWorkspace()` owns the translation workspace state and browser-selection synchronization. UI components consume the controller it returns; they do not call Tauri or translation providers directly.
 
 ## Development
 
-From `apps/desktop`:
+From the repository root, the preferred launcher is:
 
 ```powershell
-npm install
-npm run backend:dev
+.\scripts\webrebuild-dev.ps1
 ```
 
-In a second terminal:
+It runs frontend lint, Vitest, and the production build before starting FastAPI and Tauri.
+
+From `apps/desktop`, individual checks remain available:
 
 ```powershell
-npm run tauri:dev
+npm run lint
+npm run test
+npm run build
 ```
 
 Browser-only frontend development remains available with:
@@ -31,9 +54,9 @@ Browser-only frontend development remains available with:
 npm run dev
 ```
 
-## Stage 2 translation API
+## Migrated application paths
 
-The first migrated business path is:
+Deterministic translation:
 
 ```text
 React
@@ -44,10 +67,17 @@ React
   -> TranslationProvider
 ```
 
-Useful endpoints:
+Reading Companion:
 
-- `GET /health`
-- `GET /api/translation/status`
-- `POST /api/translation`
+```text
+Browser selection
+  -> BrowserReadingBridge :8765
+  -> FastAPI :8766
+  -> React / Tauri Overlay
+  -> Quick Actions or Companion Handoff
+  -> existing AIChatService / AITextService
+```
 
-The migration intentionally reuses the established translation normalization, cache, and provider implementation under `app/translation/` instead of duplicating those rules in the web client.
+Research Notes remain persisted by the existing SQLite `ResearchNoteStore`.
+
+The migration intentionally reuses established normalization, cache, provider, reading-context and research-note behavior under `app/` instead of duplicating those rules in the web client.

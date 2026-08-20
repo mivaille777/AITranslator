@@ -9,7 +9,9 @@ import {
 import type {
   OverlayStateResponse,
   QuickActionKey,
+  QuickActionRequest,
   QuickActionResponse,
+  ResearchNoteSaveRequest,
 } from "../api/types"
 
 type ActionSpec = {
@@ -44,6 +46,16 @@ type FeedbackState = {
   message: string
 }
 
+type ActionVariables = {
+  contextId: string
+  payload: QuickActionRequest
+}
+
+type NoteVariables = {
+  contextId: string
+  payload: ResearchNoteSaveRequest
+}
+
 export default function OverlayQuickActions({ state }: { state: OverlayStateResponse }) {
   const [resultState, setResultState] = useState<ResultState | null>(null)
   const [feedback, setFeedback] = useState<FeedbackState | null>(null)
@@ -60,43 +72,30 @@ export default function OverlayQuickActions({ state }: { state: OverlayStateResp
   const activeFeedback = feedback?.contextId === state.context_id ? feedback.message : ""
   const aiAvailable = statusQuery.data?.available ?? false
 
-  function requestPayload(action: QuickActionKey) {
+  function actionVariables(action: QuickActionKey): ActionVariables {
     return {
-      action,
-      source_text: state.source_text,
-      translated_text: state.translated_text,
-      source_language: state.source_language,
-      target_language: state.target_language,
-      style: "academic",
-      resource_url: state.resource_url,
-      resource_title: state.resource_title,
-      section_heading: state.section_heading,
-      context_before: state.context_before,
-      context_after: state.context_after,
-      source_kind: state.source_kind || "browser_selection",
+      contextId: state.context_id,
+      payload: {
+        action,
+        source_text: state.source_text,
+        translated_text: state.translated_text,
+        source_language: state.source_language,
+        target_language: state.target_language,
+        style: "academic",
+        resource_url: state.resource_url,
+        resource_title: state.resource_title,
+        section_heading: state.section_heading,
+        context_before: state.context_before,
+        context_after: state.context_after,
+        source_kind: state.source_kind || "browser_selection",
+      },
     }
   }
 
-  const actionMutation = useMutation({
-    mutationFn: (action: QuickActionKey) => runQuickAction(requestPayload(action)),
-    onMutate: () => {
-      setFeedback(null)
-      setCopied(false)
-    },
-    onSuccess: (result) => {
-      setResultState({ contextId: state.context_id, result })
-    },
-    onError: (error) => {
-      setFeedback({
-        contextId: state.context_id,
-        message: error instanceof Error ? error.message : "Quick action failed.",
-      })
-    },
-  })
-
-  const noteMutation = useMutation({
-    mutationFn: () =>
-      saveResearchNote({
+  function noteVariables(): NoteVariables {
+    return {
+      contextId: state.context_id,
+      payload: {
         source_text: state.source_text,
         translated_text: state.translated_text,
         source_language: state.source_language,
@@ -109,16 +108,38 @@ export default function OverlayQuickActions({ state }: { state: OverlayStateResp
         source_kind: state.source_kind || "browser_selection",
         ai_content: activeResult?.output_text ?? "",
         ai_action: activeResult?.action ?? "",
-      }),
-    onSuccess: (result) => {
+      },
+    }
+  }
+
+  const actionMutation = useMutation({
+    mutationFn: ({ payload }: ActionVariables) => runQuickAction(payload),
+    onMutate: () => {
+      setFeedback(null)
+      setCopied(false)
+    },
+    onSuccess: (result, variables) => {
+      setResultState({ contextId: variables.contextId, result })
+    },
+    onError: (error, variables) => {
       setFeedback({
-        contextId: state.context_id,
+        contextId: variables.contextId,
+        message: error instanceof Error ? error.message : "Quick action failed.",
+      })
+    },
+  })
+
+  const noteMutation = useMutation({
+    mutationFn: ({ payload }: NoteVariables) => saveResearchNote(payload),
+    onSuccess: (result, variables) => {
+      setFeedback({
+        contextId: variables.contextId,
         message: result.created ? "已加入研究笔记" : "研究笔记已更新",
       })
     },
-    onError: (error) => {
+    onError: (error, variables) => {
       setFeedback({
-        contextId: state.context_id,
+        contextId: variables.contextId,
         message: error instanceof Error ? error.message : "Unable to save research note.",
       })
     },
@@ -193,7 +214,7 @@ export default function OverlayQuickActions({ state }: { state: OverlayStateResp
             }
             disabled={!aiAvailable || actionMutation.isPending || noteMutation.isPending}
             className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-medium text-slate-300 transition hover:border-cyan-300/30 hover:bg-cyan-300/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
-            onClick={() => actionMutation.mutate(action.key)}
+            onClick={() => actionMutation.mutate(actionVariables(action.key))}
           >
             {action.label}
           </button>
@@ -203,7 +224,7 @@ export default function OverlayQuickActions({ state }: { state: OverlayStateResp
           title="加入研究笔记"
           disabled={noteMutation.isPending || actionMutation.isPending}
           className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-[11px] font-medium text-slate-300 transition hover:border-emerald-300/30 hover:bg-emerald-300/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
-          onClick={() => noteMutation.mutate()}
+          onClick={() => noteMutation.mutate(noteVariables())}
         >
           笔记
         </button>

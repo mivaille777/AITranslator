@@ -12,6 +12,9 @@ _REQUIRED_ICONS = {
     "copy",
     "add",
     "back",
+    "down",
+    "chevron_down",
+    "chevron_up",
     "delete",
     "stop",
     "refresh",
@@ -46,6 +49,10 @@ def test_svg_source_sanitizes_invalid_colors() -> None:
 
     assert "onload" not in source
     assert "#f8fafc" in source.lower()
+
+
+def test_feedback_alias_is_vector_backed() -> None:
+    assert svg_source("✓", "#60A5FA") == svg_source("check", "#60A5FA")
 
 
 def test_unknown_semantic_icon_fails_explicitly() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout
 
 from app.ai.chat.models import ChatContext, ReadingContext
@@ -22,7 +22,7 @@ def _trim(text: object, limit: int) -> str:
 
 def _source_label(source_kind: str) -> str:
     normalized = str(source_kind or "").strip().lower()
-    if normalized == "browser_selection":
+    if normalized in {"browser_selection", "browser_page"}:
         return "Browser"
     if "pdf" in normalized:
         return "PDF"
@@ -110,13 +110,21 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         return self._reading_chat_context
 
     def set_context(self, source_text: str, translated_text: str = "") -> None:
+        """Update plain context without leaking metadata from another conversation."""
+
         super().set_context(source_text, translated_text)
+        source = str(source_text or "").strip()
+        translated = str(translated_text or "").strip()
         current = self._reading_chat_context
+        same_selection = bool(
+            source
+            and source == str(current.source_text or "").strip()
+        )
         self.set_reading_context(
             ChatContext(
-                source_text=str(source_text or "").strip(),
-                translated_text=str(translated_text or "").strip(),
-                reading=current.reading,
+                source_text=source,
+                translated_text=translated,
+                reading=current.reading if same_selection else ReadingContext(),
             )
         )
 
@@ -130,13 +138,12 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         source = str(resolved.source_text or "").strip()
         translated = str(resolved.translated_text or "").strip()
         reading = resolved.reading if isinstance(resolved.reading, ReadingContext) else ReadingContext()
-        has_context = bool(
-            source
-            or translated
-            or reading.resource_title
+        has_page_context = bool(
+            reading.resource_title
             or reading.section_heading
             or reading.resource_url
         )
+        has_context = bool(source or translated or has_page_context)
         self.reading_context_card.setVisible(has_context)
         if not has_context:
             self.reading_context_details.clear()
@@ -146,7 +153,9 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
 
         source_name = _source_label(reading.source_kind)
         self.reading_context_source.setText(f"📄 {source_name}")
-        title = _trim(reading.resource_title, 84) or "当前阅读选区"
+        title = _trim(reading.resource_title, 84) or (
+            "当前页面" if has_page_context and not source else "当前阅读选区"
+        )
         self.reading_context_title.setText(title)
         self.reading_context_title.setToolTip(str(reading.resource_title or title))
 
@@ -159,9 +168,17 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         self.reading_context_meta.setVisible(bool(meta_parts))
 
         if source:
-            self.reading_context_selection.setText(f"选区 · {_trim(source, _CONTEXT_EXCERPT_LIMIT)}")
+            self.reading_context_selection.setText(
+                f"选区 · {_trim(source, _CONTEXT_EXCERPT_LIMIT)}"
+            )
+        elif translated:
+            self.reading_context_selection.setText(
+                f"译文 · {_trim(translated, _CONTEXT_EXCERPT_LIMIT)}"
+            )
+        elif has_page_context:
+            self.reading_context_selection.setText("当前页面 · 尚未选择具体文本")
         else:
-            self.reading_context_selection.setText(f"译文 · {_trim(translated, _CONTEXT_EXCERPT_LIMIT)}")
+            self.reading_context_selection.clear()
 
         detail_lines: list[str] = []
         if translated and source:
@@ -235,7 +252,5 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
             """
         )
 
-
-from PySide6.QtCore import QTimer
 
 __all__ = ["ReadingContextChatPanel"]

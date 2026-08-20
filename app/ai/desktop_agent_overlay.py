@@ -9,13 +9,28 @@ from PySide6.QtGui import QAction, QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
 from app.ai.agent_workspace_overlay import AgentWorkspaceOverlayManager, AgentWorkspaceOverlayWindow
-from app.models.reading_actions import READING_ACTION_SPECS
-from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
+from app.models.reading_actions import (
+    READING_ACTION_SPECS,
+    READING_CONTEXT_TRANSLATE,
+    READING_EXPLAIN,
+    READING_SECTION_ROLE,
+    READING_SUMMARIZE,
+)
+from app.overlay.context_menu import OVERLAY_THEMES
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
+from app.ui.design_tokens import ICON
+from app.ui.svg_icons import svg_icon
 
 
 AGENT_CRAB_SIZE = 56
+
+_READING_ACTION_ICON_NAMES = {
+    READING_EXPLAIN: "info",
+    READING_CONTEXT_TRANSLATE: "translate",
+    READING_SUMMARIZE: "note",
+    READING_SECTION_ROLE: "document",
+}
 
 
 class AgentCrabWindow(QWidget):
@@ -195,7 +210,8 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
             action.setObjectName(
                 f"OverlayContext{spec.key.title().replace('_', '')}Action"
             )
-            action.setIcon(symbol_icon(spec.symbol, palette["text"], size=18))
+            icon_name = _READING_ACTION_ICON_NAMES.get(spec.key, "document")
+            action.setIcon(svg_icon(icon_name, palette["text"], size=ICON.md))
             action.triggered.connect(
                 lambda _checked=False, action_key=spec.key: (
                     self.context_menu.action_requested.emit(action_key, None)
@@ -216,7 +232,8 @@ class DesktopAgentOverlayWindow(AgentWorkspaceOverlayWindow):
         for spec in READING_ACTION_SPECS:
             action = actions.get(spec.key)
             if action is not None:
-                action.setIcon(symbol_icon(spec.symbol, palette["text"], size=18))
+                icon_name = _READING_ACTION_ICON_NAMES.get(spec.key, "document")
+                action.setIcon(svg_icon(icon_name, palette["text"], size=ICON.md))
 
     def _apply_theme(self, theme: str) -> None:
         super()._apply_theme(theme)

@@ -14,13 +14,20 @@ from PySide6.QtWidgets import (
 
 from app.ai.chat.models import ChatContext, ReadingContext
 from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
-from app.ui.design_tokens import CONTROL, MOTION, RADIUS, SPACING, TYPOGRAPHY
+from app.ui.design_tokens import (
+    CONTROL,
+    LAYOUT,
+    MOTION,
+    RADIUS,
+    SPACING,
+    TYPOGRAPHY,
+)
 
 
 _CONTEXT_EXCERPT_LIMIT = 220
 _CONTEXT_DETAIL_LIMIT = 420
-_CHAT_MODEL_BUTTON_MIN_WIDTH = 118
-_CHAT_MODEL_BUTTON_MAX_WIDTH = 168
+_CHAT_MODEL_BUTTON_MIN_WIDTH = LAYOUT.chat_model_min_width
+_CHAT_MODEL_BUTTON_MAX_WIDTH = LAYOUT.chat_model_max_width
 _CHAT_FONT_BUTTON_WIDTH = CONTROL.large_height + SPACING.xxl
 _CHAT_CLEAR_BUTTON_WIDTH = CONTROL.normal_height + SPACING.md
 _CHAT_DELETE_BUTTON_WIDTH = CONTROL.normal_height + SPACING.xs
@@ -149,7 +156,7 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
             return
 
         top.setSpacing(SPACING.sm)
-        self.title_label.setMinimumWidth(62)
+        self.title_label.setMinimumWidth(CONTROL.large_height + TYPOGRAPHY.title)
         self.title_label.setSizePolicy(
             QSizePolicy.Policy.Fixed,
             QSizePolicy.Policy.Fixed,

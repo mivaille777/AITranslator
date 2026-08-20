@@ -38,11 +38,6 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
     regenerate_requested = Signal(str)
 
     def __init__(self, parent=None) -> None:
-        # Qt can dispatch events from parent-class construction (for example,
-        # QWidget.hide() may synchronously reach this subclass eventFilter).
-        # Initialize every piece of state touched by overridden event/UI hooks
-        # before calling super() so construction is safe under re-entrant Qt
-        # event delivery.
         self._conversation_items: list[dict[str, object]] = []
         self._history_actions: list[tuple[QAction, str]] = []
         self._assistant_action_rows: dict[QWidget, tuple[QToolButton, ...]] = {}
@@ -231,44 +226,7 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             except RuntimeError:
                 continue
         self.messages_content.updateGeometry()
-
-    def _schedule_scroll_message_to_start(self, row: QWidget) -> None:
-        """Defer reply positioning until Qt has committed wrapped row geometry."""
-
-        def after_first_layout_pass() -> None:
-            try:
-                self._fit_message_rows_to_viewport()
-                self.messages_layout.activate()
-                row_layout = row.layout()
-                if row_layout is not None:
-                    row_layout.activate()
-            except RuntimeError:
-                return
-            # Word-wrapped QLabel height and the scroll range can settle one
-            # event-loop turn after the row enters the QScrollArea. Measure the
-            # final row position on the next turn instead of using stale y().
-            QTimer.singleShot(
-                0,
-                lambda current=row: self._scroll_message_to_start(current),
-            )
-
-        QTimer.singleShot(0, after_first_layout_pass)
-
-    def _scroll_message_to_start(self, row: QWidget) -> None:
-        """Show the beginning of a completed reply instead of only its tail."""
-
-        try:
-            self._fit_message_rows_to_viewport()
-            self.messages_layout.activate()
-            row_layout = row.layout()
-            if row_layout is not None:
-                row_layout.activate()
-            bar = self.messages_scroll.verticalScrollBar()
-            margins = self.messages_layout.contentsMargins()
-            target = max(bar.minimum(), row.y() - margins.top())
-            bar.setValue(min(bar.maximum(), target))
-        except RuntimeError:
-            return
+        QTimer.singleShot(0, self.refresh_adaptive_height)
 
     def append_message(self, role: ChatRole | str, text: str) -> None:
         before = len(self._message_rows)
@@ -282,10 +240,10 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         if role_value == ChatRole.USER.value:
             return
 
-        # Base append_message schedules a scroll-to-bottom. Position the reply
-        # only after wrapped Markdown geometry and the scrollbar range settle.
-        self._schedule_scroll_message_to_start(row)
-
+        # Do not reposition a completed reply to its beginning. The base panel
+        # owns the follow-tail state: users at the bottom remain at the bottom,
+        # while users reading history keep their exact scroll position and get
+        # an explicit jump-to-latest affordance.
         raw = str(text).strip()
         copy_buttons = row.findChildren(QToolButton, "OverlayChatMessageCopyButton")
         copy_button = copy_buttons[0] if copy_buttons else None
@@ -322,7 +280,7 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         self._update_regenerate_icon(regenerate_button)
 
     def _update_regenerate_icon(self, button: QToolButton) -> None:
-        color = self._palette.get("muted_text", "#CBD5E1")
+        color = self._palette.get("chrome_muted_text", self._palette.get("muted_text", "#CBD5E1"))
         button.setIcon(symbol_icon("↻", color, size=MESSAGE_ACTION_ICON_SIZE))
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
@@ -344,9 +302,6 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         return super().eventFilter(watched, event)
 
     def _assistant_row_for_widget(self, widget: object) -> QWidget | None:
-        # During QObject/QWidget construction Qt is allowed to call an
-        # overridden eventFilter before the subclass constructor has returned.
-        # Treat that phase as having no assistant action rows.
         action_rows = getattr(self, "_assistant_action_rows", {})
         current = widget if isinstance(widget, QWidget) else None
         while current is not None and current is not self:
@@ -356,13 +311,7 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         return None
 
     def assistant_actions_visible(self, row: QWidget) -> bool:
-        """Return the logical hover state independent of ancestor visibility.
-
-        ``QWidget.isVisible()`` includes every ancestor's current show state.
-        That is useful on-screen but unstable in headless/offscreen tests while
-        a QScrollArea is still laying itself out. This explicit state represents
-        the interaction contract: whether this row's action bar should be shown.
-        """
+        """Return the logical hover state independent of ancestor visibility."""
 
         return bool(getattr(self, "_assistant_action_visibility", {}).get(row, False))
 
@@ -383,9 +332,6 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             return
         for button in getattr(self, "_assistant_action_rows", {}).get(row, ()):
             try:
-                # setHidden() changes the button's own explicit visibility
-                # state without depending on whether the scroll-area ancestors
-                # have already been polished/shown by the platform plugin.
                 button.setHidden(not shown)
             except RuntimeError:
                 pass
@@ -400,34 +346,38 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         for buttons in getattr(self, "_assistant_action_rows", {}).values():
             if len(buttons) > 1:
                 self._update_regenerate_icon(buttons[1])
+        chrome_background = palette.get("chrome_background", palette["menu_background"])
+        chrome_border = palette.get("chrome_border", palette["border"])
+        chrome_hover = palette.get("chrome_hover", palette["hover"])
+        chrome_text = palette.get("chrome_text", palette["text"])
         self.setStyleSheet(
             self.styleSheet()
             + f"""
             QToolButton#OverlayChatBackButton {{
-                color: {palette['text']};
-                background-color: transparent;
-                border: 1px solid transparent;
+                color: {chrome_text};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 6px;
                 font-size: 18px;
             }}
             QToolButton#OverlayChatBackButton:hover {{
-                background-color: {palette['hover']};
-                border-color: {palette['border']};
+                background-color: {chrome_hover};
+                border-color: {palette['accent']};
             }}
             QPushButton#OverlayChatStopButton {{
-                color: {palette['text']};
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['border']};
+                color: {chrome_text};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 7px;
             }}
             QPushButton#OverlayChatStopButton:hover {{
-                background-color: {palette['hover']};
+                background-color: {chrome_hover};
                 border-color: {palette['accent']};
             }}
             QLineEdit#OverlayChatHistorySearch {{
-                color: {palette['text']};
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['border']};
+                color: {chrome_text};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 6px;
                 padding: 6px 8px;
                 margin: 2px 5px;
@@ -436,12 +386,12 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
                 border-color: {palette['accent']};
             }}
             QScrollArea#OverlayChatMessagesScroll {{
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['border']};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 8px;
             }}
             QWidget#OverlayChatMessagesContent {{
-                background-color: {palette['menu_background']};
+                background-color: {chrome_background};
             }}
             QToolButton#OverlayChatMessageRegenerateButton {{
                 background-color: transparent;
@@ -450,8 +400,8 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
                 padding: 2px;
             }}
             QToolButton#OverlayChatMessageRegenerateButton:hover {{
-                background-color: {palette['hover']};
-                border-color: {palette['border']};
+                background-color: {chrome_hover};
+                border-color: {chrome_border};
             }}
             """
         )

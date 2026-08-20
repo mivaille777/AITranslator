@@ -19,14 +19,16 @@ from PySide6.QtWidgets import (
 
 from app.ai.chat.models import ChatRole
 from app.ai.chat_selection_ui import SelectionCaptureChatPanel
+from app.ui.design_tokens import CONTROL, LAYOUT, RADIUS, SPACING, TYPOGRAPHY
 
 
 CHAT_DISPLAY_FONT_MIN = 10
 CHAT_DISPLAY_FONT_MAX = 30
 CHAT_DISPLAY_FONT_PRESETS = (10, 11, 12, 13, 14, 16, 18, 20, 24, 28, 30)
-CHAT_INPUT_MIN_HEIGHT = 44
+CHAT_INPUT_MIN_HEIGHT = CONTROL.input_min_height
 CHAT_INPUT_SOFT_MAX_HEIGHT = 180
 _CHAT_INPUT_PANEL_RATIO = 0.28
+_CHAT_INPUT_DYNAMIC_MIN = CONTROL.large_height + CONTROL.touch_target_min + SPACING.xxs
 _BARE_URL_RE = re.compile(r"(?<![<(])https?://[^\s<>\]]+", re.IGNORECASE)
 _TRAILING_URL_PUNCTUATION = ".,;:!?，。；：！？"
 
@@ -65,7 +67,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         self._streaming_request_id: int | None = None
         self._streaming_row: QWidget | None = None
         self._streaming_body: QLabel | None = None
-        self._display_font_size = 13
+        self._display_font_size = TYPOGRAPHY.body
         self._font_action_group: QActionGroup | None = None
 
         root = self.layout()
@@ -122,8 +124,8 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         top.insertWidget(max(0, close_index), self.delete_chat_button)
 
         self.title_label.setToolTip("拖动以移动悬浮窗")
-        self.title_label.setMinimumWidth(64)
-        self.model_button.setMinimumWidth(120)
+        self.title_label.setMinimumWidth(CONTROL.large_height + TYPOGRAPHY.title_large)
+        self.model_button.setMinimumWidth(LAYOUT.chat_model_min_width)
         self._build_font_menu()
         self.input_edit.textChanged.connect(self._schedule_input_height_refresh)
         self.set_display_font_size(self._display_font_size)
@@ -320,7 +322,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         row.setProperty("chatRole", ChatRole.ASSISTANT.value)
         layout = QVBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(3)
+        layout.setSpacing(SPACING.xs)
 
         role_label = QLabel("AI")
         role_label.setObjectName("OverlayChatAssistantRole")
@@ -399,13 +401,13 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
             + frame
             + margins.top()
             + margins.bottom()
-            + 12
+            + SPACING.md
         )
         if not edit.toPlainText():
             desired = CHAT_INPUT_MIN_HEIGHT
         panel_height = max(self.height(), self.minimumHeight(), 1)
         dynamic_cap = max(
-            78,
+            _CHAT_INPUT_DYNAMIC_MIN,
             min(
                 CHAT_INPUT_SOFT_MAX_HEIGHT,
                 round(panel_height * _CHAT_INPUT_PANEL_RATIO),
@@ -429,7 +431,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         try:
             resolved = max(CHAT_DISPLAY_FONT_MIN, min(CHAT_DISPLAY_FONT_MAX, int(size)))
         except (TypeError, ValueError):
-            resolved = 13
+            resolved = TYPOGRAPHY.body
         self._display_font_size = resolved
         body_font = QFont(self.font())
         body_font.setPointSize(resolved)
@@ -472,8 +474,8 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
                 color: {chrome_text};
                 background-color: {chrome_background};
                 border: 1px solid {chrome_border};
-                border-radius: 6px;
-                padding: 4px 6px;
+                border-radius: {RADIUS.sm}px;
+                padding: {SPACING.xs}px {RADIUS.sm}px;
             }}
             QToolButton#OverlayChatHistoryButton:hover,
             QToolButton#OverlayChatNewConversationButton:hover,
@@ -491,7 +493,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
                 color: {chrome_muted};
             }}
             QToolButton#OverlayChatFontButton {{
-                min-width: 54px;
+                min-width: {CONTROL.large_height + SPACING.md}px;
                 color: {chrome_muted};
             }}
             QMenu#OverlayChatHistoryMenu,
@@ -501,15 +503,15 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
                 background-color: {chrome_background};
                 color: {chrome_text};
                 border: 1px solid {chrome_border};
-                border-radius: 8px;
-                padding: 6px;
+                border-radius: {RADIUS.md}px;
+                padding: {RADIUS.sm}px;
             }}
             QMenu#OverlayChatHistoryMenu::item,
             QMenu#OverlayChatHistoryConversationMenu::item,
             QMenu#OverlayChatModelMenu::item,
             QMenu#OverlayChatFontMenu::item {{
-                padding: 7px 12px;
-                border-radius: 5px;
+                padding: {SPACING.sm}px {SPACING.md}px;
+                border-radius: {RADIUS.sm}px;
             }}
             QMenu#OverlayChatHistoryMenu::item:selected,
             QMenu#OverlayChatHistoryConversationMenu::item:selected,

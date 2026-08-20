@@ -82,7 +82,22 @@ class SelectionManager:
             self.automatic_native_providers = tuple(automatic)
 
             self.clipboard_provider = resolved_clipboard
-            self.providers = (*self.native_providers, resolved_clipboard)
+
+            # Preserve the explicit legacy compatibility contract.  A caller
+            # that injects Word + Clipboard but deliberately omits UIA is
+            # defining a two-tier Word -> Clipboard chain.  Do not silently
+            # insert a live system UIA provider into that chain: doing so makes
+            # deterministic tests/integrations depend on whatever application
+            # happens to own the real desktop selection at that instant.
+            explicit_word_clipboard_chain = bool(
+                word_provider is not None
+                and clipboard_provider is not None
+                and uia_provider is None
+            )
+            if explicit_word_clipboard_chain:
+                self.providers = (resolved_word, resolved_clipboard)
+            else:
+                self.providers = (*self.native_providers, resolved_clipboard)
 
         # Preserve the Step5 ``provider`` attribute for callers that supplied
         # one explicitly; for the default chain it identifies the first tier.

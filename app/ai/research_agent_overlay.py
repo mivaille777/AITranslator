@@ -10,12 +10,15 @@ from app.ai.desktop_agent_overlay import (
     DesktopAgentOverlayManager,
     DesktopAgentOverlayWindow,
 )
+from app.ai.research_quick_actions import (
+    RESEARCH_NOTE_SAVE,
+    SelectionQuickActionBar,
+)
 from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
 
 
-RESEARCH_NOTE_SAVE = "research_note_save"
 RESEARCH_NOTES_RECENT = "research_notes_recent"
 
 _RESEARCH_ACTION_SPECS = (
@@ -29,12 +32,18 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._research_actions: dict[str, QAction] = {}
+        self._selection_quick_actions: SelectionQuickActionBar | None = None
         super().__init__(*args, **kwargs)
         self._install_research_actions()
+        self._install_selection_quick_actions()
 
     @property
     def research_actions(self) -> dict[str, QAction]:
         return dict(self._research_actions)
+
+    @property
+    def selection_quick_actions(self) -> SelectionQuickActionBar | None:
+        return self._selection_quick_actions
 
     def _set_content(
         self,
@@ -57,11 +66,10 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         # OverlayWindow changes source/translation state through _set_content,
         # but its generic menu has no knowledge of Stage-6 research actions.
         # Refresh here so a newly displayed selection immediately enables
-        # Save Note, while replacing it with source-less text disables the
-        # action again.  The guards in _sync_context_menu_state keep this safe
-        # during base-class construction before reading actions are installed.
+        # Save Note and its direct quick-action affordance.
         if hasattr(self, "_context_menu"):
             self._sync_context_menu_state()
+        self._sync_selection_quick_actions()
 
     def _install_research_actions(self) -> None:
         menu = self.context_menu.ai_menu
@@ -86,6 +94,29 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         self._apply_research_action_theme()
         self._sync_context_menu_state()
 
+    def _install_selection_quick_actions(self) -> None:
+        bar = SelectionQuickActionBar(self)
+        bar.action_requested.connect(
+            lambda key: self.context_action.emit(key, None)
+        )
+        content_index = self._layout.indexOf(self._content_scroll)
+        self._layout.insertWidget(max(0, content_index + 1), bar)
+        self._selection_quick_actions = bar
+        bar.apply_palette(OVERLAY_THEMES[self._theme_name])
+        self._sync_selection_quick_actions()
+
+    def _sync_selection_quick_actions(self) -> None:
+        bar = getattr(self, "_selection_quick_actions", None)
+        if bar is None:
+            return
+        has_source = bool(str(getattr(self, "_source_text", "") or "").strip())
+        surface_available = bool(
+            has_source
+            and not bool(getattr(self, "_chat_open", False))
+            and not bool(getattr(self, "_agent_translation_mode", False))
+        )
+        bar.set_source_available(surface_available)
+
     def _apply_research_action_theme(self) -> None:
         actions = getattr(self, "_research_actions", None)
         if not actions:
@@ -99,6 +130,9 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
     def _apply_theme(self, theme: str) -> None:
         super()._apply_theme(theme)
         self._apply_research_action_theme()
+        bar = getattr(self, "_selection_quick_actions", None)
+        if bar is not None:
+            bar.apply_palette(OVERLAY_THEMES[self._theme_name])
 
     def _sync_context_menu_state(self) -> None:
         super()._sync_context_menu_state()
@@ -126,6 +160,23 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         # source text is absent. Re-enable only the submenu container so the
         # source-independent Recent Notes action remains reachable.
         self.context_menu.ai_menu.setEnabled(True)
+        self._sync_selection_quick_actions()
+
+    def open_chat(self, **kwargs: Any) -> None:
+        super().open_chat(**kwargs)
+        self._sync_selection_quick_actions()
+
+    def close_chat(self) -> None:
+        super().close_chat()
+        self._sync_selection_quick_actions()
+
+    def enter_agent_translation_mode(self, assistant_message: object = "") -> None:
+        super().enter_agent_translation_mode(assistant_message)
+        self._sync_selection_quick_actions()
+
+    def leave_agent_translation_mode(self) -> None:
+        super().leave_agent_translation_mode()
+        self._sync_selection_quick_actions()
 
 
 class ResearchAgentOverlayManager(DesktopAgentOverlayManager):

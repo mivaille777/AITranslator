@@ -18,6 +18,7 @@ from app.ai.research_agent_overlay import (
 )
 from app.infrastructure.settings import SettingsManager
 from app.models.reading_actions import READING_ACTION_KEYS
+from app.overlay.context_menu import OVERLAY_THEMES
 from app.research.library import ResearchNoteLibraryStore
 from app.research.library_ui import ResearchNotesLibraryWindow
 from app.research.notes import ResearchNote, ResearchNoteStore
@@ -26,7 +27,7 @@ from app.research.notes import ResearchNote, ResearchNoteStore
 RESEARCH_NOTE_SAVED_TEXT = "已加入研究笔记"
 RESEARCH_NOTE_UPDATED_TEXT = "研究笔记已更新"
 RESEARCH_NOTE_FAILED_TEXT = "研究笔记保存失败"
-RESEARCH_NOTE_FEEDBACK_MILLISECONDS = 1500
+RESEARCH_NOTE_FEEDBACK_MILLISECONDS = 2200
 RECENT_RESEARCH_NOTE_LIMIT = 8
 
 
@@ -66,6 +67,36 @@ class ResearchAgentAppController(DesktopAgentAppController):
             except RuntimeError:
                 pass
         super().shutdown()
+
+    def _show_settings(self) -> None:
+        """Bind runtime browser/research services to the product settings page."""
+
+        super()._show_settings()
+        window = getattr(self, "_settings_window", None)
+        if window is None:
+            return
+        window.browser_bridge = self.browser_selection_bridge
+        window.research_note_store = self.research_note_store
+        if not bool(getattr(window, "_research_agent_runtime_bound", False)):
+            signal = getattr(window, "research_notes_requested", None)
+            connect = getattr(signal, "connect", None)
+            if callable(connect):
+                connect(self._open_research_notes_library)
+            window._research_agent_runtime_bound = True
+        refresh = getattr(window, "refresh_runtime_status", None)
+        if callable(refresh):
+            refresh()
+
+    def _apply_saved_settings(self, values: object) -> None:
+        super()._apply_saved_settings(values)
+        library = getattr(self, "_research_notes_window", None)
+        if library is not None:
+            library.apply_palette(self._research_palette())
+
+    def _research_palette(self) -> dict[str, str]:
+        overlay_window = getattr(self.overlay_manager, "window", None)
+        theme = str(getattr(overlay_window, "_theme_name", "dark") or "dark")
+        return OVERLAY_THEMES.get(theme, OVERLAY_THEMES["dark"])
 
     def _clear_pending_reading_action(self) -> None:
         self._pending_reading_action_request_id = None
@@ -161,7 +192,12 @@ class ResearchAgentAppController(DesktopAgentAppController):
             return self._last_reading_action_output, self._last_reading_action_key
         return "", ""
 
-    def _show_research_note_feedback(self, message: str) -> None:
+    def _show_research_note_feedback(
+        self,
+        message: str,
+        *,
+        show_view: bool = False,
+    ) -> None:
         text = str(message or "").strip()
         if not text:
             return
@@ -169,6 +205,17 @@ class ResearchAgentAppController(DesktopAgentAppController):
         if callable(set_status):
             try:
                 set_status(text, auto_hide_ms=RESEARCH_NOTE_FEEDBACK_MILLISECONDS)
+            except Exception:
+                pass
+        show_toast = getattr(self.overlay_manager, "show_research_note_toast", None)
+        if callable(show_toast):
+            try:
+                show_toast(
+                    text,
+                    show_view=show_view,
+                    timeout_ms=RESEARCH_NOTE_FEEDBACK_MILLISECONDS,
+                )
+                return
             except Exception:
                 pass
         try:
@@ -204,7 +251,7 @@ class ResearchAgentAppController(DesktopAgentAppController):
             return True
 
         feedback = RESEARCH_NOTE_SAVED_TEXT if result.created else RESEARCH_NOTE_UPDATED_TEXT
-        self._show_research_note_feedback(feedback)
+        self._show_research_note_feedback(feedback, show_view=True)
         self.logger.info(
             "research_note_saved created=%s has_resource=%s has_ai_content=%s",
             result.created,
@@ -214,6 +261,10 @@ class ResearchAgentAppController(DesktopAgentAppController):
         library = getattr(self, "_research_notes_window", None)
         if library is not None and library.isVisible():
             self._refresh_research_notes_library(library.search_query)
+        settings = getattr(self, "_settings_window", None)
+        refresh = getattr(settings, "refresh_runtime_status", None)
+        if callable(refresh):
+            refresh()
         return True
 
     @staticmethod
@@ -256,9 +307,10 @@ class ResearchAgentAppController(DesktopAgentAppController):
     def _ensure_research_notes_window(self) -> ResearchNotesLibraryWindow:
         window = self._research_notes_window
         if window is not None:
+            window.apply_palette(self._research_palette())
             return window
         parent = getattr(self.overlay_manager, "window", None)
-        window = ResearchNotesLibraryWindow(parent)
+        window = ResearchNotesLibraryWindow(parent, palette=self._research_palette())
         window.search_requested.connect(self._refresh_research_notes_library)
         window.user_note_save_requested.connect(self._update_research_note_user_text)
         window.note_delete_requested.connect(self._delete_research_note)
@@ -337,6 +389,10 @@ class ResearchAgentAppController(DesktopAgentAppController):
         self._show_research_note_feedback("研究笔记已删除" if deleted else "研究笔记删除失败")
         window = self._research_notes_window
         self._refresh_research_notes_library(window.search_query if window is not None else "")
+        settings = getattr(self, "_settings_window", None)
+        refresh = getattr(settings, "refresh_runtime_status", None)
+        if callable(refresh):
+            refresh()
 
     def _on_overlay_context_action(self, key: str, value: object) -> None:
         if key == RESEARCH_NOTE_SAVE:

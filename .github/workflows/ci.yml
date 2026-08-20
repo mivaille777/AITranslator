@@ -4,15 +4,17 @@ on:
   pull_request:
     branches:
       - main
+      - WebReBuild
   push:
     branches:
       - main
+      - WebReBuild
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  python-tests:
     name: Python tests (3.11)
     runs-on: windows-latest
     timeout-minutes: 30
@@ -40,6 +42,51 @@ jobs:
         shell: pwsh
         run: .\scripts\test.ps1 -Install
 
-      - name: Run application smoke test
+      - name: Run legacy application smoke test
         shell: pwsh
         run: python -m app.main --smoke-test
+
+  web-frontend:
+    name: React build and lint
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: apps/desktop
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
+
+  tauri-shell:
+    name: Tauri shell check
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Tauri shell
+        shell: pwsh
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --no-default-features

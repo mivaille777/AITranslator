@@ -6,6 +6,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
+from app.ai.research_quick_actions import QUICK_ACTION_COMPACT_WIDTH
 from app.overlay.context_menu import (
     OVERLAY_THEMES,
     SETTINGS_MENU_ITEM_HEIGHT,
@@ -81,6 +82,10 @@ def test_overlay_menu_metrics_are_design_system_driven() -> None:
     assert SETTINGS_MENU_MIN_WIDTH == LAYOUT.menu_min_width
     assert SETTINGS_MENU_MAX_HEIGHT == LAYOUT.menu_max_height
     assert SETTINGS_MENU_MAX_VISIBLE_ITEMS == LAYOUT.menu_visible_items
+
+
+def test_quick_action_breakpoint_is_design_system_driven() -> None:
+    assert QUICK_ACTION_COMPACT_WIDTH == LAYOUT.quick_action_compact_width
 
 
 def test_size_class_is_shared_and_boundary_stable() -> None:

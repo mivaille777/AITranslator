@@ -24,6 +24,16 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
         self._apply_responsive_minimum_width()
         self._resize_to_content(animate=False)
 
+    def _set_content_maximum_width(self) -> None:
+        """Let the layout/window geometry constrain text instead of a legacy cap."""
+
+        label = getattr(self, "_label", None)
+        if label is not None:
+            label.setMaximumWidth(QT_WIDGET_SIZE_MAX)
+        source = getattr(self, "_source_label", None)
+        if source is not None:
+            source.setMaximumWidth(QT_WIDGET_SIZE_MAX)
+
     def _remove_legacy_size_caps(self) -> None:
         """Replace configured legacy maxima with Qt's effectively-unbounded limit."""
 

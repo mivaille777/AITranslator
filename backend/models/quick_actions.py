@@ -68,3 +68,25 @@ class ResearchNoteSaveResponse(BaseModel):
     display_title: str
     excerpt: str
     updated_at: str
+
+
+class ResearchNoteListItem(BaseModel):
+    note_id: str
+    display_title: str
+    excerpt: str
+    updated_at: str
+    resource_url: str = ""
+    resource_title: str = ""
+    section_heading: str = ""
+    source_text: str = ""
+    translated_text: str = ""
+    context_before: str = ""
+    context_after: str = ""
+    source_kind: str = ""
+    ai_content: str = ""
+    ai_action: str = ""
+
+
+class ResearchNoteListResponse(BaseModel):
+    total: int
+    notes: list[ResearchNoteListItem]

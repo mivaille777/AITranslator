@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.ai.chat.models import ChatContext, ReadingContext
-from app.research.notes import ResearchNoteSaveResult, ResearchNoteStore
+from app.research.notes import ResearchNote, ResearchNoteSaveResult, ResearchNoteStore
 
 
 class ResearchNoteService:
@@ -53,3 +53,9 @@ class ResearchNoteService:
             user_note=user_note,
             conversation_id=conversation_id,
         )
+
+    def list_recent(self, *, limit: int = 5) -> tuple[ResearchNote, ...]:
+        return tuple(self._store.list_recent(limit=limit))
+
+    def count(self) -> int:
+        return int(self._store.count())

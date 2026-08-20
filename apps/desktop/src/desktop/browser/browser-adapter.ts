@@ -9,6 +9,9 @@ export const browserDesktopAdapter: DesktopAdapter = {
     async hide() {
       // Browser development mode has no native desktop window lifecycle.
     },
+    async focus() {
+      window.focus()
+    },
   },
   overlay: {
     async show() {
@@ -16,6 +19,9 @@ export const browserDesktopAdapter: DesktopAdapter = {
     },
     async hide() {
       // Browser development mode has no native overlay window.
+    },
+    async focus() {
+      window.focus()
     },
     async place() {
       return null

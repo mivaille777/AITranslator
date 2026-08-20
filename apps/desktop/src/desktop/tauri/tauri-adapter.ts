@@ -14,6 +14,12 @@ import type {
 } from "../adapter"
 import { computeOverlayPosition } from "../overlay-positioning"
 
+async function getMainWindow(): Promise<TauriWindow | null> {
+  const current = getCurrentWindow()
+  if (current.label === "main") return current
+  return TauriWindow.getByLabel("main")
+}
+
 async function getOverlayWindow(): Promise<TauriWindow | null> {
   const current = getCurrentWindow()
   if (current.label === "overlay") return current
@@ -62,10 +68,17 @@ export const tauriDesktopAdapter: DesktopAdapter = {
   runtime: "tauri",
   window: {
     async show() {
-      await getCurrentWindow().show()
+      const main = await getMainWindow()
+      await main?.show()
     },
     async hide() {
-      await getCurrentWindow().hide()
+      const main = await getMainWindow()
+      await main?.hide()
+    },
+    async focus() {
+      const main = await getMainWindow()
+      await main?.show()
+      await main?.setFocus()
     },
   },
   overlay: {
@@ -76,6 +89,10 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     async hide() {
       const overlay = await getOverlayWindow()
       await overlay?.hide()
+    },
+    async focus() {
+      const overlay = await getOverlayWindow()
+      await overlay?.setFocus()
     },
     place: placeOverlay,
     async startDragging() {

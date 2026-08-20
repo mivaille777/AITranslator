@@ -160,3 +160,82 @@ export interface ResearchNoteSaveResponse {
   excerpt: string
   updated_at: string
 }
+
+export interface ResearchNoteListItem {
+  note_id: string
+  display_title: string
+  excerpt: string
+  updated_at: string
+  resource_url: string
+  resource_title: string
+  section_heading: string
+  source_text: string
+  translated_text: string
+  context_before: string
+  context_after: string
+  source_kind: string
+  ai_content: string
+  ai_action: string
+}
+
+export interface ResearchNoteListResponse {
+  total: number
+  notes: ResearchNoteListItem[]
+}
+
+export interface CompanionHandoffRequest extends ReadingContextFields {
+  source_text: string
+  translated_text: string
+  source_language: string
+  target_language: string
+  ai_content?: string
+  ai_action?: string
+  suggested_prompt?: string
+}
+
+export interface CompanionHandoff extends CompanionHandoffRequest {
+  revision: number
+  handoff_id: string
+  created_at: string
+  ai_content: string
+  ai_action: string
+  suggested_prompt: string
+}
+
+export interface CompanionHandoffEnvelope {
+  handoff: CompanionHandoff | null
+}
+
+export type CompanionChatRole = "user" | "assistant"
+
+export interface CompanionChatMessage {
+  role: CompanionChatRole
+  content: string
+}
+
+export interface CompanionChatRequest extends ReadingContextFields {
+  session_id: string
+  user_message: string
+  source_text: string
+  translated_text: string
+  source_language: string
+  target_language: string
+  history: CompanionChatMessage[]
+  request_id?: number
+}
+
+export interface CompanionChatResponse {
+  session_id: string
+  user_message: string
+  output_text: string
+  provider: string
+  model: string
+  request_id: number
+}
+
+export interface CompanionChatStatusResponse {
+  available: boolean
+  provider: string
+  model: string
+  detail: string
+}

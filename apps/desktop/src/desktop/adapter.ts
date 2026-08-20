@@ -15,6 +15,7 @@ export interface DesktopPoint {
 export interface WindowAdapter {
   show(): Promise<void>
   hide(): Promise<void>
+  focus(): Promise<void>
 }
 
 export interface OverlayWindowAdapter extends WindowAdapter {

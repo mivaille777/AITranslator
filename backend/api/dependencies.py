@@ -3,6 +3,8 @@ from __future__ import annotations
 from threading import Lock
 
 from backend.services.browser_context_service import BrowserContextService
+from backend.services.companion_chat_service import CompanionChatService
+from backend.services.companion_handoff_service import CompanionHandoffService
 from backend.services.overlay_state_service import OverlayStateService
 from backend.services.quick_action_service import QuickActionService
 from backend.services.research_note_service import ResearchNoteService
@@ -18,6 +20,10 @@ _quick_action_service: QuickActionService | None = None
 _quick_action_service_lock = Lock()
 _research_note_service: ResearchNoteService | None = None
 _research_note_service_lock = Lock()
+_companion_handoff_service: CompanionHandoffService | None = None
+_companion_handoff_service_lock = Lock()
+_companion_chat_service: CompanionChatService | None = None
+_companion_chat_service_lock = Lock()
 
 
 def get_translation_service() -> TranslationService:
@@ -100,3 +106,34 @@ def get_research_note_service() -> ResearchNoteService:
         if _research_note_service is None:
             _research_note_service = ResearchNoteService()
         return _research_note_service
+
+
+def get_companion_handoff_service() -> CompanionHandoffService:
+    global _companion_handoff_service
+    if _companion_handoff_service is not None:
+        return _companion_handoff_service
+
+    with _companion_handoff_service_lock:
+        if _companion_handoff_service is None:
+            _companion_handoff_service = CompanionHandoffService()
+        return _companion_handoff_service
+
+
+def get_companion_chat_service() -> CompanionChatService:
+    global _companion_chat_service
+    if _companion_chat_service is not None:
+        return _companion_chat_service
+
+    with _companion_chat_service_lock:
+        if _companion_chat_service is None:
+            _companion_chat_service = CompanionChatService()
+        return _companion_chat_service
+
+
+def close_companion_chat_service() -> None:
+    global _companion_chat_service
+    with _companion_chat_service_lock:
+        service = _companion_chat_service
+        _companion_chat_service = None
+    if service is not None:
+        service.close()

@@ -6,6 +6,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QHBoxLayout, QToolButton
 
 from app.ai.chat.ui import OverlayChatPanel
+from app.ui.design_tokens import CONTROL, RADIUS, TYPOGRAPHY
 
 
 class SelectionCaptureChatPanel(OverlayChatPanel):
@@ -25,7 +26,10 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
         self.undo_selection_button.setText("↶")
         self.undo_selection_button.setToolTip("撤销最近一次划词输入")
         self.undo_selection_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.undo_selection_button.setFixedSize(44, 44)
+        self.undo_selection_button.setFixedSize(
+            CONTROL.large_height,
+            CONTROL.large_height,
+        )
         self.undo_selection_button.setEnabled(False)
         self.undo_selection_button.clicked.connect(
             lambda _checked=False: self.undo_last_selection_input()
@@ -141,8 +145,8 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
                 color: {palette['text']};
                 background-color: {palette['menu_background']};
                 border: 1px solid {palette['border']};
-                border-radius: 7px;
-                font-size: 18px;
+                border-radius: {RADIUS.sm}px;
+                font-size: {TYPOGRAPHY.title}px;
             }}
             QToolButton#OverlayChatUndoSelectionButton:hover:enabled {{
                 border-color: {palette['accent']};

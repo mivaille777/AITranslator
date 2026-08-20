@@ -11,4 +11,11 @@ function resolveDesktopAdapter(): DesktopAdapter {
 }
 
 export const desktop = resolveDesktopAdapter()
-export type { DesktopAdapter, DesktopRuntime, WindowAdapter } from "./adapter"
+export type {
+  DesktopAdapter,
+  DesktopPoint,
+  DesktopRuntime,
+  OverlayPositionMode,
+  OverlayWindowAdapter,
+  WindowAdapter,
+} from "./adapter"

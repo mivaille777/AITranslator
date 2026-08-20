@@ -7,6 +7,7 @@ import { getHealth } from "./api/health"
 import { presentOverlay, showOverlayError, showOverlayLoading } from "./api/overlay"
 import { getTranslationStatus, translateText } from "./api/translation"
 import type { BrowserSelection, TranslationResponse } from "./api/types"
+import OverlayPreferencesPanel from "./components/OverlayPreferencesPanel"
 import { desktop } from "./desktop"
 
 type BackendState = "checking" | "connected" | "offline"
@@ -209,13 +210,13 @@ function App() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Stage 2 · Auto Translation Overlay
+                Stage 2 · Interactive Translation Overlay
               </p>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight">
                 AITranslator WebReBuild
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                Browser selection now flows through FastAPI translation and into a dedicated Tauri overlay window.
+                Browser selection now drives a monitor-aware Tauri overlay with configurable placement and interaction behavior.
               </p>
             </div>
 
@@ -245,6 +246,8 @@ function App() {
             </div>
           </div>
         </header>
+
+        <OverlayPreferencesPanel />
 
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

@@ -47,7 +47,7 @@ jobs:
         run: python -m app.main --smoke-test
 
   web-frontend:
-    name: React build and lint
+    name: React lint, tests, and build
     runs-on: windows-latest
     timeout-minutes: 15
 
@@ -71,6 +71,9 @@ jobs:
 
       - name: Lint frontend
         run: npm run lint
+
+      - name: Test frontend
+        run: npm run test
 
       - name: Build frontend
         run: npm run build

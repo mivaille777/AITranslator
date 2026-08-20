@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AITrans Selection Bridge",
-  "version": "0.2.0",
-  "description": "Send selected webpage text and reading context to the local AITrans desktop companion.",
+  "version": "0.3.0",
+  "description": "Send active page and selected reading context to the local AITrans desktop companion.",
   "host_permissions": [
     "http://127.0.0.1:8765/*"
   ],

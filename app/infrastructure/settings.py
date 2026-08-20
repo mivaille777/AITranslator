@@ -29,6 +29,7 @@ ALLOWED_USER_KEYS: dict[str, set[str]] = {
         "provider",
         "model",
         "base_url",
+        "chat_selection_capture_enabled",
     },
     "trigger": {"mode", "hotkey", "debounce_ms"},
     "overlay": {
@@ -101,6 +102,16 @@ def _load_toml(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+def _is_reserved_copy_hotkey(value: object) -> bool:
+    """Keep Ctrl+C permanently available to the foreground application."""
+
+    parts = [part.strip().lower() for part in str(value).split("+") if part.strip()]
+    if len(parts) != 2:
+        return False
+    control_names = {"ctrl", "control", "ctrl_l", "ctrl_r", "<ctrl>"}
+    return "c" in parts and any(part in control_names for part in parts)
+
+
 def _safe_user_data(data: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only scalar, known, non-sensitive user configuration values."""
 
@@ -114,6 +125,15 @@ def _safe_user_data(data: Mapping[str, Any]) -> dict[str, Any]:
             value = values.get(key)
             if isinstance(value, (str, bool, int, float)):
                 if isinstance(value, float) and not math.isfinite(value):
+                    continue
+                if (
+                    key == "hotkey"
+                    and section in {"trigger", "input"}
+                    and _is_reserved_copy_hotkey(value)
+                ):
+                    # Ignore both new and legacy Ctrl+C bindings. This also
+                    # repairs older user.toml files on the next save/reload by
+                    # falling back to the shipped non-conflicting hotkey.
                     continue
                 safe_values[key] = deepcopy(value)
         if safe_values:

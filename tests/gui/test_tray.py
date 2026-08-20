@@ -1,10 +1,10 @@
-"""pytest-qt coverage for the Step3 system tray and controller wiring."""
+"""pytest-qt coverage for the system tray and controller wiring."""
 
 from __future__ import annotations
 
 from unittest.mock import patch
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from app.controller import AppController
 from app.ui.tray import TrayManager
@@ -16,6 +16,7 @@ class FakeOverlayManager:
     def __init__(self) -> None:
         self.is_locked = False
         self.show_text_calls = 0
+        self.show_overlay_calls = 0
         self.hide_calls = 0
 
     def lock_overlay(self) -> bool:
@@ -28,6 +29,9 @@ class FakeOverlayManager:
 
     def show_text(self, _text: str) -> None:
         self.show_text_calls += 1
+
+    def show_overlay(self) -> None:
+        self.show_overlay_calls += 1
 
     def hide_overlay(self) -> None:
         self.hide_calls += 1
@@ -55,11 +59,35 @@ def test_tray_manager_creates_required_actions(qapp: QApplication) -> None:
         "自动划词翻译",
         "锁定 Overlay",
         "解锁 Overlay",
-        "显示测试字幕",
-        "隐藏字幕",
+        "显示浮窗",
+        "隐藏浮窗",
         "设置",
         "退出",
     }
+
+
+def test_show_overlay_action_emits_real_visibility_intent(qapp: QApplication) -> None:
+    manager = _make_tray(qapp)
+    events: list[str] = []
+    manager.show_overlay_requested.connect(lambda: events.append("show"))
+
+    manager.actions["show_overlay"].trigger()
+
+    assert events == ["show"]
+
+
+def test_double_clicking_tray_icon_emits_show_overlay_intent(qapp: QApplication) -> None:
+    manager = _make_tray(qapp)
+    events: list[str] = []
+    manager.show_overlay_requested.connect(lambda: events.append("show"))
+
+    # A normal click must not restore the Overlay; only the OS double-click
+    # activation should emit the visibility intent.
+    manager.tray_icon.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+    assert events == []
+
+    manager.tray_icon.activated.emit(QSystemTrayIcon.ActivationReason.DoubleClick)
+    assert events == ["show"]
 
 
 def test_lock_and_unlock_actions_emit_intents(qapp: QApplication) -> None:

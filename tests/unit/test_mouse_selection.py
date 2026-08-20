@@ -53,6 +53,7 @@ def _make_manager(
     *,
     clock: FakeClock | None = None,
     debounce_seconds: float = 0.25,
+    settle_seconds: float = 0.0,
     overlay_hit_test=None,
     foreground_executable_reader=lambda: None,
 ):
@@ -67,6 +68,7 @@ def _make_manager(
         listener_factory=factory,
         clock=clock or FakeClock(),
         debounce_seconds=debounce_seconds,
+        settle_seconds=settle_seconds,
         overlay_hit_test=overlay_hit_test,
         foreground_executable_reader=foreground_executable_reader,
     )
@@ -134,20 +136,66 @@ def test_non_left_button_is_ignored(qapp) -> None:
     assert events == []
 
 
-def test_repeated_drags_within_debounce_emit_only_once(qapp) -> None:
+def test_identical_duplicate_drag_within_debounce_is_suppressed(qapp) -> None:
     clock = FakeClock(value=10.0)
     manager, listener = _make_manager(qapp, clock=clock)
     events: list[TranslationTriggerEvent] = []
     manager.triggered.connect(events.append)
     manager.start()
 
-    _drag(listener)
+    _drag(listener, start=(10, 10), end=(30, 10))
     clock.value = 10.1
-    _drag(listener, start=(40, 40), end=(60, 40))
+    _drag(listener, start=(10, 10), end=(30, 10))
     clock.value = 10.3
-    _drag(listener, start=(70, 70), end=(90, 70))
+    _drag(listener, start=(10, 10), end=(30, 10))
 
     assert len(events) == 2
+
+
+def test_distinct_rapid_drags_are_not_lost_to_generic_debounce(qapp) -> None:
+    clock = FakeClock(value=20.0)
+    manager, listener = _make_manager(qapp, clock=clock)
+    events: list[TranslationTriggerEvent] = []
+    manager.triggered.connect(events.append)
+    manager.start()
+
+    _drag(listener, start=(10, 10), end=(30, 10))
+    clock.value = 20.05
+    _drag(listener, start=(40, 40), end=(65, 40))
+    clock.value = 20.10
+    _drag(listener, start=(70, 70), end=(95, 70))
+
+    assert len(events) == 3
+
+
+def test_selection_capture_waits_for_mouse_up_settle_window(qapp, qtbot) -> None:
+    manager, listener = _make_manager(qapp, settle_seconds=0.05)
+    events: list[TranslationTriggerEvent] = []
+    manager.triggered.connect(events.append)
+    manager.start()
+
+    _drag(listener)
+
+    assert events == []
+    assert manager.state == MouseSelectionState.WAITING_DEBOUNCE
+    qtbot.waitUntil(lambda: len(events) == 1, timeout=500)
+    assert manager.state == MouseSelectionState.IDLE
+
+
+def test_new_drag_invalidates_selection_still_waiting_to_settle(qapp, qtbot) -> None:
+    manager, listener = _make_manager(qapp, settle_seconds=0.06)
+    events: list[TranslationTriggerEvent] = []
+    manager.triggered.connect(events.append)
+    manager.start()
+
+    _drag(listener, start=(10, 10), end=(30, 10))
+    # Start and finish another selection before the first settle timer fires.
+    _drag(listener, start=(50, 50), end=(80, 50))
+
+    qtbot.waitUntil(lambda: len(events) == 1, timeout=500)
+    qtbot.wait(80)
+    assert len(events) == 1
+    assert manager.state == MouseSelectionState.IDLE
 
 
 def test_drag_started_on_overlay_does_not_emit_trigger(qapp) -> None:
@@ -205,6 +253,19 @@ def test_mouse_manager_reads_configured_debounce(qapp) -> None:
     )
 
     assert manager.debounce_seconds == 0.4
+
+
+def test_mouse_manager_defaults_to_nonzero_settle_window(qapp) -> None:
+    class Config:
+        auto_selection_debounce_seconds = 0.25
+
+    manager = MouseSelectionManager(
+        parent=qapp,
+        config_manager=Config(),
+        listener_factory=lambda **_callbacks: FakeMouseListener(),
+    )
+
+    assert manager.settle_seconds > 0
 
 
 def test_dead_mouse_listener_is_restarted_by_health_check(qapp) -> None:

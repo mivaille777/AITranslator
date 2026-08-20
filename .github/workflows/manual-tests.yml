@@ -1,5 +1,4 @@
 name: Manual Tests
-run-name: Manual tests · ${{ inputs.target_ref || 'LLM_API_Calling' }}
 
 on:
   workflow_dispatch:
@@ -9,22 +8,17 @@ on:
         required: true
         default: LLM_API_Calling
         type: string
-  pull_request:
-    branches:
-      - main
-    paths:
-      - .github/workflows/manual-tests.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: manual-tests-${{ inputs.target_ref || 'LLM_API_Calling' }}
+  group: manual-tests-${{ inputs.target_ref }}
   cancel-in-progress: false
 
 jobs:
   test:
-    name: Python tests (3.11)
+    name: Windows Python 3.11
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -36,7 +30,7 @@ jobs:
       - name: Check out target ref
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.target_ref || 'LLM_API_Calling' }}
+          ref: ${{ inputs.target_ref }}
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6

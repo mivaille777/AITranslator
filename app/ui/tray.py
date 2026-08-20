@@ -34,6 +34,9 @@ class TrayManager(QObject):
     auto_selection_requested = Signal(bool)
     lock_overlay_requested = Signal()
     unlock_overlay_requested = Signal()
+    show_overlay_requested = Signal()
+    # Retained as a compatibility signal for older injected controllers. The
+    # production tray action no longer emits a synthetic test-subtitle intent.
     show_test_text_requested = Signal()
     hide_overlay_requested = Signal()
     settings_requested = Signal()
@@ -53,10 +56,6 @@ class TrayManager(QObject):
             self,
         )
         self._tray_icon.setToolTip(TRAY_TOOLTIP)
-        # QMenu's Python binding accepts only a QWidget parent, while
-        # TrayManager intentionally remains a QObject. Keeping the menu as a
-        # member gives it the required lifetime without coupling the manager
-        # to a QWidget parent.
         self._menu = QMenu()
         self._menu.setObjectName("TrayMenu")
 
@@ -92,12 +91,12 @@ class TrayManager(QObject):
         )
         self._unlock_overlay_action.setEnabled(False)
 
-        self._show_test_text_action = self._create_action(
-            "显示测试字幕",
-            "ShowTestTextAction",
+        self._show_overlay_action = self._create_action(
+            "显示浮窗",
+            "ShowOverlayAction",
         )
         self._hide_overlay_action = self._create_action(
-            "隐藏字幕",
+            "隐藏浮窗",
             "HideOverlayAction",
         )
         self._hide_overlay_action.setEnabled(False)
@@ -112,7 +111,7 @@ class TrayManager(QObject):
         self._menu.addAction(self._lock_overlay_action)
         self._menu.addAction(self._unlock_overlay_action)
         self._menu.addSeparator()
-        self._menu.addAction(self._show_test_text_action)
+        self._menu.addAction(self._show_overlay_action)
         self._menu.addAction(self._hide_overlay_action)
         self._menu.addSeparator()
         self._menu.addAction(self._settings_action)
@@ -130,10 +129,11 @@ class TrayManager(QObject):
         )
         self._lock_overlay_action.triggered.connect(self._emit_lock_overlay)
         self._unlock_overlay_action.triggered.connect(self._emit_unlock_overlay)
-        self._show_test_text_action.triggered.connect(self._emit_show_test_text)
+        self._show_overlay_action.triggered.connect(self._emit_show_overlay)
         self._hide_overlay_action.triggered.connect(self._emit_hide_overlay)
         self._settings_action.triggered.connect(self._emit_settings)
         self._exit_action.triggered.connect(self._emit_exit)
+        self._tray_icon.activated.connect(self._on_tray_activated)
 
     @staticmethod
     def _create_action(
@@ -149,45 +149,37 @@ class TrayManager(QObject):
 
     @property
     def tray_icon(self) -> QSystemTrayIcon:
-        """Return the underlying Qt tray icon for lifecycle and tests."""
-
         return self._tray_icon
 
     @property
     def menu(self) -> QMenu:
-        """Return the context menu exposed by the tray icon."""
-
         return self._menu
 
     @property
     def actions(self) -> dict[str, QAction]:
-        """Return named menu actions for coordination and GUI tests."""
-
-        return {
+        actions = {
             "enable_translation": self._enable_translation_action,
             "pause_translation": self._pause_translation_action,
             "auto_selection": self._auto_selection_action,
             "lock_overlay": self._lock_overlay_action,
             "unlock_overlay": self._unlock_overlay_action,
-            "show_test_text": self._show_test_text_action,
+            "show_overlay": self._show_overlay_action,
             "hide_overlay": self._hide_overlay_action,
             "settings": self._settings_action,
             "exit": self._exit_action,
         }
+        # Preserve test/integration lookup compatibility while showing the new
+        # user-facing semantic name and behavior.
+        actions["show_test_text"] = self._show_overlay_action
+        return actions
 
     def show(self) -> None:
-        """Show the application tray icon."""
-
         self._tray_icon.show()
 
     def hide(self) -> None:
-        """Hide the application tray icon."""
-
         self._tray_icon.hide()
 
     def set_translation_enabled(self, enabled: bool) -> None:
-        """Synchronize the checkable translation-mode actions."""
-
         enable_was_blocked = self._enable_translation_action.blockSignals(True)
         pause_was_blocked = self._pause_translation_action.blockSignals(True)
         try:
@@ -198,8 +190,6 @@ class TrayManager(QObject):
             self._pause_translation_action.blockSignals(pause_was_blocked)
 
     def set_auto_selection_enabled(self, enabled: bool) -> None:
-        """Synchronize the optional automatic mouse-selection action."""
-
         was_blocked = self._auto_selection_action.blockSignals(True)
         try:
             self._auto_selection_action.setChecked(bool(enabled))
@@ -207,15 +197,11 @@ class TrayManager(QObject):
             self._auto_selection_action.blockSignals(was_blocked)
 
     def set_overlay_locked(self, locked: bool) -> None:
-        """Enable only the lock action appropriate for the current state."""
-
         self._lock_overlay_action.setEnabled(not locked)
         self._unlock_overlay_action.setEnabled(locked)
 
     def set_overlay_visible(self, visible: bool) -> None:
-        """Enable only the show/hide action appropriate for the current state."""
-
-        self._show_test_text_action.setEnabled(not visible)
+        self._show_overlay_action.setEnabled(not visible)
         self._hide_overlay_action.setEnabled(visible)
 
     def _emit_enable_translation(self, _checked: bool = False) -> None:
@@ -233,8 +219,8 @@ class TrayManager(QObject):
     def _emit_unlock_overlay(self, _checked: bool = False) -> None:
         self.unlock_overlay_requested.emit()
 
-    def _emit_show_test_text(self, _checked: bool = False) -> None:
-        self.show_test_text_requested.emit()
+    def _emit_show_overlay(self, _checked: bool = False) -> None:
+        self.show_overlay_requested.emit()
 
     def _emit_hide_overlay(self, _checked: bool = False) -> None:
         self.hide_overlay_requested.emit()
@@ -244,3 +230,12 @@ class TrayManager(QObject):
 
     def _emit_exit(self, _checked: bool = False) -> None:
         self.exit_requested.emit()
+
+    def _on_tray_activated(
+        self,
+        reason: QSystemTrayIcon.ActivationReason,
+    ) -> None:
+        """Request the existing Overlay when the tray icon is double-clicked."""
+
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.show_overlay_requested.emit()

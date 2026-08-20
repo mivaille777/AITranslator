@@ -1,10 +1,12 @@
-"""Settings dialog for the desktop translator."""
+"""Product-oriented settings dialog for AITrans."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,10 +15,13 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
+    QWidget,
 )
 
 from app.ai.client import (
@@ -28,7 +33,6 @@ from app.ai.errors import AIConfigurationError
 from app.ai.factory import (
     AI_PROVIDER_LABELS,
     DEFAULT_AI_PROVIDER,
-    OPENAI_COMPATIBLE_PROVIDER,
     SUPPORTED_AI_PROVIDERS,
     normalize_ai_provider,
     provider_defaults,
@@ -43,10 +47,11 @@ from app.overlay.positioning import (
 
 
 class SettingsWindow(QDialog):
-    """Edit safe user settings and preview Overlay values immediately."""
+    """Edit user settings while exposing the runtime state users care about."""
 
     settings_saved = Signal(object)
     preview_requested = Signal(object)
+    research_notes_requested = Signal()
 
     def __init__(
         self,
@@ -54,25 +59,32 @@ class SettingsWindow(QDialog):
         parent=None,
         *,
         credential_store: ProviderCredentialStore | Any | None = None,
+        browser_bridge: Any | None = None,
+        research_note_store: Any | None = None,
     ) -> None:
         super().__init__(parent)
         self.settings_manager = settings_manager or SettingsManager()
         self.credential_store = credential_store or ProviderCredentialStore()
+        self.browser_bridge = browser_bridge
+        self.research_note_store = research_note_store
         self._loaded_api_keys: dict[str, str] = {}
         self._active_ai_provider = ""
+        self._pending_settings_category = ""
 
         self.setObjectName("SettingsWindow")
-        self.setWindowTitle("Desktop Translator 设置")
+        self.setWindowTitle("AITrans 设置")
         self.setModal(False)
-        self.resize(620, 900)
+        self.resize(840, 660)
 
         root_layout = QVBoxLayout(self)
-        root_layout.addWidget(
-            QLabel("修改后点击“保存”，设置会写入本机用户配置并在下次启动继续生效。")
-        )
+        intro = QLabel("设置仅保存在本机。修改后点击“保存”即可在下次启动继续生效。")
+        intro.setObjectName("SettingsIntro")
+        intro.setWordWrap(True)
+        root_layout.addWidget(intro)
 
-        translation_group = QGroupBox("翻译")
-        translation_form = QFormLayout(translation_group)
+        self.translation_group = QGroupBox("翻译")
+        self.translation_group.setObjectName("SettingsTranslationGroup")
+        translation_form = QFormLayout(self.translation_group)
         self.source_language_edit = QLineEdit()
         self.source_language_edit.setObjectName("SourceLanguageEdit")
         self.source_language_edit.setPlaceholderText("auto")
@@ -81,9 +93,9 @@ class SettingsWindow(QDialog):
         self.target_language_edit.setPlaceholderText("zh-CN")
         translation_form.addRow("源语言", self.source_language_edit)
         translation_form.addRow("目标语言", self.target_language_edit)
-        root_layout.addWidget(translation_group)
+        root_layout.addWidget(self.translation_group)
 
-        self.ai_group = QGroupBox("AI 大模型")
+        self.ai_group = QGroupBox("AI 模型")
         self.ai_group.setObjectName("AIProviderGroup")
         ai_form = QFormLayout(self.ai_group)
         self.ai_provider_combo = QComboBox()
@@ -121,32 +133,30 @@ class SettingsWindow(QDialog):
         ai_form.addRow("", credential_note)
         root_layout.addWidget(self.ai_group)
 
-        web_group = QGroupBox("网页后端参数")
-        web_form = QFormLayout(web_group)
-        self.web_enabled_check = QCheckBox("启用网页后端")
-        self.web_enabled_check.setObjectName("GoogleWebEnabledCheck")
-        self.web_endpoint_edit = QLineEdit()
-        self.web_endpoint_edit.setObjectName("GoogleWebEndpointEdit")
-        self.web_timeout_spin = QSpinBox()
-        self.web_timeout_spin.setObjectName("GoogleWebTimeoutSpin")
-        self.web_timeout_spin.setRange(500, 60000)
-        self.web_timeout_spin.setSuffix(" ms")
-        self.web_retries_spin = QSpinBox()
-        self.web_retries_spin.setObjectName("GoogleWebRetriesSpin")
-        self.web_retries_spin.setRange(0, 3)
-        self.web_interval_spin = QSpinBox()
-        self.web_interval_spin.setObjectName("GoogleWebIntervalSpin")
-        self.web_interval_spin.setRange(0, 60000)
-        self.web_interval_spin.setSuffix(" ms")
-        web_form.addRow("状态", self.web_enabled_check)
-        web_form.addRow("请求地址", self.web_endpoint_edit)
-        web_form.addRow("超时", self.web_timeout_spin)
-        web_form.addRow("最大重试", self.web_retries_spin)
-        web_form.addRow("最小间隔", self.web_interval_spin)
-        root_layout.addWidget(web_group)
+        self.reading_group = QGroupBox("阅读交互")
+        self.reading_group.setObjectName("SettingsReadingGroup")
+        reading_form = QFormLayout(self.reading_group)
+        self.ai_chat_selection_capture_check = QCheckBox(
+            "Chat 输入框获得焦点后，鼠标划词自动填入"
+        )
+        self.ai_chat_selection_capture_check.setObjectName(
+            "AIChatSelectionCaptureCheck"
+        )
+        self.ai_chat_selection_capture_check.setToolTip(
+            "关闭后，Chat 输入框即使有光标，鼠标划词仍按普通翻译流程处理。"
+        )
+        reading_note = QLabel(
+            "自动划词优先使用 Browser Selection Bridge / Word / UIA，不会在自动路径模拟 Ctrl+C。"
+        )
+        reading_note.setObjectName("SettingsReadingNote")
+        reading_note.setWordWrap(True)
+        reading_form.addRow("Chat 划词", self.ai_chat_selection_capture_check)
+        reading_form.addRow("", reading_note)
+        root_layout.addWidget(self.reading_group)
 
-        trigger_group = QGroupBox("触发")
-        trigger_form = QFormLayout(trigger_group)
+        self.trigger_group = QGroupBox("触发方式")
+        self.trigger_group.setObjectName("SettingsTriggerGroup")
+        trigger_form = QFormLayout(self.trigger_group)
         self.trigger_mode_combo = QComboBox()
         self.trigger_mode_combo.setObjectName("TriggerModeCombo")
         self.trigger_mode_combo.addItem("仅快捷键", "hotkey")
@@ -162,10 +172,56 @@ class SettingsWindow(QDialog):
         trigger_form.addRow("触发模式", self.trigger_mode_combo)
         trigger_form.addRow("全局快捷键", self.hotkey_edit)
         trigger_form.addRow("去抖间隔", self.debounce_spin)
-        root_layout.addWidget(trigger_group)
+        root_layout.addWidget(self.trigger_group)
 
-        overlay_group = QGroupBox("Overlay")
-        overlay_form = QFormLayout(overlay_group)
+        self.browser_bridge_group = QGroupBox("浏览器集成")
+        self.browser_bridge_group.setObjectName("SettingsBrowserIntegrationGroup")
+        browser_form = QFormLayout(self.browser_bridge_group)
+        self.browser_bridge_status_label = QLabel("未检测", self.browser_bridge_group)
+        self.browser_bridge_status_label.setObjectName("BrowserBridgeStatusLabel")
+        self.browser_bridge_endpoint_label = QLabel("127.0.0.1:8765", self.browser_bridge_group)
+        self.browser_bridge_endpoint_label.setObjectName("BrowserBridgeEndpointLabel")
+        self.browser_extension_activity_label = QLabel("等待浏览器扩展活动", self.browser_bridge_group)
+        self.browser_extension_activity_label.setObjectName("BrowserExtensionActivityLabel")
+        self.browser_extension_activity_label.setWordWrap(True)
+        self.browser_current_page_label = QLabel("尚未收到网页上下文", self.browser_bridge_group)
+        self.browser_current_page_label.setObjectName("BrowserCurrentPageLabel")
+        self.browser_current_page_label.setWordWrap(True)
+        self.browser_extension_path_edit = QLineEdit(self.browser_bridge_group)
+        self.browser_extension_path_edit.setObjectName("BrowserExtensionPathEdit")
+        self.browser_extension_path_edit.setReadOnly(True)
+        self.browser_extension_path_edit.setText(str(self._browser_extension_dir()))
+
+        browser_buttons = QWidget(self.browser_bridge_group)
+        browser_buttons_layout = QHBoxLayout(browser_buttons)
+        browser_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        browser_buttons_layout.setSpacing(7)
+        self.browser_bridge_refresh_button = QPushButton("重新检测", browser_buttons)
+        self.browser_bridge_refresh_button.setObjectName("BrowserBridgeRefreshButton")
+        self.browser_extension_open_button = QPushButton("打开扩展目录", browser_buttons)
+        self.browser_extension_open_button.setObjectName("BrowserExtensionOpenButton")
+        browser_buttons_layout.addWidget(self.browser_bridge_refresh_button)
+        browser_buttons_layout.addWidget(self.browser_extension_open_button)
+        browser_buttons_layout.addStretch(1)
+
+        browser_help = QLabel(
+            "Chrome / Edge 加载 AITrans 扩展后，可直接获得页面标题、章节和选区前后文；未命中时仍会回退到原生 UIA。",
+            self.browser_bridge_group,
+        )
+        browser_help.setObjectName("BrowserIntegrationHelp")
+        browser_help.setWordWrap(True)
+        browser_form.addRow("Selection Bridge", self.browser_bridge_status_label)
+        browser_form.addRow("本机地址", self.browser_bridge_endpoint_label)
+        browser_form.addRow("扩展活动", self.browser_extension_activity_label)
+        browser_form.addRow("最近页面", self.browser_current_page_label)
+        browser_form.addRow("扩展目录", self.browser_extension_path_edit)
+        browser_form.addRow("", browser_buttons)
+        browser_form.addRow("", browser_help)
+        root_layout.addWidget(self.browser_bridge_group)
+
+        self.overlay_group = QGroupBox("悬浮窗外观")
+        self.overlay_group.setObjectName("SettingsOverlayGroup")
+        overlay_form = QFormLayout(self.overlay_group)
         self.position_mode_combo = QComboBox()
         self.position_mode_combo.setObjectName("PositionModeCombo")
         position_labels = {
@@ -210,10 +266,33 @@ class SettingsWindow(QDialog):
         overlay_form.addRow("最大宽度", self.max_width_spin)
         overlay_form.addRow("状态", self.locked_check)
         overlay_form.addRow("内容", self.show_original_check)
-        root_layout.addWidget(overlay_group)
+        root_layout.addWidget(self.overlay_group)
 
-        cache_group = QGroupBox("缓存")
-        cache_form = QFormLayout(cache_group)
+        self.research_data_group = QGroupBox("研究数据")
+        self.research_data_group.setObjectName("SettingsResearchDataGroup")
+        research_form = QFormLayout(self.research_data_group)
+        self.research_note_count_label = QLabel("0 条", self.research_data_group)
+        self.research_note_count_label.setObjectName("ResearchNoteCountLabel")
+        self.research_note_path_edit = QLineEdit(self.research_data_group)
+        self.research_note_path_edit.setObjectName("ResearchNotePathEdit")
+        self.research_note_path_edit.setReadOnly(True)
+        self.open_research_notes_button = QPushButton("打开研究笔记库", self.research_data_group)
+        self.open_research_notes_button.setObjectName("OpenResearchNotesButton")
+        research_note = QLabel(
+            "研究笔记与聊天历史分开保存在本机 SQLite 中；删除或编辑笔记不会调用 LLM。",
+            self.research_data_group,
+        )
+        research_note.setObjectName("ResearchDataHelp")
+        research_note.setWordWrap(True)
+        research_form.addRow("研究笔记", self.research_note_count_label)
+        research_form.addRow("数据位置", self.research_note_path_edit)
+        research_form.addRow("", self.open_research_notes_button)
+        research_form.addRow("", research_note)
+        root_layout.addWidget(self.research_data_group)
+
+        self.cache_group = QGroupBox("本地缓存")
+        self.cache_group.setObjectName("SettingsCacheGroup")
+        cache_form = QFormLayout(self.cache_group)
         self.cache_enabled_check = QCheckBox("启用翻译缓存")
         self.cache_enabled_check.setObjectName("CacheEnabledCheck")
         self.cache_max_size_spin = QSpinBox()
@@ -227,7 +306,45 @@ class SettingsWindow(QDialog):
         cache_form.addRow("最大条目", self.cache_max_size_spin)
         cache_form.addRow("持久化", self.sqlite_enabled_check)
         cache_form.addRow("历史记录", self.history_enabled_check)
-        root_layout.addWidget(cache_group)
+        root_layout.addWidget(self.cache_group)
+
+        self.web_group = QGroupBox("网页翻译后端")
+        self.web_group.setObjectName("SettingsWebBackendGroup")
+        web_form = QFormLayout(self.web_group)
+        self.web_enabled_check = QCheckBox("启用网页后端")
+        self.web_enabled_check.setObjectName("GoogleWebEnabledCheck")
+        self.web_endpoint_edit = QLineEdit()
+        self.web_endpoint_edit.setObjectName("GoogleWebEndpointEdit")
+        self.web_timeout_spin = QSpinBox()
+        self.web_timeout_spin.setObjectName("GoogleWebTimeoutSpin")
+        self.web_timeout_spin.setRange(500, 60000)
+        self.web_timeout_spin.setSuffix(" ms")
+        self.web_retries_spin = QSpinBox()
+        self.web_retries_spin.setObjectName("GoogleWebRetriesSpin")
+        self.web_retries_spin.setRange(0, 3)
+        self.web_interval_spin = QSpinBox()
+        self.web_interval_spin.setObjectName("GoogleWebIntervalSpin")
+        self.web_interval_spin.setRange(0, 60000)
+        self.web_interval_spin.setSuffix(" ms")
+        web_form.addRow("状态", self.web_enabled_check)
+        web_form.addRow("请求地址", self.web_endpoint_edit)
+        web_form.addRow("超时", self.web_timeout_spin)
+        web_form.addRow("最大重试", self.web_retries_spin)
+        web_form.addRow("最小间隔", self.web_interval_spin)
+        root_layout.addWidget(self.web_group)
+
+        # The compact settings adapter consumes this declarative map and turns
+        # the old long form into left-navigation pages without recreating any
+        # controls. Existing object names/signals therefore stay compatible.
+        self._settings_category_groups = (
+            ("基础", (self.translation_group,)),
+            ("AI 模型", (self.ai_group,)),
+            ("划词与阅读", (self.reading_group, self.trigger_group)),
+            ("浏览器集成", (self.browser_bridge_group,)),
+            ("外观", (self.overlay_group,)),
+            ("研究数据", (self.research_data_group, self.cache_group)),
+            ("高级", (self.web_group,)),
+        )
 
         self.status_label = QLabel()
         self.status_label.setObjectName("SettingsStatusLabel")
@@ -253,8 +370,107 @@ class SettingsWindow(QDialog):
         self.ai_provider_combo.currentIndexChanged.connect(
             self._on_ai_provider_changed
         )
+        self.browser_bridge_refresh_button.clicked.connect(self.refresh_runtime_status)
+        self.browser_extension_open_button.clicked.connect(self._open_browser_extension_dir)
+        self.open_research_notes_button.clicked.connect(self.research_notes_requested.emit)
         self._connect_preview_signals()
         self.load_settings()
+
+    @staticmethod
+    def _browser_extension_dir() -> Path:
+        return Path(__file__).resolve().parents[2] / "browser_extension" / "aitrans_selection_bridge"
+
+    def _open_browser_extension_dir(self) -> None:
+        path = self._browser_extension_dir()
+        if path.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @staticmethod
+    def _format_activity_age(value: object) -> str:
+        try:
+            seconds = max(0.0, float(value))
+        except (TypeError, ValueError):
+            return ""
+        if seconds < 1:
+            return "刚刚"
+        if seconds < 60:
+            return f"{int(seconds)} 秒前"
+        if seconds < 3600:
+            return f"{int(seconds // 60)} 分钟前"
+        return f"{int(seconds // 3600)} 小时前"
+
+    def _refresh_browser_status(self) -> None:
+        bridge = self.browser_bridge
+        running = False
+        host = "127.0.0.1"
+        port = 8765
+        has_activity = False
+        age = None
+        title = ""
+        url = ""
+        heading = ""
+        status_reader = getattr(bridge, "status_snapshot", None)
+        if callable(status_reader):
+            try:
+                status = status_reader()
+            except Exception:
+                status = None
+            if status is not None:
+                running = bool(getattr(status, "running", False))
+                host = str(getattr(status, "host", host) or host)
+                port = int(getattr(status, "port", port) or port)
+                has_activity = bool(getattr(status, "has_extension_activity", False))
+                age = getattr(status, "last_activity_age_seconds", None)
+                title = str(getattr(status, "last_title", "") or "").strip()
+                url = str(getattr(status, "last_url", "") or "").strip()
+                heading = str(getattr(status, "last_heading", "") or "").strip()
+        elif bridge is not None:
+            running = bool(getattr(bridge, "is_running", False))
+            host = str(getattr(bridge, "host", host) or host)
+            try:
+                port = int(getattr(bridge, "bound_port", port))
+            except (TypeError, ValueError):
+                port = 8765
+
+        self.browser_bridge_status_label.setText("● 正在运行" if running else "○ 未运行")
+        self.browser_bridge_status_label.setProperty("bridgeRunning", running)
+        self.browser_bridge_endpoint_label.setText(f"{host}:{port}")
+        if has_activity:
+            age_text = self._format_activity_age(age)
+            self.browser_extension_activity_label.setText(
+                f"● 已检测到浏览器扩展活动{f' · {age_text}' if age_text else ''}"
+            )
+        else:
+            self.browser_extension_activity_label.setText(
+                "○ 尚未检测到扩展活动；安装后在网页中完成一次划词即可验证"
+            )
+
+        page_parts = [part for part in (title, f"§ {heading}" if heading else "") if part]
+        self.browser_current_page_label.setText(" · ".join(page_parts) or "尚未收到网页上下文")
+        self.browser_current_page_label.setToolTip(url)
+        extension_path = self._browser_extension_dir()
+        self.browser_extension_path_edit.setText(str(extension_path))
+        self.browser_extension_open_button.setEnabled(extension_path.exists())
+
+    def _refresh_research_status(self) -> None:
+        store = self.research_note_store
+        count = 0
+        counter = getattr(store, "count", None)
+        if callable(counter):
+            try:
+                count = max(0, int(counter()))
+            except Exception:
+                count = 0
+        self.research_note_count_label.setText(f"{count} 条")
+        storage_path = getattr(store, "storage_path", "") if store is not None else ""
+        self.research_note_path_edit.setText(str(storage_path or "尚未创建"))
+        self.open_research_notes_button.setEnabled(store is not None)
+
+    def refresh_runtime_status(self) -> None:
+        """Refresh browser/research diagnostics without touching saved settings."""
+
+        self._refresh_browser_status()
+        self._refresh_research_status()
 
     def _connect_preview_signals(self) -> None:
         self.position_mode_combo.currentIndexChanged.connect(self._emit_preview)
@@ -383,6 +599,12 @@ class SettingsWindow(QDialog):
         )
         self._active_ai_provider = provider
         self.ai_api_key_edit.setText(self._read_saved_api_key(provider))
+        capture_enabled = (
+            get("ai", "chat_selection_capture_enabled", True)
+            if callable(get)
+            else True
+        )
+        self.ai_chat_selection_capture_check.setChecked(bool(capture_enabled))
 
         self.web_enabled_check.setChecked(
             bool(getattr(manager, "google_web_enabled", True))
@@ -497,6 +719,7 @@ class SettingsWindow(QDialog):
             bool(getattr(manager, "translation_history_enabled", False))
         )
         self.status_label.clear()
+        self.refresh_runtime_status()
 
     @staticmethod
     def _set_combo_data(combo: QComboBox, value: object, fallback: str) -> None:
@@ -555,6 +778,9 @@ class SettingsWindow(QDialog):
                 "provider": provider,
                 "model": model,
                 "base_url": base_url,
+                "chat_selection_capture_enabled": bool(
+                    self.ai_chat_selection_capture_check.isChecked()
+                ),
             },
             "trigger": {
                 "mode": str(self.trigger_mode_combo.currentData() or "hotkey"),
@@ -630,10 +856,28 @@ class SettingsWindow(QDialog):
         self.accept()
         return True
 
-    def focus_ai_settings(self) -> None:
-        """Focus the provider selector when opened from an AI settings entry."""
+    def _select_settings_category(self, name: str) -> None:
+        self._pending_settings_category = str(name or "").strip()
+        nav = getattr(self, "_settings_nav_list", None)
+        names = getattr(self, "_settings_category_names", ())
+        if nav is None:
+            return
+        try:
+            index = tuple(names).index(self._pending_settings_category)
+        except ValueError:
+            return
+        nav.setCurrentRow(index)
 
+    def focus_ai_settings(self) -> None:
+        """Open the AI Models page and focus the provider selector."""
+
+        self._select_settings_category("AI 模型")
         self.ai_provider_combo.setFocus()
+
+    def focus_browser_settings(self) -> None:
+        self._select_settings_category("浏览器集成")
+        self.refresh_runtime_status()
+        self.browser_bridge_refresh_button.setFocus()
 
     def reject(self) -> None:
         """Discard an unsaved live preview before closing the dialog."""

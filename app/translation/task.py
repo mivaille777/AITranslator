@@ -39,7 +39,13 @@ class TranslationTaskFailure:
 
 
 class TranslationTask(QRunnable):
-    """Run one manager translation request on a ``QThreadPool`` worker."""
+    """Run one deterministic translation request on a ``QThreadPool`` worker.
+
+    Translation is a provider capability, not an agent reasoning step. The
+    LangGraph layer decides when a translation workspace should be entered and
+    coordinates conversational/HITL state, while this worker keeps the actual
+    provider call direct and predictable.
+    """
 
     def __init__(
         self,
@@ -52,9 +58,6 @@ class TranslationTask(QRunnable):
         logger: logging.Logger | None = None,
     ) -> None:
         super().__init__()
-        # Keep the Python task alive until the controller receives ``finished``
-        # and removes it from its active-task set. This also makes it safe to
-        # inspect the task in tests after QThreadPool has completed it.
         self.setAutoDelete(False)
         self.signals = TranslationTaskSignals()
         self.translation_manager = translation_manager
@@ -65,7 +68,7 @@ class TranslationTask(QRunnable):
         self.logger = logger or logging.getLogger("desktop_translator")
 
     def run(self) -> None:
-        """Execute the synchronous manager call on the pool's worker thread."""
+        """Execute the synchronous manager call on the pool worker thread."""
 
         try:
             result = self._translate()
@@ -85,9 +88,6 @@ class TranslationTask(QRunnable):
                 TranslationTaskFailure(request_id=self.request_id, error=exc)
             )
         except Exception as exc:
-            # A provider supplied by a plugin or a test may violate the
-            # manager boundary. Convert that failure before it reaches Qt so
-            # no exception escapes QRunnable::run and kills the process.
             error = TranslationError("translation task failed")
             error.__cause__ = exc
             self.logger.error(
@@ -103,7 +103,7 @@ class TranslationTask(QRunnable):
             self.signals.finished.emit(self)
 
     def _translate(self) -> TranslationResult:
-        """Call compatible managers with or without language parameters."""
+        """Call compatible managers directly, without routing through LangGraph."""
 
         if isinstance(self.translation_manager, TranslationManager):
             return self.translation_manager.translate(

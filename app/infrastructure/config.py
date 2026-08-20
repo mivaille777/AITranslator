@@ -304,24 +304,24 @@ class ConfigManager:
     def google_web_max_retries(self) -> int:
         """Return the bounded number of web request retries."""
 
-        value = self.get("google_web", "max_retries", 0)
+        value = self.get("google_web", "max_retries", 1)
         try:
             retries = int(value)
         except (TypeError, ValueError):
-            retries = 0
+            retries = 1
         return min(3, max(0, retries))
 
     @property
     def google_web_min_interval_seconds(self) -> float:
         """Return the minimum interval between web requests."""
 
-        value = self.get("google_web", "min_interval_ms", 0)
+        value = self.get("google_web", "min_interval_ms", 120)
         try:
             interval_ms = float(value)
             if not math.isfinite(interval_ms):
                 raise ValueError("interval must be finite")
         except (TypeError, ValueError):
-            interval_ms = 0.0
+            interval_ms = 120.0
         return min(60000.0, max(0.0, interval_ms)) / 1000.0
 
     @property

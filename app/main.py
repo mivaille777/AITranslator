@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from app.ai.compact_controller import CompactAIAppController
+from app.ai.research_agent_controller import ResearchAgentAppController
 from app.infrastructure.logging import configure_logging, sanitized_exception_info
 from app.infrastructure.instance_lock import SingleInstanceLock
 from app.infrastructure.paths import ensure_runtime_directories
@@ -28,8 +28,6 @@ def create_application(argv: Sequence[str] | None = None) -> QApplication:
 
     application.setApplicationName(APPLICATION_NAME)
     application.setOrganizationName(ORGANIZATION_NAME)
-    # The normal application entry point is tray-based and has no main window.
-    # Keep its event loop alive while the tray icon is present.
     application.setQuitOnLastWindowClosed(False)
     return application
 
@@ -58,15 +56,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     qt_argv = sys.argv if argv is None else [sys.argv[0], *list(argv)]
     application = create_application(qt_argv)
-    # A frozen build keeps its bundled defaults read-only. Create the
-    # per-user config/cache and log directories before any service starts.
     ensure_runtime_directories()
     logger = configure_logging()
     logger.info("application_started smoke_test=%s", parsed.smoke_test)
 
-    # Smoke mode is intentionally allowed to run beside a normal instance so
-    # it remains a harmless bootstrap check. A real tray process must be
-    # unique: two global hotkey listeners would race over the clipboard.
     instance_lock: SingleInstanceLock | None = None
     if not parsed.smoke_test:
         instance_lock = SingleInstanceLock()
@@ -74,10 +67,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             logger.error("application_already_running")
             return 1
 
-    controller: CompactAIAppController | None = None
+    controller: ResearchAgentAppController | None = None
     exit_code = 0
     try:
-        controller = CompactAIAppController(application, logger=logger)
+        controller = ResearchAgentAppController(
+            application,
+            logger=logger,
+        )
         controller.start(start_hotkey=not parsed.smoke_test)
 
         if parsed.smoke_test:
@@ -85,8 +81,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         exit_code = application.exec()
     except Exception as exc:
-        # A startup/service boundary failure must be visible in diagnostics
-        # without escaping as an unhandled process exception.
         logger.error(
             "application_runtime_failed error_type=%s",
             type(exc).__name__,

@@ -19,6 +19,7 @@ from app.selection.errors import SelectionError
 
 
 BROWSER_PAGE_POLL_MILLISECONDS = 650
+NATIVE_SELECTION_PAGE_MAX_AGE_SECONDS = 2.0
 _BROWSER_TITLE_SUFFIXES = (
     " - Google Chrome",
     " — Google Chrome",
@@ -112,12 +113,19 @@ class AdaptiveResearchAgentAppController(ResearchAgentAppController):
         title = str(getattr(snapshot, "title", "") or "").strip()
         return f"{url}\n{title}"
 
-    def _latest_page_snapshot(self) -> BrowserPageSnapshot | None:
+    def _latest_page_snapshot(
+        self,
+        *,
+        max_age_seconds: float | None = None,
+    ) -> BrowserPageSnapshot | None:
         reader = getattr(self.browser_selection_bridge, "latest_page_snapshot", None)
         if not callable(reader):
             return None
         try:
-            snapshot = reader()
+            if max_age_seconds is None:
+                snapshot = reader()
+            else:
+                snapshot = reader(max_age_seconds=max_age_seconds)
         except SelectionError:
             return None
         except Exception as exc:
@@ -244,7 +252,7 @@ class AdaptiveResearchAgentAppController(ResearchAgentAppController):
         self,
         context: SelectionContext,
     ) -> SelectedText:
-        """Enrich native browser/PDF selection with the active page identity."""
+        """Enrich native browser/PDF selection with a fresh active page identity."""
 
         selected = super()._capture_automatic_selection(context)
         reading = getattr(self, "_active_reading_context", ReadingContext())
@@ -255,7 +263,12 @@ class AdaptiveResearchAgentAppController(ResearchAgentAppController):
             self._prime_observed_page_signature()
             return selected
 
-        page = self._latest_page_snapshot()
+        # A native PDF fallback can run after a previous normal webpage. Only
+        # trust a page ping if it is very recent; otherwise use the frozen HWND
+        # title so stale metadata can never label the newly selected PDF.
+        page = self._latest_page_snapshot(
+            max_age_seconds=NATIVE_SELECTION_PAGE_MAX_AGE_SECONDS,
+        )
         title = ""
         url = ""
         heading = ""
@@ -283,4 +296,5 @@ class AdaptiveResearchAgentAppController(ResearchAgentAppController):
 __all__ = [
     "AdaptiveResearchAgentAppController",
     "BROWSER_PAGE_POLL_MILLISECONDS",
+    "NATIVE_SELECTION_PAGE_MAX_AGE_SECONDS",
 ]

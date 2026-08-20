@@ -156,8 +156,6 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         bar = getattr(self, "_selection_quick_actions", None)
         if bar is None:
             return
-        # Use the top-level card width, which is stable and user meaningful.
-        # The child bar can report a transient tiny width during Qt layout.
         bar.set_compact(self.width() < QUICK_ACTION_COMPACT_WIDTH)
         has_source = bool(str(getattr(self, "_source_text", "") or "").strip())
         surface_available = bool(
@@ -176,6 +174,60 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
             action = actions.get(key)
             if action is not None:
                 action.setIcon(symbol_icon(glyph, palette["text"], size=18))
+
+    def _apply_header_style(self, palette: dict[str, str]) -> None:
+        """Keep interactive chrome opaque enough to read over white papers/PDFs."""
+
+        super()._apply_header_style(palette)
+        background = palette["menu_background"]
+        border = palette["border"]
+        hover = palette["hover"]
+        text = palette["text"]
+        muted = palette["muted_text"]
+        accent = palette["accent"]
+
+        header = getattr(self, "_header", None)
+        if header is not None:
+            header.setStyleSheet(
+                f"""
+                QWidget#OverlayHeader {{
+                    background-color: {background};
+                    border: 1px solid {border};
+                    border-radius: 9px;
+                }}
+                """
+            )
+
+        # Parent classes historically derive button alpha from the translation
+        # card's background opacity. Re-apply the final production controls
+        # directly so a translucent body never makes the toolbar disappear on
+        # white PDFs or light webpages.
+        for attribute in ("_ai_button", "_chat_button", "_copy_button", "_menu_button"):
+            button = getattr(self, attribute, None)
+            if button is None:
+                continue
+            button.setStyleSheet(
+                f"""
+                QToolButton {{
+                    color: {text};
+                    background-color: {background};
+                    border: 1px solid {border};
+                    border-radius: 7px;
+                    padding: 2px 6px;
+                }}
+                QToolButton::menu-indicator {{ image: none; width: 0px; }}
+                QToolButton:hover:enabled {{
+                    color: {text};
+                    background-color: {hover};
+                    border-color: {accent};
+                }}
+                QToolButton:disabled {{
+                    color: {muted};
+                    background-color: {background};
+                    border-color: {border};
+                }}
+                """
+            )
 
     def _apply_theme(self, theme: str) -> None:
         super()._apply_theme(theme)

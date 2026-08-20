@@ -19,10 +19,12 @@ from app.ui.icon_controls import (
     apply_icon_button_palette,
     attach_menu_chevron,
     configure_icon_button,
+    normalize_menu_chevron,
 )
 
 
 QT_WIDGET_SIZE_MAX = 16_777_215
+_CHAT_FONT_BUTTON_WIDTH = CONTROL.large_height + SPACING.xxl
 
 
 class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
@@ -35,9 +37,12 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
         self._translation_font_size_before_chat = 0
         super().__init__(*args, **kwargs)
         self._remove_legacy_size_caps()
+        # Font synchronization can rewrite the text labels. Run it before the
+        # icon-control pass so the SVG chevron normalization owns the final
+        # visual state rather than a legacy `▾` suffix.
+        self._apply_configured_chat_font_size()
         self._apply_design_metrics()
         self._stabilize_outer_header()
-        self._apply_configured_chat_font_size()
         self._apply_responsive_minimum_width()
         self._resize_to_content(animate=False)
         self._translation_surface_size = QSize(self.size())
@@ -95,19 +100,36 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
             configure_icon_button(expand, ICON_BUTTON_COMPACT)
             apply_icon_button_palette(expand, palette)
 
-        # Text-menu buttons use one custom SVG chevron on the right. The
-        # controller strips legacy `▾` suffixes on every paint and suppresses
-        # Qt's platform-specific native menu indicator.
-        for attribute in ("model_button", "font_button"):
-            button = getattr(panel, attribute, None)
-            if isinstance(button, QToolButton):
-                button.setMinimumHeight(CONTROL.normal_height)
-                button.setMaximumHeight(CONTROL.normal_height)
-                attach_menu_chevron(
-                    button,
-                    color=muted,
-                    disabled_color=disabled,
-                )
+        # Text-menu buttons use one custom SVG chevron on the right. Their
+        # existing header width contracts remain authoritative; the chevron is
+        # decoration only and may not widen the toolbar item.
+        model_button = getattr(panel, "model_button", None)
+        if isinstance(model_button, QToolButton):
+            model_button.setMinimumHeight(CONTROL.normal_height)
+            model_button.setMaximumHeight(CONTROL.normal_height)
+            model_button.setMinimumWidth(LAYOUT.chat_model_min_width)
+            model_button.setMaximumWidth(LAYOUT.chat_model_max_width)
+            attach_menu_chevron(
+                model_button,
+                color=muted,
+                disabled_color=disabled,
+            )
+            normalize_menu_chevron(model_button)
+
+        font_button = getattr(panel, "font_button", None)
+        if isinstance(font_button, QToolButton):
+            font_button.setMinimumHeight(CONTROL.normal_height)
+            font_button.setMaximumHeight(CONTROL.normal_height)
+            font_button.setFixedWidth(_CHAT_FONT_BUTTON_WIDTH)
+            attach_menu_chevron(
+                font_button,
+                color=muted,
+                disabled_color=disabled,
+            )
+            # QSS right padding can affect sizeHint on some Windows styles.
+            # Reassert the fixed budget after attaching the decoration.
+            font_button.setFixedWidth(_CHAT_FONT_BUTTON_WIDTH)
+            normalize_menu_chevron(font_button)
 
         clear_button = getattr(panel, "clear_button", None)
         if isinstance(clear_button, QToolButton):
@@ -246,9 +268,11 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
             self._manual_size_locked = False
 
         super().open_chat(**kwargs)
+        # Opening Chat updates model/font labels, so normalize typography first
+        # and attach SVG menu affordances last.
+        self._apply_configured_chat_font_size()
         self._apply_design_metrics()
         self._stabilize_outer_header()
-        self._apply_configured_chat_font_size()
 
     def close_chat(self) -> None:
         """Return to a clean Translation surface rather than retaining Chat geometry."""
@@ -297,10 +321,12 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
             # Chat has an explicit A-size control; resizing the Chat window must
             # neither change nor persist the Translation font size.
             self._apply_configured_chat_font_size()
+            self._apply_chat_control_metrics()
             return
 
         super()._scale_fonts_for_manual_size(new_size)
         self._apply_configured_chat_font_size()
+        self._apply_chat_control_metrics()
 
 
 class AdaptiveResearchAgentOverlayManager(ResearchAgentOverlayManager):

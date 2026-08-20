@@ -14,17 +14,18 @@ from PySide6.QtWidgets import (
 
 from app.ai.chat.models import ChatContext, ReadingContext
 from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
+from app.ui.design_tokens import CONTROL, MOTION, RADIUS, SPACING, TYPOGRAPHY
 
 
 _CONTEXT_EXCERPT_LIMIT = 220
 _CONTEXT_DETAIL_LIMIT = 420
 _CHAT_MODEL_BUTTON_MIN_WIDTH = 118
 _CHAT_MODEL_BUTTON_MAX_WIDTH = 168
-_CHAT_FONT_BUTTON_WIDTH = 76
-_CHAT_CLEAR_BUTTON_WIDTH = 48
-_CHAT_DELETE_BUTTON_WIDTH = 40
+_CHAT_FONT_BUTTON_WIDTH = CONTROL.large_height + SPACING.xxl
+_CHAT_CLEAR_BUTTON_WIDTH = CONTROL.normal_height + SPACING.md
+_CHAT_DELETE_BUTTON_WIDTH = CONTROL.normal_height + SPACING.xs
 _CHAT_MODEL_TEXT_LIMIT = 22
-_FINAL_REFLOW_DELAYS_MS = (0, 32, 96)
+_FINAL_REFLOW_DELAYS_MS = MOTION.final_reflow_ms
 
 
 def _trim(text: object, limit: int) -> str:
@@ -75,12 +76,17 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         self.reading_context_card.setObjectName("OverlayReadingContextCard")
         self.reading_context_card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         card_layout = QVBoxLayout(self.reading_context_card)
-        card_layout.setContentsMargins(9, 7, 9, 7)
-        card_layout.setSpacing(4)
+        card_layout.setContentsMargins(
+            SPACING.sm,
+            RADIUS.sm,
+            SPACING.sm,
+            RADIUS.sm,
+        )
+        card_layout.setSpacing(SPACING.xs)
 
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
-        header.setSpacing(6)
+        header.setSpacing(SPACING.sm)
         self.reading_context_source = QLabel("📄 Reading", self.reading_context_card)
         self.reading_context_source.setObjectName("OverlayReadingContextSource")
         self.reading_context_title = QLabel("", self.reading_context_card)
@@ -92,7 +98,10 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         self.reading_context_expand.setText("⌄")
         self.reading_context_expand.setToolTip("查看 Reading Context")
         self.reading_context_expand.setCheckable(True)
-        self.reading_context_expand.setFixedSize(28, 24)
+        self.reading_context_expand.setFixedSize(
+            CONTROL.compact_height,
+            CONTROL.compact_height - SPACING.xs,
+        )
         header.addWidget(self.reading_context_source)
         header.addWidget(self.reading_context_title, 1)
         header.addWidget(self.reading_context_expand)
@@ -139,7 +148,7 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         if not isinstance(top, QHBoxLayout):
             return
 
-        top.setSpacing(6)
+        top.setSpacing(SPACING.sm)
         self.title_label.setMinimumWidth(62)
         self.title_label.setSizePolicy(
             QSizePolicy.Policy.Fixed,
@@ -390,20 +399,20 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
             QFrame#OverlayReadingContextCard {{
                 background-color: {chrome_background};
                 border: 1px solid {chrome_border};
-                border-radius: 9px;
+                border-radius: {RADIUS.lg}px;
             }}
             QLabel#OverlayReadingContextSource {{
                 color: {palette['accent']};
-                font-size: 11px;
-                font-weight: 600;
+                font-size: {TYPOGRAPHY.caption}px;
+                font-weight: {TYPOGRAPHY.weight_semibold};
             }}
             QLabel#OverlayReadingContextTitle {{
                 color: {chrome_text};
-                font-weight: 600;
+                font-weight: {TYPOGRAPHY.weight_semibold};
             }}
             QLabel#OverlayReadingContextMeta {{
                 color: {chrome_muted};
-                font-size: 10px;
+                font-size: {TYPOGRAPHY.caption}px;
             }}
             QLabel#OverlayReadingContextSelection {{
                 color: {chrome_text};
@@ -412,13 +421,13 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
             QLabel#OverlayReadingContextDetails {{
                 color: {chrome_muted};
                 background-color: transparent;
-                padding-top: 3px;
+                padding-top: {SPACING.xxs}px;
             }}
             QToolButton#OverlayReadingContextExpand {{
                 color: {chrome_muted};
                 background-color: transparent;
                 border: 1px solid transparent;
-                border-radius: 6px;
+                border-radius: {RADIUS.sm}px;
             }}
             QToolButton#OverlayReadingContextExpand:hover:enabled {{
                 color: {chrome_text};

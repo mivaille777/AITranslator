@@ -209,7 +209,8 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         self._streaming_body = body
         self.set_display_font_size(self._display_font_size)
         self.stream_layout_changed.emit()
-        QTimer.singleShot(0, self._scroll_to_bottom)
+        QTimer.singleShot(0, self.refresh_adaptive_height)
+        QTimer.singleShot(0, self._scroll_after_content_change)
 
     def update_streaming_reply(self, request_id: int, text: str) -> bool:
         if self._streaming_request_id != int(request_id) or self._streaming_body is None:
@@ -220,7 +221,8 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         self._streaming_body.updateGeometry()
         self.messages_content.updateGeometry()
         self.stream_layout_changed.emit()
-        QTimer.singleShot(0, self._scroll_to_bottom)
+        QTimer.singleShot(0, self.refresh_adaptive_height)
+        QTimer.singleShot(0, self._scroll_after_content_change)
         return True
 
     def finish_streaming_reply(self, request_id: int, text: str) -> bool:
@@ -243,6 +245,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         self._streaming_row = None
         self._streaming_body = None
         self.stream_layout_changed.emit()
+        QTimer.singleShot(0, self.refresh_adaptive_height)
 
     def clear_messages(self) -> None:
         self.cancel_streaming_reply()
@@ -278,6 +281,11 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
+        chrome_background = palette.get("chrome_background", palette["menu_background"])
+        chrome_border = palette.get("chrome_border", palette["border"])
+        chrome_hover = palette.get("chrome_hover", palette["hover"])
+        chrome_text = palette.get("chrome_text", palette["text"])
+        chrome_muted = palette.get("chrome_muted_text", palette["muted_text"])
         self.setStyleSheet(
             self.styleSheet()
             + f"""
@@ -285,9 +293,9 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
             QToolButton#OverlayChatNewConversationButton,
             QToolButton#OverlayChatDeleteConversationButton,
             QToolButton#OverlayChatModelButton {{
-                color: {palette['text']};
-                background-color: transparent;
-                border: 1px solid transparent;
+                color: {chrome_text};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 6px;
                 padding: 4px 6px;
             }}
@@ -295,22 +303,22 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
             QToolButton#OverlayChatNewConversationButton:hover,
             QToolButton#OverlayChatDeleteConversationButton:hover:enabled,
             QToolButton#OverlayChatModelButton:hover {{
-                background-color: {palette['hover']};
-                border-color: {palette['border']};
+                background-color: {chrome_hover};
+                border-color: {palette['accent']};
             }}
             QToolButton#OverlayChatDeleteConversationButton:disabled {{
-                color: {palette['muted_text']};
+                color: {chrome_muted};
             }}
             QToolButton#OverlayChatModelButton {{
                 text-align: right;
-                color: {palette['muted_text']};
+                color: {chrome_muted};
             }}
             QMenu#OverlayChatHistoryMenu,
             QMenu#OverlayChatHistoryConversationMenu,
             QMenu#OverlayChatModelMenu {{
-                background-color: {palette['menu_background']};
-                color: {palette['text']};
-                border: 1px solid {palette['border']};
+                background-color: {chrome_background};
+                color: {chrome_text};
+                border: 1px solid {chrome_border};
                 border-radius: 8px;
                 padding: 6px;
             }}
@@ -323,7 +331,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
             QMenu#OverlayChatHistoryMenu::item:selected,
             QMenu#OverlayChatHistoryConversationMenu::item:selected,
             QMenu#OverlayChatModelMenu::item:selected {{
-                background-color: {palette['hover']};
+                background-color: {chrome_hover};
             }}
             """
         )

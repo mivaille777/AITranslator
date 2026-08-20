@@ -14,11 +14,22 @@ from app.overlay.context_menu import (
     SETTINGS_MENU_MAX_VISIBLE_ITEMS,
     SETTINGS_MENU_MIN_WIDTH,
 )
+from app.ui.compact_settings import (
+    SETTINGS_NAVIGATION_WIDTH,
+    SETTINGS_SCROLL_STEP,
+    SETTINGS_WINDOW_DEFAULT_HEIGHT,
+    SETTINGS_WINDOW_DEFAULT_WIDTH,
+    SETTINGS_WINDOW_MAX_HEIGHT,
+    SETTINGS_WINDOW_MIN_HEIGHT,
+    SETTINGS_WINDOW_MIN_WIDTH,
+    SETTINGS_WINDOW_NAV_WIDTH,
+)
 from app.ui.design_tokens import (
     CONTROL,
     LAYOUT,
     MOTION,
     RADIUS,
+    SETTINGS,
     SPACING,
     THEMES,
     TYPOGRAPHY,
@@ -86,6 +97,17 @@ def test_overlay_menu_metrics_are_design_system_driven() -> None:
 
 def test_quick_action_breakpoint_is_design_system_driven() -> None:
     assert QUICK_ACTION_COMPACT_WIDTH == LAYOUT.quick_action_compact_width
+
+
+def test_settings_shell_metrics_are_component_token_driven() -> None:
+    assert SETTINGS_WINDOW_DEFAULT_WIDTH == SETTINGS.default_width
+    assert SETTINGS_WINDOW_NAV_WIDTH == SETTINGS.navigation_width
+    assert SETTINGS_WINDOW_DEFAULT_HEIGHT == SETTINGS.default_height
+    assert SETTINGS_WINDOW_MIN_WIDTH == SETTINGS.minimum_width
+    assert SETTINGS_WINDOW_MIN_HEIGHT == SETTINGS.minimum_height
+    assert SETTINGS_WINDOW_MAX_HEIGHT == SETTINGS.maximum_height
+    assert SETTINGS_SCROLL_STEP == SETTINGS.scroll_step
+    assert SETTINGS_NAVIGATION_WIDTH == SETTINGS.navigation_rail_width
 
 
 def test_size_class_is_shared_and_boundary_stable() -> None:

@@ -90,18 +90,22 @@ def test_follow_tail_tracks_new_stream_output_when_user_is_at_bottom(qtbot) -> N
     panel.resize(620, 340)
     panel.show()
 
-    for index in range(10):
-        panel.append_message(ChatRole.ASSISTANT, _multiline_text(f"base {index}", 5))
+    # The pre-stream transcript is allowed to fit without a scrollbar. The
+    # actual contract is that once streaming creates overflow, a user who has
+    # never scrolled away remains pinned to the latest content.
+    for index in range(4):
+        panel.append_message(ChatRole.ASSISTANT, f"base {index}")
     panel.refresh_adaptive_height(340)
+    panel._scroll_to_bottom()
+    assert panel.follow_tail
+
+    panel.begin_streaming_reply(7)
+    panel.update_streaming_reply(7, _multiline_text("streaming", 90))
     qtbot.waitUntil(
         lambda: panel.messages_scroll.verticalScrollBar().maximum() > 0,
         timeout=1500,
     )
-    panel._scroll_to_bottom()
-
-    panel.begin_streaming_reply(7)
-    panel.update_streaming_reply(7, _multiline_text("streaming", 28))
-    qtbot.wait(100)
+    qtbot.wait(50)
 
     bar = panel.messages_scroll.verticalScrollBar()
     assert panel.follow_tail

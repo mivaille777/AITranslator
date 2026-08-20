@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.dependencies import close_translation_service
 from backend.api.health import router as health_router
+from backend.api.translation import router as translation_router
 
 DEV_ORIGINS = [
     "http://localhost:5173",
@@ -19,11 +22,18 @@ DEFAULT_API_HOST = "127.0.0.1"
 DEFAULT_API_PORT = 8766
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    yield
+    close_translation_service()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.1.0",
+        version="0.2.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
@@ -33,6 +43,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(health_router)
+    app.include_router(translation_router)
     return app
 
 

@@ -1,32 +1,53 @@
-# React + TypeScript + Vite
+# AITranslator WebReBuild Desktop
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+This directory contains the React + TypeScript desktop client used by the WebReBuild migration.
 
-Currently, two official plugins are available:
+## Runtime boundaries
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- React owns presentation and interaction.
+- FastAPI on `127.0.0.1:8766` owns the WebReBuild business API.
+- `127.0.0.1:8765` remains reserved for the existing Browser Selection Bridge.
+- `DesktopAdapter` isolates React from Tauri/Electron-specific APIs.
+- Normal translation stays deterministic and does not run through LangGraph.
 
-## React Compiler
+## Development
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+From `apps/desktop`:
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm install
+npm run backend:dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+In a second terminal:
+
+```powershell
+npm run tauri:dev
+```
+
+Browser-only frontend development remains available with:
+
+```powershell
+npm run dev
+```
+
+## Stage 2 translation API
+
+The first migrated business path is:
+
+```text
+React
+  -> POST /api/translation
+  -> FastAPI
+  -> TranslationService
+  -> existing TranslationManager
+  -> TranslationProvider
+```
+
+Useful endpoints:
+
+- `GET /health`
+- `GET /api/translation/status`
+- `POST /api/translation`
+
+The migration intentionally reuses the established translation normalization, cache, and provider implementation under `app/translation/` instead of duplicating those rules in the web client.

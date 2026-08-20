@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.ai.research_agent_overlay import (
     RESEARCH_NOTE_SAVE,
+    RESEARCH_NOTES_LIBRARY,
     RESEARCH_NOTES_RECENT,
     ResearchAgentOverlayWindow,
 )
@@ -13,13 +14,18 @@ def test_research_agent_ai_menu_exposes_note_actions(qtbot) -> None:
 
     actions = window.research_actions
 
-    assert set(actions) == {RESEARCH_NOTE_SAVE, RESEARCH_NOTES_RECENT}
+    assert set(actions) == {
+        RESEARCH_NOTE_SAVE,
+        RESEARCH_NOTES_LIBRARY,
+        RESEARCH_NOTES_RECENT,
+    }
     assert actions[RESEARCH_NOTE_SAVE].text() == "加入研究笔记"
+    assert actions[RESEARCH_NOTES_LIBRARY].text() == "研究笔记库"
     assert actions[RESEARCH_NOTES_RECENT].text() == "最近研究笔记"
     assert all(action.parent() is window.context_menu.ai_menu for action in actions.values())
 
 
-def test_recent_notes_remains_available_without_current_selection(qtbot) -> None:
+def test_note_library_remains_available_without_current_selection(qtbot) -> None:
     window = ResearchAgentOverlayWindow()
     qtbot.addWidget(window)
 
@@ -27,6 +33,7 @@ def test_recent_notes_remains_available_without_current_selection(qtbot) -> None
 
     assert window.context_menu.ai_menu.isEnabled()
     assert not window.research_actions[RESEARCH_NOTE_SAVE].isEnabled()
+    assert window.research_actions[RESEARCH_NOTES_LIBRARY].isEnabled()
     assert window.research_actions[RESEARCH_NOTES_RECENT].isEnabled()
     assert all(not action.isEnabled() for action in window.reading_actions.values())
 
@@ -44,6 +51,7 @@ def test_save_note_becomes_available_after_selection_translation(qtbot) -> None:
     window._sync_context_menu_state()
 
     assert window.research_actions[RESEARCH_NOTE_SAVE].isEnabled()
+    assert window.research_actions[RESEARCH_NOTES_LIBRARY].isEnabled()
     assert window.research_actions[RESEARCH_NOTES_RECENT].isEnabled()
     assert all(action.isEnabled() for action in window.reading_actions.values())
 

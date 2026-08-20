@@ -20,9 +20,10 @@ from PySide6.QtWidgets import (
 from app.ai.chat.models import ChatRole
 from app.ai.chat_managed_ui import ManagedChatPanel
 from app.overlay.context_menu import symbol_icon
+from app.ui.design_tokens import CONTROL, ICON, RADIUS, SPACING, TYPOGRAPHY
 
 
-MESSAGE_ACTION_ICON_SIZE = 17
+MESSAGE_ACTION_ICON_SIZE = ICON.md
 
 
 class InteractiveManagedChatPanel(ManagedChatPanel):
@@ -55,7 +56,10 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         self.back_button.setText("←")
         self.back_button.setToolTip("返回翻译页面")
         self.back_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.back_button.setFixedSize(32, 30)
+        self.back_button.setFixedSize(
+            CONTROL.touch_target_min,
+            CONTROL.compact_height + SPACING.xxs,
+        )
         self.back_button.clicked.connect(self.close_requested.emit)
         top.insertWidget(0, self.back_button)
 
@@ -70,8 +74,8 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         self.stop_button = QPushButton("■ 停止", self)
         self.stop_button.setObjectName("OverlayChatStopButton")
         self.stop_button.setToolTip("停止当前 AI 回答")
-        self.stop_button.setFixedWidth(72)
-        self.stop_button.setMinimumHeight(44)
+        self.stop_button.setFixedWidth(CONTROL.normal_height * 2)
+        self.stop_button.setMinimumHeight(CONTROL.large_height)
         self.stop_button.hide()
         self.stop_button.clicked.connect(self.stop_generation_requested.emit)
         send_index = input_row.indexOf(self.send_button)
@@ -262,8 +266,13 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         regenerate_button.setToolTip("从这条回答重新生成")
         regenerate_button.setCursor(Qt.CursorShape.PointingHandCursor)
         regenerate_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        regenerate_button.setIconSize(QSize(MESSAGE_ACTION_ICON_SIZE, MESSAGE_ACTION_ICON_SIZE))
-        regenerate_button.setFixedSize(30, 28)
+        regenerate_button.setIconSize(
+            QSize(MESSAGE_ACTION_ICON_SIZE, MESSAGE_ACTION_ICON_SIZE)
+        )
+        regenerate_button.setFixedSize(
+            CONTROL.compact_height + SPACING.xxs,
+            CONTROL.compact_height,
+        )
         regenerate_button.clicked.connect(
             lambda _checked=False, content=raw: self.regenerate_requested.emit(content)
         )
@@ -280,7 +289,10 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
         self._update_regenerate_icon(regenerate_button)
 
     def _update_regenerate_icon(self, button: QToolButton) -> None:
-        color = self._palette.get("chrome_muted_text", self._palette.get("muted_text", "#CBD5E1"))
+        color = self._palette.get(
+            "chrome_muted_text",
+            self._palette.get("muted_text", "#CBD5E1"),
+        )
         button.setIcon(symbol_icon("↻", color, size=MESSAGE_ACTION_ICON_SIZE))
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
@@ -357,8 +369,8 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
                 color: {chrome_text};
                 background-color: {chrome_background};
                 border: 1px solid {chrome_border};
-                border-radius: 6px;
-                font-size: 18px;
+                border-radius: {RADIUS.sm}px;
+                font-size: {TYPOGRAPHY.title}px;
             }}
             QToolButton#OverlayChatBackButton:hover {{
                 background-color: {chrome_hover};
@@ -368,7 +380,7 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
                 color: {chrome_text};
                 background-color: {chrome_background};
                 border: 1px solid {chrome_border};
-                border-radius: 7px;
+                border-radius: {RADIUS.sm}px;
             }}
             QPushButton#OverlayChatStopButton:hover {{
                 background-color: {chrome_hover};
@@ -378,9 +390,9 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
                 color: {chrome_text};
                 background-color: {chrome_background};
                 border: 1px solid {chrome_border};
-                border-radius: 6px;
-                padding: 6px 8px;
-                margin: 2px 5px;
+                border-radius: {RADIUS.sm}px;
+                padding: {SPACING.sm}px {SPACING.sm}px;
+                margin: {SPACING.xxs}px {RADIUS.sm}px;
             }}
             QLineEdit#OverlayChatHistorySearch:focus {{
                 border-color: {palette['accent']};
@@ -388,7 +400,7 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             QScrollArea#OverlayChatMessagesScroll {{
                 background-color: {chrome_background};
                 border: 1px solid {chrome_border};
-                border-radius: 8px;
+                border-radius: {RADIUS.md}px;
             }}
             QWidget#OverlayChatMessagesContent {{
                 background-color: {chrome_background};
@@ -396,8 +408,8 @@ class InteractiveManagedChatPanel(ManagedChatPanel):
             QToolButton#OverlayChatMessageRegenerateButton {{
                 background-color: transparent;
                 border: 1px solid transparent;
-                border-radius: 6px;
-                padding: 2px;
+                border-radius: {RADIUS.sm}px;
+                padding: {SPACING.xxs}px;
             }}
             QToolButton#OverlayChatMessageRegenerateButton:hover {{
                 background-color: {chrome_hover};

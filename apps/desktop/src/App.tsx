@@ -152,7 +152,9 @@ function App() {
     setTranslationError("")
 
     if (!autoTranslateSelection) return
-    void translateBrowserSelection(browserSelection)
+    queueMicrotask(() => {
+      void translateBrowserSelection(browserSelection)
+    })
   }, [
     autoTranslateSelection,
     browserSelection,

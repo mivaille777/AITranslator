@@ -31,6 +31,7 @@ MIN_RESIZE_HEIGHT = 180
 MIN_DRAG_HANDLE_GAP = 8
 MAX_RESIZE_FONT_SIZE = 44
 MIN_RESIZE_FONT_SIZE = 8
+CHAT_LAYOUT_DEBOUNCE_MILLISECONDS = 45
 
 
 class ResizableConversationalAIOverlayWindow(
@@ -40,6 +41,8 @@ class ResizableConversationalAIOverlayWindow(
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._manual_size_locked = False
+        self._manual_width_locked = False
+        self._manual_height_locked = False
         self._manual_resizing = False
         self._resize_edge = ""
         self._resize_start_geometry = QRect()
@@ -81,6 +84,11 @@ class ResizableConversationalAIOverlayWindow(
             self._resize_handles[edge] = handle
         self._layout_resize_handles()
 
+        self._chat_layout_timer = QTimer(self)
+        self._chat_layout_timer.setSingleShot(True)
+        self._chat_layout_timer.setInterval(CHAT_LAYOUT_DEBOUNCE_MILLISECONDS)
+        self._chat_layout_timer.timeout.connect(self._apply_chat_layout_update)
+
         stream_signal = getattr(self._chat_panel, "stream_layout_changed", None)
         if stream_signal is not None and callable(getattr(stream_signal, "connect", None)):
             stream_signal.connect(self._on_stream_layout_changed)
@@ -90,7 +98,15 @@ class ResizableConversationalAIOverlayWindow(
 
     @property
     def manual_size_locked(self) -> bool:
-        return self._manual_size_locked
+        return bool(self._manual_size_locked)
+
+    @property
+    def manual_width_locked(self) -> bool:
+        return bool(self._manual_width_locked)
+
+    @property
+    def manual_height_locked(self) -> bool:
+        return bool(self._manual_height_locked)
 
     @property
     def language_bar(self) -> OverlayLanguageBar:
@@ -120,10 +136,6 @@ class ResizableConversationalAIOverlayWindow(
         bar = getattr(self, "_language_bar", None)
         if bar is None:
             return ""
-        # ``show_translation`` receives the provider-detected language and the
-        # base Overlay therefore stores it as its presentation source. Restore
-        # the segmented control to Auto mode, then attach that detection as UI
-        # metadata so the user can still see Auto was the configured source.
         bar.set_languages("auto", self._target_language)
         detected = bar.set_detected_source_language(source_language)
         self._position_drag_handle()
@@ -196,8 +208,6 @@ class ResizableConversationalAIOverlayWindow(
 
         available = right_limit - left_limit
         if available < handle.width():
-            # At very small widths the bar is hidden rather than covering an
-            # AI/header action. Header and Chat title dragging remain available.
             handle.hide()
             return
 
@@ -268,7 +278,13 @@ class ResizableConversationalAIOverlayWindow(
         self._stop_resize_animation()
         self._dragging = False
         self._manual_resizing = True
-        self._manual_size_locked = True
+        if "left" in edge or "right" in edge:
+            self._manual_width_locked = True
+        if "top" in edge or "bottom" in edge:
+            self._manual_height_locked = True
+        self._manual_size_locked = bool(
+            self._manual_width_locked or self._manual_height_locked
+        )
         self._resize_edge = edge
         self._resize_start_geometry = QRect(self.geometry())
         self._resize_start_global = QPoint(global_position)
@@ -366,13 +382,37 @@ class ResizableConversationalAIOverlayWindow(
         self._layout_resize_handles()
         self._position_drag_handle()
 
+    def _chat_panel_height_cap(self) -> int:
+        margins = self._layout.contentsMargins()
+        header_height = self._header.sizeHint().height() if self._header is not None else 0
+        return max(
+            220,
+            self.maximumHeight()
+            - margins.top()
+            - margins.bottom()
+            - header_height
+            - self._layout.spacing(),
+        )
+
+    def _refresh_chat_panel_height(self) -> None:
+        if not getattr(self, "_chat_open", False):
+            return
+        refresh = getattr(self._chat_panel, "refresh_adaptive_height", None)
+        if callable(refresh):
+            refresh(self._chat_panel_height_cap())
+
     def _resize_to_content(
         self,
         *,
         animate: bool = False,
         start_size: QSize | None = None,
     ) -> None:
-        if getattr(self, "_manual_size_locked", False):
+        if getattr(self, "_chat_open", False):
+            self._refresh_chat_panel_height()
+
+        if getattr(self, "_manual_height_locked", False):
+            # Explicit vertical resizing means the user owns the height. Keep
+            # reflowing the transcript but do not fight their chosen geometry.
             self._update_scroll_area_limits()
             self._content_layout.invalidate()
             self._layout.invalidate()
@@ -381,12 +421,43 @@ class ResizableConversationalAIOverlayWindow(
             self.updateGeometry()
             self._layout_resize_handles()
             return
+
+        if getattr(self, "_manual_width_locked", False):
+            # A horizontal resize locks only width. Temporarily constrain the
+            # base content-fit pass to that width so height-for-width remains
+            # accurate while AI output can still grow/shrink vertically.
+            fixed_width = max(1, self.width())
+            old_minimum_width = self.minimumWidth()
+            old_maximum_width = self.maximumWidth()
+            self.setMinimumWidth(fixed_width)
+            self.setMaximumWidth(fixed_width)
+            try:
+                super()._resize_to_content(animate=False, start_size=start_size)
+                target_height = self.height()
+            finally:
+                self.setMaximumWidth(old_maximum_width)
+                self.setMinimumWidth(old_minimum_width)
+            self.resize(fixed_width, target_height)
+            self._clamp_current_position()
+            self._layout_resize_handles()
+            return
+
         super()._resize_to_content(animate=animate, start_size=start_size)
 
     def _on_stream_layout_changed(self) -> None:
         if not self._chat_open:
             return
-        if self._manual_size_locked:
+        timer = getattr(self, "_chat_layout_timer", None)
+        if timer is None:
+            self._apply_chat_layout_update()
+            return
+        timer.start(CHAT_LAYOUT_DEBOUNCE_MILLISECONDS)
+
+    def _apply_chat_layout_update(self) -> None:
+        if not self._chat_open:
+            return
+        self._refresh_chat_panel_height()
+        if self._manual_height_locked:
             self._chat_panel.messages_content.updateGeometry()
             self._chat_panel.messages_scroll.updateGeometry()
             self.updateGeometry()
@@ -414,6 +485,8 @@ class ResizableConversationalAIOverlayWindow(
         super().open_chat(**kwargs)
         self._apply_responsive_minimum_width()
         self._chat_panel.set_display_font_size(max(10, round(self._font_size * 0.58)))
+        self._refresh_chat_panel_height()
+        self._resize_to_content(animate=False)
         self._position_drag_handle()
 
     def close_chat(self) -> None:
@@ -443,7 +516,10 @@ class ResizableConversationalAIOverlayWindow(
         if bar is not None:
             bar.apply_palette(palette)
         for handle in getattr(self, "_resize_handles", {}).values():
-            handle.set_theme_colors(palette["border"], palette["accent"])
+            handle.set_theme_colors(
+                palette.get("chrome_border", palette["border"]),
+                palette["accent"],
+            )
 
 
 class ResizableConversationalAIOverlayManager(
@@ -496,6 +572,7 @@ class ResizableConversationalAIOverlayManager(
 
 
 __all__ = [
+    "CHAT_LAYOUT_DEBOUNCE_MILLISECONDS",
     "CHAT_MIN_RESIZE_WIDTH",
     "MIN_RESIZE_HEIGHT",
     "ResizableConversationalAIOverlayManager",

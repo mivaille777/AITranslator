@@ -12,11 +12,14 @@ from app.ai.chat.task import AIChatTaskFailure
 from app.ai.desktop_agent_controller import DesktopAgentAppController
 from app.ai.research_agent_overlay import (
     RESEARCH_NOTE_SAVE,
+    RESEARCH_NOTES_LIBRARY,
     RESEARCH_NOTES_RECENT,
     ResearchAgentOverlayManager,
 )
 from app.infrastructure.settings import SettingsManager
 from app.models.reading_actions import READING_ACTION_KEYS
+from app.research.library import ResearchNoteLibraryStore
+from app.research.library_ui import ResearchNotesLibraryWindow
 from app.research.notes import ResearchNote, ResearchNoteStore
 
 
@@ -45,7 +48,8 @@ class ResearchAgentAppController(DesktopAgentAppController):
                 config_manager=resolved_config,
             )
 
-        self.research_note_store = research_note_store or ResearchNoteStore()
+        self.research_note_store = research_note_store or ResearchNoteLibraryStore()
+        self._research_notes_window: ResearchNotesLibraryWindow | None = None
         self._pending_reading_action_request_id: int | None = None
         self._pending_reading_action_key = ""
         self._pending_reading_action_source_text = ""
@@ -53,6 +57,15 @@ class ResearchAgentAppController(DesktopAgentAppController):
         self._last_reading_action_source_text = ""
         self._last_reading_action_output = ""
         super().__init__(*args, **kwargs)
+
+    def shutdown(self) -> None:
+        window = getattr(self, "_research_notes_window", None)
+        if window is not None:
+            try:
+                window.close()
+            except RuntimeError:
+                pass
+        super().shutdown()
 
     def _clear_pending_reading_action(self) -> None:
         self._pending_reading_action_request_id = None
@@ -68,6 +81,20 @@ class ResearchAgentAppController(DesktopAgentAppController):
             self._last_reading_action_key = ""
             self._last_reading_action_source_text = ""
             self._last_reading_action_output = ""
+
+    def _sync_active_reading_context(self) -> None:
+        """Persist context and keep the user-visible Reading Context card in sync."""
+
+        context = self._current_reading_context()
+        super()._sync_active_reading_context()
+        self._chat_overlay_call("set_chat_reading_context", context)
+
+    def _open_ai_chat(self) -> None:
+        super()._open_ai_chat()
+        self._chat_overlay_call(
+            "set_chat_reading_context",
+            self._current_reading_context(),
+        )
 
     def _submit_reading_action(self, key: str) -> bool:
         if key not in READING_ACTION_KEYS:
@@ -184,6 +211,9 @@ class ResearchAgentAppController(DesktopAgentAppController):
             bool(result.note.resource_url or result.note.resource_title),
             bool(result.note.ai_content),
         )
+        library = getattr(self, "_research_notes_window", None)
+        if library is not None and library.isVisible():
+            self._refresh_research_notes_library(library.search_query)
         return True
 
     @staticmethod
@@ -223,9 +253,97 @@ class ResearchAgentAppController(DesktopAgentAppController):
         self.logger.info("research_notes_recent_presented count=%s", len(notes))
         return True
 
+    def _ensure_research_notes_window(self) -> ResearchNotesLibraryWindow:
+        window = self._research_notes_window
+        if window is not None:
+            return window
+        parent = getattr(self.overlay_manager, "window", None)
+        window = ResearchNotesLibraryWindow(parent)
+        window.search_requested.connect(self._refresh_research_notes_library)
+        window.user_note_save_requested.connect(self._update_research_note_user_text)
+        window.note_delete_requested.connect(self._delete_research_note)
+        self._research_notes_window = window
+        return window
+
+    def _query_research_notes(self, query: str = "") -> tuple[ResearchNote, ...]:
+        search = getattr(self.research_note_store, "search", None)
+        if callable(search):
+            try:
+                return tuple(search(query, limit=100))
+            except Exception as exc:
+                self._log_exception("research_notes_search_failed", exc)
+        try:
+            notes = tuple(self.research_note_store.list_recent(limit=100))
+        except Exception as exc:
+            self._log_exception("research_notes_list_failed", exc)
+            return ()
+        needle = " ".join(str(query or "").casefold().split())
+        if not needle:
+            return notes
+        return tuple(
+            note
+            for note in notes
+            if needle
+            in " ".join(
+                (
+                    note.resource_title,
+                    note.section_heading,
+                    note.source_text,
+                    note.translated_text,
+                    note.ai_content,
+                    note.user_note,
+                )
+            ).casefold()
+        )
+
+    def _refresh_research_notes_library(self, query: str = "") -> None:
+        window = self._research_notes_window
+        if window is None:
+            return
+        window.set_notes(self._query_research_notes(query))
+
+    def _open_research_notes_library(self) -> bool:
+        window = self._ensure_research_notes_window()
+        self._refresh_research_notes_library(window.search_query)
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        self.logger.info("research_notes_library_opened count=%s", self.research_note_store.count())
+        return True
+
+    def _update_research_note_user_text(self, note_id: str, user_note: str) -> None:
+        update = getattr(self.research_note_store, "update_user_note", None)
+        if not callable(update):
+            self._show_research_note_feedback(RESEARCH_NOTE_FAILED_TEXT)
+            return
+        try:
+            saved = update(note_id, user_note)
+        except Exception as exc:
+            self._log_exception("research_note_user_text_update_failed", exc)
+            saved = None
+        if saved is None:
+            self._show_research_note_feedback(RESEARCH_NOTE_FAILED_TEXT)
+            return
+        self._show_research_note_feedback(RESEARCH_NOTE_UPDATED_TEXT)
+        window = self._research_notes_window
+        self._refresh_research_notes_library(window.search_query if window is not None else "")
+
+    def _delete_research_note(self, note_id: str) -> None:
+        try:
+            deleted = bool(self.research_note_store.delete(note_id))
+        except Exception as exc:
+            self._log_exception("research_note_delete_failed", exc)
+            deleted = False
+        self._show_research_note_feedback("研究笔记已删除" if deleted else "研究笔记删除失败")
+        window = self._research_notes_window
+        self._refresh_research_notes_library(window.search_query if window is not None else "")
+
     def _on_overlay_context_action(self, key: str, value: object) -> None:
         if key == RESEARCH_NOTE_SAVE:
             self._save_current_research_note()
+            return
+        if key == RESEARCH_NOTES_LIBRARY:
+            self._open_research_notes_library()
             return
         if key == RESEARCH_NOTES_RECENT:
             self._show_recent_research_notes()

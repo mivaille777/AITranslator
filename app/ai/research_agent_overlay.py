@@ -16,19 +16,20 @@ from app.ai.research_quick_actions import (
     ResearchNoteToast,
     SelectionQuickActionBar,
 )
-from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
+from app.overlay.context_menu import OVERLAY_THEMES
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
 from app.ui.design_tokens import ICON, MOTION, RADIUS, SPACING
+from app.ui.svg_icons import svg_icon
 
 
 RESEARCH_NOTES_LIBRARY = "research_notes_library"
 RESEARCH_NOTES_RECENT = "research_notes_recent"
 
 _RESEARCH_ACTION_SPECS = (
-    (RESEARCH_NOTE_SAVE, "加入研究笔记", "记"),
-    (RESEARCH_NOTES_LIBRARY, "研究笔记库", "库"),
-    (RESEARCH_NOTES_RECENT, "最近研究笔记", "簿"),
+    (RESEARCH_NOTE_SAVE, "加入研究笔记", "note"),
+    (RESEARCH_NOTES_LIBRARY, "研究笔记库", "library"),
+    (RESEARCH_NOTES_RECENT, "最近研究笔记", "history"),
 )
 
 
@@ -101,12 +102,12 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         menu.addSeparator()
         palette = OVERLAY_THEMES[self._theme_name]
         action_index = getattr(self.context_menu, "_actions", None)
-        for key, label, glyph in _RESEARCH_ACTION_SPECS:
+        for key, label, icon_name in _RESEARCH_ACTION_SPECS:
             action = QAction(label, menu)
             action.setObjectName(
                 f"OverlayContext{key.title().replace('_', '')}Action"
             )
-            action.setIcon(symbol_icon(glyph, palette["text"], size=ICON.md))
+            action.setIcon(svg_icon(icon_name, palette["text"], size=ICON.md))
             action.triggered.connect(
                 lambda _checked=False, action_key=key: (
                     self.context_menu.action_requested.emit(action_key, None)
@@ -171,10 +172,10 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         if not actions:
             return
         palette = OVERLAY_THEMES[self._theme_name]
-        for key, _label, glyph in _RESEARCH_ACTION_SPECS:
+        for key, _label, icon_name in _RESEARCH_ACTION_SPECS:
             action = actions.get(key)
             if action is not None:
-                action.setIcon(symbol_icon(glyph, palette["text"], size=ICON.md))
+                action.setIcon(svg_icon(icon_name, palette["text"], size=ICON.md))
 
     def _apply_header_style(self, palette: dict[str, str]) -> None:
         """Keep interactive chrome opaque enough to read over white papers/PDFs."""

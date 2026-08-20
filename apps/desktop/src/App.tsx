@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { getBrowserPage, getBrowserSelection, getBrowserStatus } from "./api/browser"
@@ -89,6 +89,59 @@ function App() {
   const browserSelection = browserSelectionQuery.data?.selection ?? null
   const browserPage = browserPageQuery.data?.page ?? null
 
+  const translateBrowserSelection = useCallback(
+    async (selection: BrowserSelection) => {
+      const contextId = selection.selection_id
+      lastAutoSelectionId.current = contextId
+      setAutoTranslating(true)
+
+      void showOverlayLoading({
+        context_id: contextId,
+        source_text: selection.text,
+        source_language: sourceLanguage,
+        target_language: targetLanguage,
+      }).catch(() => undefined)
+
+      try {
+        const result = await translateText({
+          source_text: selection.text,
+          source_language: sourceLanguage,
+          target_language: targetLanguage,
+        })
+        if (lastAutoSelectionId.current !== contextId) return
+
+        setTranslation(result)
+        setTranslationError("")
+        void presentOverlay({
+          context_id: contextId,
+          source_text: result.source_text,
+          translated_text: result.translated_text,
+          source_language: result.source_language,
+          target_language: result.target_language,
+          provider: result.provider,
+        }).catch(() => undefined)
+      } catch (error) {
+        if (lastAutoSelectionId.current !== contextId) return
+
+        const message = error instanceof Error ? error.message : "Translation failed."
+        setTranslation(null)
+        setTranslationError(message)
+        void showOverlayError({
+          context_id: contextId,
+          source_text: selection.text,
+          source_language: sourceLanguage,
+          target_language: targetLanguage,
+          message,
+        }).catch(() => undefined)
+      } finally {
+        if (lastAutoSelectionId.current === contextId) {
+          setAutoTranslating(false)
+        }
+      }
+    },
+    [sourceLanguage, targetLanguage],
+  )
+
   useEffect(() => {
     if (!followBrowserSelection || !browserSelection) return
     if (browserSelection.selection_id === lastSelectionId.current) return
@@ -100,57 +153,12 @@ function App() {
 
     if (!autoTranslateSelection) return
     void translateBrowserSelection(browserSelection)
-  }, [browserSelection, followBrowserSelection, autoTranslateSelection])
-
-  async function translateBrowserSelection(selection: BrowserSelection) {
-    const contextId = selection.selection_id
-    lastAutoSelectionId.current = contextId
-    setAutoTranslating(true)
-
-    void showOverlayLoading({
-      context_id: contextId,
-      source_text: selection.text,
-      source_language: sourceLanguage,
-      target_language: targetLanguage,
-    }).catch(() => undefined)
-
-    try {
-      const result = await translateText({
-        source_text: selection.text,
-        source_language: sourceLanguage,
-        target_language: targetLanguage,
-      })
-      if (lastAutoSelectionId.current !== contextId) return
-
-      setTranslation(result)
-      setTranslationError("")
-      void presentOverlay({
-        context_id: contextId,
-        source_text: result.source_text,
-        translated_text: result.translated_text,
-        source_language: result.source_language,
-        target_language: result.target_language,
-        provider: result.provider,
-      }).catch(() => undefined)
-    } catch (error) {
-      if (lastAutoSelectionId.current !== contextId) return
-
-      const message = error instanceof Error ? error.message : "Translation failed."
-      setTranslation(null)
-      setTranslationError(message)
-      void showOverlayError({
-        context_id: contextId,
-        source_text: selection.text,
-        source_language: sourceLanguage,
-        target_language: targetLanguage,
-        message,
-      }).catch(() => undefined)
-    } finally {
-      if (lastAutoSelectionId.current === contextId) {
-        setAutoTranslating(false)
-      }
-    }
-  }
+  }, [
+    autoTranslateSelection,
+    browserSelection,
+    followBrowserSelection,
+    translateBrowserSelection,
+  ])
 
   const backendState: BackendState = healthQuery.isPending
     ? "checking"

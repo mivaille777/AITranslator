@@ -25,6 +25,11 @@ from app.overlay.context_menu import symbol_icon
 MESSAGE_COPY_FEEDBACK_MILLISECONDS = 1200
 CHAT_WHEEL_SCROLL_STEP = 54
 MESSAGE_COPY_ICON_SIZE = 17
+CHAT_PANEL_MIN_HEIGHT = 220
+CHAT_PANEL_MAX_HEIGHT = 680
+CHAT_MESSAGES_MIN_HEIGHT = 92
+CHAT_MESSAGES_MAX_HEIGHT = 500
+CHAT_BOTTOM_THRESHOLD = 28
 
 
 class ChatInput(QPlainTextEdit):
@@ -40,7 +45,7 @@ class ChatInput(QPlainTextEdit):
 
 
 class OverlayChatPanel(QWidget):
-    """A bounded reading-assistant chat surface with fixed input controls."""
+    """A bounded reading-assistant chat surface with adaptive transcript height."""
 
     message_submitted = Signal(str)
     clear_requested = Signal()
@@ -50,14 +55,16 @@ class OverlayChatPanel(QWidget):
         super().__init__(parent)
         self.setObjectName("OverlayChatPanel")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.setMinimumHeight(300)
-        self.setMaximumHeight(430)
+        self.setMinimumHeight(CHAT_PANEL_MIN_HEIGHT)
+        self.setMaximumHeight(CHAT_PANEL_MAX_HEIGHT)
         self._message_rows: list[QWidget] = []
         self._context_expanded = False
         self._palette: dict[str, str] = {}
+        self._follow_tail = True
+        self._programmatic_scroll = False
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(2, 2, 2, 2)
+        root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(7)
 
         top = QHBoxLayout()
@@ -111,7 +118,8 @@ class OverlayChatPanel(QWidget):
         self.messages_scroll.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
-        self.messages_scroll.setMinimumHeight(140)
+        self.messages_scroll.setMinimumHeight(CHAT_MESSAGES_MIN_HEIGHT)
+        self.messages_scroll.setMaximumHeight(CHAT_MESSAGES_MAX_HEIGHT)
         self.messages_scroll.verticalScrollBar().setSingleStep(CHAT_WHEEL_SCROLL_STEP)
 
         self.messages_content = QWidget()
@@ -122,6 +130,15 @@ class OverlayChatPanel(QWidget):
         self.messages_layout.addStretch(1)
         self.messages_scroll.setWidget(self.messages_content)
         root.addWidget(self.messages_scroll, 1)
+
+        self.jump_to_bottom_button = QToolButton(self.messages_scroll.viewport())
+        self.jump_to_bottom_button.setObjectName("OverlayChatJumpToBottomButton")
+        self.jump_to_bottom_button.setText("↓")
+        self.jump_to_bottom_button.setToolTip("跳转到最新内容")
+        self.jump_to_bottom_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.jump_to_bottom_button.setFixedSize(34, 34)
+        self.jump_to_bottom_button.hide()
+        self.jump_to_bottom_button.clicked.connect(self._jump_to_bottom)
 
         self.status_label = QLabel("")
         self.status_label.setObjectName("OverlayChatStatus")
@@ -158,6 +175,11 @@ class OverlayChatPanel(QWidget):
         self.close_button.clicked.connect(self.close_requested)
         self.context_button.toggled.connect(self._toggle_context)
 
+        scroll_bar = self.messages_scroll.verticalScrollBar()
+        scroll_bar.valueChanged.connect(self._handle_scroll_value_changed)
+        scroll_bar.rangeChanged.connect(self._handle_scroll_range_changed)
+        self.messages_scroll.viewport().installEventFilter(self)
+
         # Wheel events over labels/rows normally stop at those widgets. Route
         # them to the conversation scrollbar so the entire AI reading surface
         # scrolls naturally without forcing the pointer onto the scrollbar.
@@ -174,10 +196,22 @@ class OverlayChatPanel(QWidget):
     def message_count(self) -> int:
         return len(self._message_rows)
 
+    @property
+    def follow_tail(self) -> bool:
+        """Whether new AI output should remain pinned to the latest content."""
+
+        return self._follow_tail
+
     def _install_message_wheel_proxy(self, widget: QWidget) -> None:
         widget.installEventFilter(self)
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if watched is self.messages_scroll.viewport() and event.type() in {
+            QEvent.Type.Resize,
+            QEvent.Type.Show,
+        }:
+            QTimer.singleShot(0, self._position_jump_to_bottom_button)
+
         if event.type() == QEvent.Type.Wheel and watched is not self.input_edit:
             bar = self.messages_scroll.verticalScrollBar()
             if bar.maximum() > bar.minimum():
@@ -232,6 +266,9 @@ class OverlayChatPanel(QWidget):
         self._message_rows.clear()
         self.status_label.hide()
         self.status_label.clear()
+        self._follow_tail = True
+        self.jump_to_bottom_button.hide()
+        QTimer.singleShot(0, self.refresh_adaptive_height)
 
     def set_messages(self, messages: tuple[ChatMessage, ...]) -> None:
         self.clear_messages()
@@ -305,7 +342,8 @@ class OverlayChatPanel(QWidget):
 
         self.messages_layout.insertWidget(self.messages_layout.count() - 1, row)
         self._message_rows.append(row)
-        QTimer.singleShot(0, self._scroll_to_bottom)
+        QTimer.singleShot(0, self.refresh_adaptive_height)
+        QTimer.singleShot(0, self._scroll_after_content_change)
 
     def _update_message_copy_icon(self, button: QToolButton) -> None:
         palette = self._palette
@@ -346,9 +384,100 @@ class OverlayChatPanel(QWidget):
             # The row may have been removed while the feedback timer was active.
             return
 
+    def _is_near_bottom(self) -> bool:
+        bar = self.messages_scroll.verticalScrollBar()
+        return bar.maximum() - bar.value() <= CHAT_BOTTOM_THRESHOLD
+
+    def _handle_scroll_value_changed(self, _value: int) -> None:
+        if self._programmatic_scroll:
+            return
+        self._follow_tail = self._is_near_bottom()
+        self._update_jump_to_bottom_visibility()
+
+    def _handle_scroll_range_changed(self, _minimum: int, _maximum: int) -> None:
+        QTimer.singleShot(0, self._sync_scroll_after_range_change)
+
+    def _sync_scroll_after_range_change(self) -> None:
+        if self._follow_tail:
+            self._scroll_to_bottom()
+        else:
+            self._update_jump_to_bottom_visibility()
+
+    def _scroll_after_content_change(self) -> None:
+        if self._follow_tail:
+            self._scroll_to_bottom()
+        else:
+            self._update_jump_to_bottom_visibility()
+
     def _scroll_to_bottom(self) -> None:
         bar = self.messages_scroll.verticalScrollBar()
-        bar.setValue(bar.maximum())
+        self._programmatic_scroll = True
+        try:
+            bar.setValue(bar.maximum())
+        finally:
+            self._programmatic_scroll = False
+        self._follow_tail = True
+        self._update_jump_to_bottom_visibility()
+
+    def _jump_to_bottom(self) -> None:
+        self._scroll_to_bottom()
+
+    def _update_jump_to_bottom_visibility(self) -> None:
+        bar = self.messages_scroll.verticalScrollBar()
+        should_show = bool(
+            bar.maximum() > bar.minimum()
+            and not self._follow_tail
+            and not self._is_near_bottom()
+        )
+        self.jump_to_bottom_button.setVisible(should_show)
+        if should_show:
+            self._position_jump_to_bottom_button()
+            self.jump_to_bottom_button.raise_()
+
+    def _position_jump_to_bottom_button(self) -> None:
+        viewport = self.messages_scroll.viewport()
+        margin = 10
+        x = max(margin, viewport.width() - self.jump_to_bottom_button.width() - margin)
+        y = max(margin, viewport.height() - self.jump_to_bottom_button.height() - margin)
+        self.jump_to_bottom_button.move(x, y)
+
+    def refresh_adaptive_height(self, maximum_height: int | None = None) -> int:
+        """Fit short chats and cap long chats so overflow becomes internal scroll."""
+
+        try:
+            cap = int(maximum_height) if maximum_height is not None else CHAT_PANEL_MAX_HEIGHT
+        except (TypeError, ValueError):
+            cap = CHAT_PANEL_MAX_HEIGHT
+        cap = max(CHAT_PANEL_MIN_HEIGHT, min(CHAT_PANEL_MAX_HEIGHT, cap))
+
+        self.messages_layout.invalidate()
+        self.messages_layout.activate()
+        self.messages_content.updateGeometry()
+        content_height = max(0, self.messages_content.sizeHint().height())
+
+        reserved = 132
+        context_card = getattr(self, "reading_context_card", None)
+        if context_card is not None and context_card.isVisible():
+            reserved += max(0, context_card.sizeHint().height()) + 6
+        elif self.context_preview.isVisible():
+            reserved += max(0, self.context_preview.sizeHint().height()) + 6
+        if self.status_label.isVisible():
+            reserved += max(0, self.status_label.sizeHint().height()) + 4
+
+        available_messages = max(CHAT_MESSAGES_MIN_HEIGHT, cap - reserved)
+        target_messages = max(CHAT_MESSAGES_MIN_HEIGHT, content_height + 8)
+        target_messages = min(
+            target_messages,
+            CHAT_MESSAGES_MAX_HEIGHT,
+            available_messages,
+        )
+        self.messages_scroll.setMinimumHeight(target_messages)
+        self.messages_scroll.setMaximumHeight(target_messages)
+        self.setMinimumHeight(CHAT_PANEL_MIN_HEIGHT)
+        self.setMaximumHeight(cap)
+        self.updateGeometry()
+        self._position_jump_to_bottom_button()
+        return min(cap, max(CHAT_PANEL_MIN_HEIGHT, self.sizeHint().height()))
 
     def set_busy(self, busy: bool) -> None:
         active = bool(busy)
@@ -361,6 +490,7 @@ class OverlayChatPanel(QWidget):
         elif self.status_label.text() == "AI 正在回答…":
             self.status_label.clear()
             self.status_label.hide()
+        QTimer.singleShot(0, self.refresh_adaptive_height)
         if not active:
             self.input_edit.setFocus()
 
@@ -368,32 +498,40 @@ class OverlayChatPanel(QWidget):
         self.set_busy(False)
         self.status_label.setText(str(message).strip() or "AI 请求失败。")
         self.status_label.show()
+        QTimer.singleShot(0, self.refresh_adaptive_height)
 
     def focus_input(self) -> None:
         self.input_edit.setFocus()
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         self._palette = dict(palette)
+        chrome_background = palette.get("chrome_background", palette["menu_background"])
+        chrome_border = palette.get("chrome_border", palette["border"])
+        chrome_hover = palette.get("chrome_hover", palette["hover"])
+        chrome_text = palette.get("chrome_text", palette["text"])
+        chrome_muted = palette.get("chrome_muted_text", palette["muted_text"])
         self.setStyleSheet(
             f"""
             QWidget#OverlayChatPanel {{
-                background: transparent;
-                color: {palette['text']};
+                background-color: {chrome_background};
+                color: {chrome_text};
+                border: 1px solid {chrome_border};
+                border-radius: 11px;
             }}
             QLabel#OverlayChatTitle {{
-                color: {palette['text']};
+                color: {chrome_text};
                 font-weight: 600;
             }}
             QLabel#OverlayChatIdentity,
             QLabel#OverlayChatUserRole {{
-                color: {palette['muted_text']};
+                color: {chrome_muted};
             }}
             QLabel#OverlayChatAssistantRole {{
                 color: {palette['accent']};
                 font-weight: 600;
             }}
             QLabel#OverlayChatMessageBody {{
-                color: {palette['text']};
+                color: {chrome_text};
                 background: transparent;
                 padding: 1px 0px 4px 0px;
             }}
@@ -404,15 +542,15 @@ class OverlayChatPanel(QWidget):
                 padding: 2px;
             }}
             QToolButton#OverlayChatMessageCopyButton:hover {{
-                background-color: {palette['hover']};
-                border-color: {palette['border']};
+                background-color: {chrome_hover};
+                border-color: {chrome_border};
             }}
             QToolButton#OverlayChatContextButton,
             QToolButton#OverlayChatClearButton,
             QToolButton#OverlayChatCloseButton {{
-                color: {palette['text']};
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['border']};
+                color: {chrome_text};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 6px;
                 padding: 5px 8px;
             }}
@@ -420,12 +558,24 @@ class OverlayChatPanel(QWidget):
             QToolButton#OverlayChatClearButton:hover,
             QToolButton#OverlayChatCloseButton:hover {{
                 border-color: {palette['accent']};
-                background-color: {palette['hover']};
+                background-color: {chrome_hover};
+            }}
+            QToolButton#OverlayChatJumpToBottomButton {{
+                color: {chrome_text};
+                background-color: {chrome_background};
+                border: 1px solid {palette['accent']};
+                border-radius: 17px;
+                font-size: 18px;
+                font-weight: 600;
+            }}
+            QToolButton#OverlayChatJumpToBottomButton:hover {{
+                background-color: {chrome_hover};
+                border-color: {chrome_text};
             }}
             QLabel#OverlayChatContextPreview {{
-                color: {palette['muted_text']};
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['border']};
+                color: {chrome_muted};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 6px;
                 padding: 7px;
             }}
@@ -437,12 +587,12 @@ class OverlayChatPanel(QWidget):
                 background: transparent;
             }}
             QLabel#OverlayChatStatus {{
-                color: {palette['muted_text']};
+                color: {chrome_muted};
             }}
             QPlainTextEdit#OverlayChatInput {{
-                color: {palette['text']};
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['border']};
+                color: {chrome_text};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 7px;
                 padding: 7px;
             }}
@@ -450,9 +600,9 @@ class OverlayChatPanel(QWidget):
                 border-color: {palette['accent']};
             }}
             QPushButton#OverlayChatSendButton {{
-                color: {palette['text']};
-                background-color: {palette['hover']};
-                border: 1px solid {palette['border']};
+                color: {chrome_text};
+                background-color: {chrome_hover};
+                border: 1px solid {chrome_border};
                 border-radius: 7px;
             }}
             QPushButton#OverlayChatSendButton:hover {{
@@ -464,7 +614,7 @@ class OverlayChatPanel(QWidget):
                 margin: 2px 0px;
             }}
             QScrollBar::handle:vertical {{
-                background: {palette['border']};
+                background: {chrome_border};
                 min-height: 24px;
                 border-radius: 3px;
             }}
@@ -486,6 +636,11 @@ class OverlayChatPanel(QWidget):
 
 
 __all__ = [
+    "CHAT_BOTTOM_THRESHOLD",
+    "CHAT_MESSAGES_MAX_HEIGHT",
+    "CHAT_MESSAGES_MIN_HEIGHT",
+    "CHAT_PANEL_MAX_HEIGHT",
+    "CHAT_PANEL_MIN_HEIGHT",
     "CHAT_WHEEL_SCROLL_STEP",
     "ChatInput",
     "MESSAGE_COPY_FEEDBACK_MILLISECONDS",

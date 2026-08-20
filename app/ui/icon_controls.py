@@ -113,7 +113,9 @@ class _MenuChevronOverlay(QObject):
 
     Existing managed-chat controls are already QToolButtons. Keeping them in
     place preserves all menus/signals while removing both the legacy ``▾`` text
-    suffix and Qt's platform-dependent native menu indicator.
+    suffix and Qt's platform-dependent native menu indicator. The overlay is a
+    decoration only: it must never change the width contract owned by the
+    parent header layout.
     """
 
     def __init__(
@@ -136,6 +138,12 @@ class _MenuChevronOverlay(QObject):
         self._label.show()
         button.installEventFilter(self)
         button.setProperty("aiTransMenuChevron", True)
+
+        # QSS padding participates in Qt's size hint calculation. Preserve the
+        # existing min/max width budget so adding a visual chevron cannot turn
+        # a 76px font control into a wider toolbar item.
+        minimum_width = button.minimumWidth()
+        maximum_width = button.maximumWidth()
         button.setStyleSheet(
             button.styleSheet()
             + f"""
@@ -149,12 +157,21 @@ class _MenuChevronOverlay(QObject):
             }}
             """
         )
+        button.setMinimumWidth(minimum_width)
+        button.setMaximumWidth(maximum_width)
         self._strip_legacy_suffix()
         self._refresh()
 
     def set_colors(self, color: str, disabled_color: str) -> None:
         self._color = str(color)
         self._disabled_color = str(disabled_color)
+        self._strip_legacy_suffix()
+        self._refresh()
+
+    def normalize_text(self) -> None:
+        """Remove any legacy dropdown glyph reintroduced by product text sync."""
+
+        self._strip_legacy_suffix()
         self._refresh()
 
     def _strip_legacy_suffix(self) -> None:
@@ -212,6 +229,14 @@ def attach_menu_chevron(
     button._aitrans_menu_chevron = overlay  # type: ignore[attr-defined]
 
 
+def normalize_menu_chevron(button: QToolButton) -> None:
+    """Normalize text after a model/font label update without touching layout."""
+
+    existing = getattr(button, "_aitrans_menu_chevron", None)
+    if isinstance(existing, _MenuChevronOverlay):
+        existing.normalize_text()
+
+
 __all__ = [
     "ICON_BUTTON_COMPACT",
     "ICON_BUTTON_COMPOSER",
@@ -221,4 +246,5 @@ __all__ = [
     "attach_menu_chevron",
     "configure_icon_button",
     "icon_button_stylesheet",
+    "normalize_menu_chevron",
 ]

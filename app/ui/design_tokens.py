@@ -95,6 +95,8 @@ class LayoutTokens:
     menu_item_min_width: int = 150
     menu_visible_items: int = 6
     quick_action_compact_width: int = 300
+    chat_model_min_width: int = 118
+    chat_model_max_width: int = 168
 
 
 @dataclass(frozen=True, slots=True)

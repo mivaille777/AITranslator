@@ -96,17 +96,30 @@ def svg_source(name: object, color: object = "#F8FAFC") -> str:
 
 @lru_cache(maxsize=256)
 def _render_cached(name: str, color: str, size: int) -> QIcon:
+    """Rasterize one vector icon without double-applying device scaling.
+
+    The pixmap is painted while its DPR is still 1.0, using physical pixels as
+    painter coordinates. Only after painting do we mark the 2x backing store as
+    a high-DPI pixmap. Setting DPR before QSvgRenderer.render() makes QPainter
+    scale its logical coordinates and caused the SVG to be rendered at roughly
+    twice the backing-store size, clipping every icon to a corner fragment.
+    """
+
     logical_size = max(ICON.xs, int(size))
     scale = 2
     pixel_size = logical_size * scale
     renderer = QSvgRenderer(QByteArray(svg_source(name, color).encode("utf-8")))
     pixmap = QPixmap(pixel_size, pixel_size)
     pixmap.fill(Qt.GlobalColor.transparent)
-    pixmap.setDevicePixelRatio(float(scale))
+
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     renderer.render(painter, QRectF(0, 0, pixel_size, pixel_size))
     painter.end()
+
+    # Apply DPR after rasterization. The physical backing store remains 2x,
+    # while Qt exposes the intended logical icon size to buttons and menus.
+    pixmap.setDevicePixelRatio(float(scale))
     return QIcon(pixmap)
 
 

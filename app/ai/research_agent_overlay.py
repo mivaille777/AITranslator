@@ -11,6 +11,7 @@ from app.ai.desktop_agent_overlay import (
     DesktopAgentOverlayWindow,
 )
 from app.ai.research_quick_actions import (
+    QUICK_ACTION_COMPACT_WIDTH,
     RESEARCH_NOTE_SAVE,
     ResearchNoteToast,
     SelectionQuickActionBar,
@@ -90,6 +91,10 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         self._sync_selection_quick_actions()
         self._resize_to_content(animate=False)
 
+    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        self._sync_selection_quick_actions()
+
     def _install_research_actions(self) -> None:
         menu = self.context_menu.ai_menu
         menu.addSeparator()
@@ -151,6 +156,9 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         bar = getattr(self, "_selection_quick_actions", None)
         if bar is None:
             return
+        # Use the top-level card width, which is stable and user meaningful.
+        # The child bar can report a transient tiny width during Qt layout.
+        bar.set_compact(self.width() < QUICK_ACTION_COMPACT_WIDTH)
         has_source = bool(str(getattr(self, "_source_text", "") or "").strip())
         surface_available = bool(
             has_source

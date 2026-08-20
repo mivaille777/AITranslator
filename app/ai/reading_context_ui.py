@@ -109,6 +109,12 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
     def reading_chat_context(self) -> ChatContext:
         return self._reading_chat_context
 
+    def append_message(self, role, text: str) -> None:
+        """Apply the current independent chat font to every newly-created row."""
+
+        super().append_message(role, text)
+        self.set_display_font_size(self.display_font_size)
+
     def set_context(self, source_text: str, translated_text: str = "") -> None:
         """Update plain context without leaking metadata from another conversation."""
 

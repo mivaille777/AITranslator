@@ -14,7 +14,7 @@ def _window(qtbot) -> AdaptiveResearchAgentOverlayWindow:
     return window
 
 
-def test_chat_header_budgets_model_and_font_controls_separately(qtbot) -> None:
+def test_chat_header_budgets_model_and_secondary_controls_separately(qtbot) -> None:
     window = _window(qtbot)
     window.resize(744, 560)
     window.open_chat(
@@ -24,12 +24,22 @@ def test_chat_header_budgets_model_and_font_controls_separately(qtbot) -> None:
     qtbot.wait(50)
 
     panel = window.chat_panel
+    overflow = window._chat_overflow_button
+
     assert panel.model_button.maximumWidth() <= 168
     assert panel.font_button.width() == 76
-    assert panel.model_button.geometry().right() < panel.clear_button.geometry().left()
-    assert panel.clear_button.geometry().right() < panel.font_button.geometry().left()
-    assert panel.font_button.geometry().right() < panel.delete_chat_button.geometry().left()
     assert "…" in panel.model_button.text()
+
+    # Font / Clear / Delete remain alive for controller compatibility, but the
+    # production header now exposes them through the single More menu instead
+    # of assigning three permanent geometry slots.
+    assert panel.font_button.isHidden()
+    assert panel.clear_button.isHidden()
+    assert panel.delete_chat_button.isHidden()
+
+    assert overflow is not None
+    assert not overflow.isHidden()
+    assert panel.model_button.geometry().right() < overflow.geometry().left()
 
 
 def test_chat_resize_does_not_scale_translation_typography(qtbot) -> None:

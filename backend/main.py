@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,6 +14,9 @@ DEV_ORIGINS = [
     "http://tauri.localhost",
     "https://tauri.localhost",
 ]
+
+DEFAULT_API_HOST = "127.0.0.1"
+DEFAULT_API_PORT = 8766
 
 
 def create_app() -> FastAPI:
@@ -37,7 +42,9 @@ app = create_app()
 def main() -> None:
     import uvicorn
 
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=8765, reload=False)
+    host = os.getenv("AITRANS_API_HOST", DEFAULT_API_HOST)
+    port = int(os.getenv("AITRANS_API_PORT", str(DEFAULT_API_PORT)))
+    uvicorn.run("backend.main:app", host=host, port=port, reload=False)
 
 
 if __name__ == "__main__":

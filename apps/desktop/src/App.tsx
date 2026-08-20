@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 
 import { getHealth } from "./api/health"
+import { API_BASE_URL } from "./api/client"
 import { desktop } from "./desktop"
 
 type BackendState = "checking" | "connected" | "offline"
@@ -51,7 +52,7 @@ function App() {
             <dd className="font-medium text-slate-900">
               {backendState === "checking" && "Checking…"}
               {backendState === "connected" && `${serviceName} · Connected`}
-              {backendState === "offline" && "Offline · start Python API on :8765"}
+              {backendState === "offline" && `Offline · start Python API at ${API_BASE_URL}`}
             </dd>
           </div>
         </dl>

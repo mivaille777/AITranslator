@@ -35,7 +35,12 @@ QUICK_ACTION_SPECS: tuple[QuickActionSpec, ...] = (
 
 
 class SelectionQuickActionBar(QFrame):
-    """One-row Academic Companion affordance for the current selection."""
+    """One-row Academic Companion affordance for the current selection.
+
+    Compact mode is controlled by the owning Overlay's stable outer width. The
+    bar deliberately does not infer mode from its own transient layout width,
+    which can be tiny during Qt construction/offscreen layout passes.
+    """
 
     action_requested = Signal(str)
 
@@ -84,17 +89,11 @@ class SelectionQuickActionBar(QFrame):
                 button.setText(spec.compact_label if resolved and spec.compact_label else spec.label)
                 button.setMinimumWidth(34 if resolved else 0)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        self.set_compact(self.width() < QUICK_ACTION_COMPACT_WIDTH)
-
     def set_source_available(self, available: bool) -> None:
         enabled = bool(available)
         self.setVisible(enabled)
         for button in self._buttons.values():
             button.setEnabled(enabled)
-        if enabled:
-            self.set_compact(self.width() < QUICK_ACTION_COMPACT_WIDTH)
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         self.setStyleSheet(

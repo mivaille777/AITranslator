@@ -8,6 +8,7 @@ from typing import Any
 from app.infrastructure.config import ConfigManager
 from app.models.selection import SelectedText, SelectionContext
 from app.selection.base import SelectionProvider
+from app.selection.browser_pdf_provider import BrowserPdfSelectionProvider
 from app.selection.clipboard_provider import ClipboardSelectionProvider
 from app.selection.errors import SelectionError
 from app.selection.uia_provider import (
@@ -34,6 +35,7 @@ class SelectionManager:
         provider: SelectionProvider | None = None,
         *,
         word_provider: SelectionProvider | None = None,
+        browser_pdf_provider: SelectionProvider | None = None,
         uia_provider: SelectionProvider | None = None,
         clipboard_provider: SelectionProvider | None = None,
         config_manager: ConfigManager | Any | None = None,
@@ -42,6 +44,7 @@ class SelectionManager:
         self._provider_override = provider
         if provider is not None:
             self.native_providers: tuple[SelectionProvider, ...] = (provider,)
+            self.automatic_native_providers: tuple[SelectionProvider, ...] = (provider,)
             self.clipboard_provider: SelectionProvider | None = None
             self.providers: tuple[SelectionProvider, ...] = (provider,)
         else:
@@ -59,12 +62,26 @@ class SelectionManager:
                 if uia_provider is not None
                 else UIASelectionProvider(timeout_seconds=uia_timeout_seconds)
             )
+            resolved_browser_pdf = (
+                browser_pdf_provider
+                if browser_pdf_provider is not None
+                else BrowserPdfSelectionProvider()
+            )
             resolved_clipboard = (
                 clipboard_provider
                 if clipboard_provider is not None
                 else ClipboardSelectionProvider()
             )
+            # Preserve the legacy native/full provider tuples for explicit and
+            # hotkey selection. The browser/PDF retry tier is automatic-only:
+            # it needs the frozen mouse-up SelectionContext to decide whether
+            # it is applicable and must never introduce clipboard behavior.
             self.native_providers = (resolved_word, resolved_uia)
+            self.automatic_native_providers = (
+                resolved_word,
+                resolved_browser_pdf,
+                resolved_uia,
+            )
             self.clipboard_provider = resolved_clipboard
             self.providers = (*self.native_providers, resolved_clipboard)
 
@@ -93,7 +110,7 @@ class SelectionManager:
         """Return selection without clipboard writes or synthetic keyboard input."""
 
         return self._capture_from(
-            self.native_providers,
+            self.automatic_native_providers,
             context=context,
             mode="native",
         )

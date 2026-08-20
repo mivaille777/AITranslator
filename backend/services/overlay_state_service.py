@@ -16,6 +16,12 @@ class OverlayState:
     target_language: str = "zh-CN"
     provider: str = ""
     message: str = ""
+    resource_url: str = ""
+    resource_title: str = ""
+    section_heading: str = ""
+    context_before: str = ""
+    context_after: str = ""
+    source_kind: str = "browser_selection"
 
 
 class OverlayStateService:
@@ -36,6 +42,12 @@ class OverlayStateService:
         source_text: str,
         source_language: str,
         target_language: str,
+        resource_url: str = "",
+        resource_title: str = "",
+        section_heading: str = "",
+        context_before: str = "",
+        context_after: str = "",
+        source_kind: str = "browser_selection",
     ) -> OverlayState:
         with self._lock:
             self._state = OverlayState(
@@ -47,6 +59,12 @@ class OverlayStateService:
                 source_language=source_language,
                 target_language=target_language,
                 message="Translating…",
+                resource_url=resource_url,
+                resource_title=resource_title,
+                section_heading=section_heading,
+                context_before=context_before,
+                context_after=context_after,
+                source_kind=source_kind,
             )
             return self._state
 
@@ -59,12 +77,19 @@ class OverlayStateService:
         source_language: str,
         target_language: str,
         provider: str,
+        resource_url: str = "",
+        resource_title: str = "",
+        section_heading: str = "",
+        context_before: str = "",
+        context_after: str = "",
+        source_kind: str = "browser_selection",
     ) -> OverlayState:
         with self._lock:
             if self._state.context_id and context_id != self._state.context_id:
                 return self._state
+            current = self._state
             self._state = OverlayState(
-                revision=self._state.revision + 1,
+                revision=current.revision + 1,
                 visible=True,
                 phase="ready",
                 context_id=context_id,
@@ -73,6 +98,12 @@ class OverlayStateService:
                 source_language=source_language,
                 target_language=target_language,
                 provider=provider,
+                resource_url=resource_url or current.resource_url,
+                resource_title=resource_title or current.resource_title,
+                section_heading=section_heading or current.section_heading,
+                context_before=context_before or current.context_before,
+                context_after=context_after or current.context_after,
+                source_kind=source_kind or current.source_kind,
             )
             return self._state
 
@@ -84,12 +115,19 @@ class OverlayStateService:
         source_language: str,
         target_language: str,
         message: str,
+        resource_url: str = "",
+        resource_title: str = "",
+        section_heading: str = "",
+        context_before: str = "",
+        context_after: str = "",
+        source_kind: str = "browser_selection",
     ) -> OverlayState:
         with self._lock:
             if self._state.context_id and context_id != self._state.context_id:
                 return self._state
+            current = self._state
             self._state = OverlayState(
-                revision=self._state.revision + 1,
+                revision=current.revision + 1,
                 visible=True,
                 phase="error",
                 context_id=context_id,
@@ -97,6 +135,12 @@ class OverlayStateService:
                 source_language=source_language,
                 target_language=target_language,
                 message=message or "Translation failed",
+                resource_url=resource_url or current.resource_url,
+                resource_title=resource_title or current.resource_title,
+                section_heading=section_heading or current.section_heading,
+                context_before=context_before or current.context_before,
+                context_after=context_after or current.context_after,
+                source_kind=source_kind or current.source_kind,
             )
             return self._state
 

@@ -30,7 +30,24 @@ def _response(state: OverlayState) -> OverlayStateResponse:
         target_language=state.target_language,
         provider=state.provider,
         message=state.message,
+        resource_url=state.resource_url,
+        resource_title=state.resource_title,
+        section_heading=state.section_heading,
+        context_before=state.context_before,
+        context_after=state.context_after,
+        source_kind=state.source_kind,
     )
+
+
+def _reading_kwargs(payload: OverlayLoadingRequest | OverlayPresentRequest | OverlayErrorRequest) -> dict[str, str]:
+    return {
+        "resource_url": payload.resource_url,
+        "resource_title": payload.resource_title,
+        "section_heading": payload.section_heading,
+        "context_before": payload.context_before,
+        "context_after": payload.context_after,
+        "source_kind": payload.source_kind,
+    }
 
 
 @router.get("", response_model=OverlayStateResponse)
@@ -49,6 +66,7 @@ def overlay_loading(
             source_text=payload.source_text,
             source_language=payload.source_language,
             target_language=payload.target_language,
+            **_reading_kwargs(payload),
         )
     )
 
@@ -66,6 +84,7 @@ def overlay_present(
             source_language=payload.source_language,
             target_language=payload.target_language,
             provider=payload.provider,
+            **_reading_kwargs(payload),
         )
     )
 
@@ -82,6 +101,7 @@ def overlay_error(
             source_language=payload.source_language,
             target_language=payload.target_language,
             message=payload.message,
+            **_reading_kwargs(payload),
         )
     )
 

@@ -66,9 +66,18 @@ export interface BrowserPageEnvelope {
   page: BrowserPage | null
 }
 
+export interface ReadingContextFields {
+  resource_url: string
+  resource_title: string
+  section_heading: string
+  context_before: string
+  context_after: string
+  source_kind: string
+}
+
 export type OverlayPhase = "hidden" | "loading" | "ready" | "error"
 
-export interface OverlayStateResponse {
+export interface OverlayStateResponse extends ReadingContextFields {
   revision: number
   visible: boolean
   phase: OverlayPhase
@@ -81,7 +90,7 @@ export interface OverlayStateResponse {
   message: string
 }
 
-export interface OverlayLoadingRequest {
+export interface OverlayLoadingRequest extends Partial<ReadingContextFields> {
   context_id: string
   source_text: string
   source_language: string
@@ -93,10 +102,61 @@ export interface OverlayPresentRequest extends OverlayLoadingRequest {
   provider: string
 }
 
-export interface OverlayErrorRequest {
+export interface OverlayErrorRequest extends Partial<ReadingContextFields> {
   context_id: string
   source_text: string
   source_language: string
   target_language: string
   message: string
+}
+
+export type QuickActionKey =
+  | "ai_polish"
+  | "reading_context_translate"
+  | "reading_explain"
+  | "reading_summarize"
+  | "reading_section_role"
+
+export interface QuickActionRequest extends ReadingContextFields {
+  action: QuickActionKey
+  source_text: string
+  translated_text: string
+  source_language: string
+  target_language: string
+  style?: string
+  request_id?: number
+}
+
+export interface QuickActionResponse {
+  action: QuickActionKey
+  output_text: string
+  provider: string
+  model: string
+  request_id: number
+}
+
+export interface QuickActionStatusResponse {
+  available: boolean
+  provider: string
+  model: string
+  detail: string
+}
+
+export interface ResearchNoteSaveRequest extends ReadingContextFields {
+  source_text: string
+  translated_text: string
+  source_language: string
+  target_language: string
+  ai_content?: string
+  ai_action?: string
+  user_note?: string
+  conversation_id?: string
+}
+
+export interface ResearchNoteSaveResponse {
+  note_id: string
+  created: boolean
+  display_title: string
+  excerpt: string
+  updated_at: string
 }

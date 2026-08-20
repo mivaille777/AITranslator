@@ -4,6 +4,8 @@ from threading import Lock
 
 from backend.services.browser_context_service import BrowserContextService
 from backend.services.overlay_state_service import OverlayStateService
+from backend.services.quick_action_service import QuickActionService
+from backend.services.research_note_service import ResearchNoteService
 from backend.services.translation_service import TranslationService
 
 _translation_service: TranslationService | None = None
@@ -12,6 +14,10 @@ _browser_context_service: BrowserContextService | None = None
 _browser_context_service_lock = Lock()
 _overlay_state_service: OverlayStateService | None = None
 _overlay_state_service_lock = Lock()
+_quick_action_service: QuickActionService | None = None
+_quick_action_service_lock = Lock()
+_research_note_service: ResearchNoteService | None = None
+_research_note_service_lock = Lock()
 
 
 def get_translation_service() -> TranslationService:
@@ -63,3 +69,34 @@ def get_overlay_state_service() -> OverlayStateService:
         if _overlay_state_service is None:
             _overlay_state_service = OverlayStateService()
         return _overlay_state_service
+
+
+def get_quick_action_service() -> QuickActionService:
+    global _quick_action_service
+    if _quick_action_service is not None:
+        return _quick_action_service
+
+    with _quick_action_service_lock:
+        if _quick_action_service is None:
+            _quick_action_service = QuickActionService()
+        return _quick_action_service
+
+
+def close_quick_action_service() -> None:
+    global _quick_action_service
+    with _quick_action_service_lock:
+        service = _quick_action_service
+        _quick_action_service = None
+    if service is not None:
+        service.close()
+
+
+def get_research_note_service() -> ResearchNoteService:
+    global _research_note_service
+    if _research_note_service is not None:
+        return _research_note_service
+
+    with _research_note_service_lock:
+        if _research_note_service is None:
+            _research_note_service = ResearchNoteService()
+        return _research_note_service

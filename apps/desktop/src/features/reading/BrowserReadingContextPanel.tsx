@@ -29,7 +29,7 @@ export default function BrowserReadingContextPanel({
   const heading = browserSelection?.heading || browserPage?.heading || ""
 
   return (
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

@@ -15,7 +15,7 @@ export default function TranslationWorkspace({
   }
 
   return (
-    <section className="mt-6 grid gap-6 lg:grid-cols-2">
+    <section className="grid gap-5 xl:grid-cols-2">
       <form
         className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
         onSubmit={handleSubmit}
@@ -142,8 +142,7 @@ export default function TranslationWorkspace({
           </div>
         </dl>
 
-        {(workspace.browserSelection?.context_before ||
-          workspace.browserSelection?.context_after) && (
+        {(workspace.browserSelection?.context_before || workspace.browserSelection?.context_after) && (
           <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Nearby context
@@ -153,9 +152,7 @@ export default function TranslationWorkspace({
                 workspace.browserSelection.context_before,
                 workspace.browserSelection.text,
                 workspace.browserSelection.context_after,
-              ]
-                .filter(Boolean)
-                .join(" ")}
+              ].filter(Boolean).join(" ")}
             </p>
           </div>
         )}

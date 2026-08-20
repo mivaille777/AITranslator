@@ -50,12 +50,15 @@ export default function OverlayPreferencesPanel() {
   }
 
   return (
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-sm font-semibold">Overlay behavior</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Native Tauri placement and interaction settings. The main window can always disable click-through.
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+            Native Overlay
+          </p>
+          <h2 className="mt-2 text-lg font-semibold text-slate-900">Placement and interaction</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+            These settings are handled through DesktopAdapter and Tauri window capabilities. The main workspace can always disable click-through.
           </p>
         </div>
 
@@ -68,7 +71,7 @@ export default function OverlayPreferencesPanel() {
         </button>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-[1.3fr_1fr_1fr_1fr]">
+      <div className="mt-5 grid gap-3 md:grid-cols-[1.3fr_1fr_1fr_1fr]">
         <label className="grid gap-1.5 text-xs font-medium text-slate-600">
           Position mode
           <select
@@ -77,9 +80,7 @@ export default function OverlayPreferencesPanel() {
             onChange={(event) => void apply({ positionMode: event.target.value as OverlayPositionMode })}
           >
             {positionOptions.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
+              <option key={value} value={value}>{label}</option>
             ))}
           </select>
         </label>

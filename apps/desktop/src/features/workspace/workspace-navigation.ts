@@ -1,0 +1,46 @@
+export type WorkspaceRoutePath =
+  | "/translation"
+  | "/reading"
+  | "/chat"
+  | "/research"
+  | "/settings"
+
+export interface WorkspaceRouteMeta {
+  path: WorkspaceRoutePath
+  label: string
+  description: string
+}
+
+export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
+  {
+    path: "/translation",
+    label: "Translation",
+    description: "Translate manual input or the latest browser selection.",
+  },
+  {
+    path: "/reading",
+    label: "Reading",
+    description: "Inspect the active page, selection, section, and nearby context.",
+  },
+  {
+    path: "/chat",
+    label: "AI Chat",
+    description: "Continue reasoning from a frozen reading or research context.",
+  },
+  {
+    path: "/research",
+    label: "Research",
+    description: "Browse recent Research Notes and reopen them as chat context.",
+  },
+  {
+    path: "/settings",
+    label: "Settings",
+    description: "Configure native overlay placement and interaction behavior.",
+  },
+] as const
+
+const fallbackRoute = workspaceRoutes[0]
+
+export function getWorkspaceRouteMeta(pathname: string): WorkspaceRouteMeta {
+  return workspaceRoutes.find((route) => route.path === pathname) ?? fallbackRoute
+}

@@ -2,7 +2,13 @@ const BRIDGE_URL = "http://127.0.0.1:8765/v1/selection";
 const BRIDGE_HEADER = "selection-v1";
 
 chrome.runtime.onMessage.addListener((message, sender) => {
-  if (!message || message.type !== "aitrans-selection" || !message.payload) {
+  if (!message || !message.payload) {
+    return;
+  }
+
+  const isSelection = message.type === "aitrans-selection";
+  const isPageContext = message.type === "aitrans-page-context";
+  if (!isSelection && !isPageContext) {
     return;
   }
 
@@ -10,7 +16,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
   const payload = {
     ...message.payload,
     version: 1,
-    type: "selection",
+    type: isSelection ? "selection" : "page",
     url: sender?.tab?.url || message.payload.url || "",
     title: sender?.tab?.title || message.payload.title || "",
     frame_url: frameUrl
@@ -25,7 +31,6 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     body: JSON.stringify(payload),
     cache: "no-store"
   }).catch(() => {
-    // The desktop app may be closed. Selection capture should remain silent
-    // and must never interfere with normal browser interaction.
+    // The desktop app may be closed. Browser interaction must stay unaffected.
   });
 });

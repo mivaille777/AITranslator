@@ -24,6 +24,7 @@ _CHAT_FONT_BUTTON_WIDTH = 76
 _CHAT_CLEAR_BUTTON_WIDTH = 48
 _CHAT_DELETE_BUTTON_WIDTH = 40
 _CHAT_MODEL_TEXT_LIMIT = 22
+_FINAL_REFLOW_DELAYS_MS = (0, 32, 96)
 
 
 def _trim(text: object, limit: int) -> str:
@@ -175,11 +176,114 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
     def reading_chat_context(self) -> ChatContext:
         return self._reading_chat_context
 
+    def _fit_message_rows_to_viewport(self) -> None:
+        """Bind transcript rows to the realized viewport before height measurement.
+
+        Qt can keep a stale Markdown QLabel height-for-width cache when a
+        streaming row is replaced by the final assistant row. Reapplying the
+        font invalidated that cache, which is why changing font size used to
+        make a clipped answer tail suddenly appear. Explicit row/body widths
+        make the final height deterministic without changing typography.
+        """
+
+        viewport_width = self.messages_scroll.viewport().width()
+        if viewport_width <= 16:
+            return
+        margins = self.messages_layout.contentsMargins()
+        available_width = max(
+            1,
+            viewport_width - margins.left() - margins.right(),
+        )
+        rows = list(self._message_rows)
+        streaming_row = getattr(self, "_streaming_row", None)
+        if streaming_row is not None:
+            rows.append(streaming_row)
+
+        for row in rows:
+            try:
+                row.setMinimumWidth(available_width)
+                row.setMaximumWidth(available_width)
+                row.setSizePolicy(
+                    QSizePolicy.Policy.Fixed,
+                    QSizePolicy.Policy.Preferred,
+                )
+                row_layout = row.layout()
+                inner_width = available_width
+                if row_layout is not None:
+                    inner_margins = row_layout.contentsMargins()
+                    inner_width = max(
+                        1,
+                        available_width
+                        - inner_margins.left()
+                        - inner_margins.right(),
+                    )
+                body = row.findChild(QLabel, "OverlayChatMessageBody")
+                if body is not None:
+                    body.setMinimumWidth(inner_width)
+                    body.setMaximumWidth(inner_width)
+                    body.setSizePolicy(
+                        QSizePolicy.Policy.Fixed,
+                        QSizePolicy.Policy.Preferred,
+                    )
+                    body.updateGeometry()
+                if row_layout is not None:
+                    row_layout.invalidate()
+                    row_layout.activate()
+                row.updateGeometry()
+            except RuntimeError:
+                continue
+
+        self.messages_layout.invalidate()
+        self.messages_layout.activate()
+        self.messages_content.updateGeometry()
+        QTimer.singleShot(0, self.refresh_adaptive_height)
+
+    def _schedule_final_transcript_reflow(self) -> None:
+        """Run bounded post-render passes while Qt settles Markdown geometry."""
+
+        for delay in _FINAL_REFLOW_DELAYS_MS:
+            QTimer.singleShot(delay, self._force_final_transcript_reflow)
+
+    def _force_final_transcript_reflow(self) -> None:
+        try:
+            self._fit_message_rows_to_viewport()
+            rows = list(self._message_rows)
+            streaming_row = getattr(self, "_streaming_row", None)
+            if streaming_row is not None:
+                rows.append(streaming_row)
+            for row in rows:
+                body = row.findChild(QLabel, "OverlayChatMessageBody")
+                if body is not None:
+                    body.updateGeometry()
+                row_layout = row.layout()
+                if row_layout is not None:
+                    row_layout.invalidate()
+                    row_layout.activate()
+                row.updateGeometry()
+            self.messages_layout.invalidate()
+            self.messages_layout.activate()
+            self.messages_content.updateGeometry()
+            self.refresh_adaptive_height()
+            self.stream_layout_changed.emit()
+            self._scroll_after_content_change()
+        except RuntimeError:
+            # The overlay may be closing while one of the bounded timers fires.
+            return
+
     def append_message(self, role, text: str) -> None:
-        """Apply the current independent chat font to every newly-created row."""
+        """Apply current chat font and finalize wrapped Markdown geometry."""
 
         super().append_message(role, text)
         self.set_display_font_size(self.display_font_size)
+        self._schedule_final_transcript_reflow()
+
+    def finish_streaming_reply(self, request_id: int, text: str) -> bool:
+        """Finalize a streamed answer only after its replacement row reflows."""
+
+        finished = super().finish_streaming_reply(request_id, text)
+        if finished:
+            self._schedule_final_transcript_reflow()
+        return finished
 
     def set_context(self, source_text: str, translated_text: str = "") -> None:
         """Update plain context without leaking metadata from another conversation."""

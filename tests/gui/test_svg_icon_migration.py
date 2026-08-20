@@ -2,9 +2,48 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QSize
+
 from app.ai.chat.models import ChatContext, ReadingContext
 from app.ai.reading_context_ui import ReadingContextChatPanel
-from app.ui.design_tokens import THEMES
+from app.ui.design_tokens import ICON, THEMES
+from app.ui.svg_icons import svg_icon
+
+
+def _opaque_bounds(pixmap) -> tuple[int, int, int, int]:
+    """Return the alpha bounding box of a rendered icon in physical pixels."""
+
+    image = pixmap.toImage()
+    xs: list[int] = []
+    ys: list[int] = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            if image.pixelColor(x, y).alpha() > 0:
+                xs.append(x)
+                ys.append(y)
+    assert xs and ys
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def test_svg_rasterization_preserves_viewbox_margins(qtbot) -> None:
+    """A high-DPI backing pixmap must not crop an enlarged SVG fragment."""
+
+    del qtbot  # The fixture guarantees a QApplication for QPixmap/QIcon.
+    logical_size = ICON.lg
+    pixmap = svg_icon("menu", "#60A5FA", size=logical_size).pixmap(
+        QSize(logical_size, logical_size)
+    )
+    left, top, right, bottom = _opaque_bounds(pixmap)
+
+    # The menu path lives at x=5..19 and y=7..17 in a 24px viewBox. Correct
+    # rasterization therefore leaves visible breathing room on every edge. The
+    # old DPR-before-paint implementation enlarged the SVG and clipped it at
+    # the right/bottom backing-store boundaries.
+    assert left > 0
+    assert top > 0
+    assert right < pixmap.width() - 1
+    assert bottom < pixmap.height() - 1
+    assert right - left >= pixmap.width() // 2
 
 
 def test_chat_primary_icon_buttons_do_not_depend_on_font_glyphs(qtbot) -> None:

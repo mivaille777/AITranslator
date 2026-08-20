@@ -24,12 +24,12 @@ def _source_label(source_kind: str) -> str:
     normalized = str(source_kind or "").strip().lower()
     if normalized == "browser_selection":
         return "Browser"
+    if "pdf" in normalized:
+        return "PDF"
     if "word" in normalized:
         return "Word"
     if "uia" in normalized:
         return "Desktop"
-    if "pdf" in normalized:
-        return "PDF"
     return "Reading"
 
 
@@ -99,8 +99,6 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         card_layout.addWidget(self.reading_context_details)
 
         root = self.layout()
-        # Header is index 0. Place Reading Context immediately after it so the
-        # evidence remains visible before the conversation transcript.
         if root is not None:
             root.insertWidget(1, self.reading_context_card)
 
@@ -113,7 +111,6 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
 
     def set_context(self, source_text: str, translated_text: str = "") -> None:
         super().set_context(source_text, translated_text)
-        # Preserve visible context even before browser/Word metadata arrives.
         current = self._reading_chat_context
         self.set_reading_context(
             ChatContext(
@@ -144,6 +141,7 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         if not has_context:
             self.reading_context_details.clear()
             self.reading_context_selection.clear()
+            QTimer.singleShot(0, self.refresh_adaptive_height)
             return
 
         source_name = _source_label(reading.source_kind)
@@ -177,21 +175,28 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         if not detail_lines:
             self.reading_context_expand.setChecked(False)
         self._toggle_reading_details(self.reading_context_expand.isChecked())
+        QTimer.singleShot(0, self.refresh_adaptive_height)
 
     def _toggle_reading_details(self, expanded: bool) -> None:
         self._reading_details_expanded = bool(expanded)
         has_details = bool(self.reading_context_details.text())
         self.reading_context_details.setVisible(self._reading_details_expanded and has_details)
         self.reading_context_expand.setText("⌃" if self._reading_details_expanded else "⌄")
+        QTimer.singleShot(0, self.refresh_adaptive_height)
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
+        chrome_background = palette.get("chrome_background", palette["menu_background"])
+        chrome_border = palette.get("chrome_border", palette["border"])
+        chrome_hover = palette.get("chrome_hover", palette["hover"])
+        chrome_text = palette.get("chrome_text", palette["text"])
+        chrome_muted = palette.get("chrome_muted_text", palette["muted_text"])
         self.setStyleSheet(
             self.styleSheet()
             + f"""
             QFrame#OverlayReadingContextCard {{
-                background-color: {palette['label_background']};
-                border: 1px solid {palette['border']};
+                background-color: {chrome_background};
+                border: 1px solid {chrome_border};
                 border-radius: 9px;
             }}
             QLabel#OverlayReadingContextSource {{
@@ -200,35 +205,37 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
                 font-weight: 600;
             }}
             QLabel#OverlayReadingContextTitle {{
-                color: {palette['text']};
+                color: {chrome_text};
                 font-weight: 600;
             }}
             QLabel#OverlayReadingContextMeta {{
-                color: {palette['muted_text']};
+                color: {chrome_muted};
                 font-size: 10px;
             }}
             QLabel#OverlayReadingContextSelection {{
-                color: {palette['text']};
+                color: {chrome_text};
                 background-color: transparent;
             }}
             QLabel#OverlayReadingContextDetails {{
-                color: {palette['muted_text']};
+                color: {chrome_muted};
                 background-color: transparent;
                 padding-top: 3px;
             }}
             QToolButton#OverlayReadingContextExpand {{
-                color: {palette['muted_text']};
+                color: {chrome_muted};
                 background-color: transparent;
                 border: 1px solid transparent;
                 border-radius: 6px;
             }}
             QToolButton#OverlayReadingContextExpand:hover:enabled {{
-                color: {palette['text']};
-                background-color: {palette['hover']};
-                border-color: {palette['border']};
+                color: {chrome_text};
+                background-color: {chrome_hover};
+                border-color: {chrome_border};
             }}
             """
         )
 
+
+from PySide6.QtCore import QTimer
 
 __all__ = ["ReadingContextChatPanel"]

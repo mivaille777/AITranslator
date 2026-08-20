@@ -87,25 +87,28 @@ def test_user_scroll_up_shows_jump_button_and_streaming_preserves_position(qtbot
 def test_follow_tail_tracks_new_stream_output_when_user_is_at_bottom(qtbot) -> None:
     panel = ReadingContextChatPanel()
     qtbot.addWidget(panel)
-    panel.resize(620, 340)
+    panel.resize(620, 320)
     panel.show()
 
-    # The pre-stream transcript is allowed to fit without a scrollbar. The
-    # actual contract is that once streaming creates overflow, a user who has
-    # never scrolled away remains pinned to the latest content.
-    for index in range(4):
-        panel.append_message(ChatRole.ASSISTANT, f"base {index}")
-    panel.refresh_adaptive_height(340)
-    panel._scroll_to_bottom()
-    assert panel.follow_tail
-
-    panel.begin_streaming_reply(7)
-    panel.update_streaming_reply(7, _multiline_text("streaming", 90))
+    # Reuse the deterministic overflow fixture above so this test measures the
+    # follow-tail contract rather than Qt offscreen font/layout variability.
+    for index in range(18):
+        panel.append_message(
+            ChatRole.ASSISTANT,
+            _multiline_text(f"base {index}", 8),
+        )
+    panel.refresh_adaptive_height(320)
     qtbot.waitUntil(
         lambda: panel.messages_scroll.verticalScrollBar().maximum() > 0,
         timeout=1500,
     )
-    qtbot.wait(50)
+    panel._scroll_to_bottom()
+    qtbot.wait(10)
+    assert panel.follow_tail
+
+    panel.begin_streaming_reply(7)
+    panel.update_streaming_reply(7, _multiline_text("streaming", 28))
+    qtbot.wait(100)
 
     bar = panel.messages_scroll.verticalScrollBar()
     assert panel.follow_tail

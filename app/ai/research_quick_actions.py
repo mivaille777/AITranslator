@@ -12,14 +12,21 @@ from app.models.reading_actions import (
     READING_EXPLAIN,
     READING_SUMMARIZE,
 )
-from app.ui.design_tokens import CONTROL, MOTION, RADIUS, SPACING, TYPOGRAPHY
+from app.ui.design_tokens import (
+    CONTROL,
+    LAYOUT,
+    MOTION,
+    RADIUS,
+    SPACING,
+    TYPOGRAPHY,
+)
 
 
 RESEARCH_NOTE_SAVE = "research_note_save"
 # The full Chinese labels comfortably fit the normal compact translation card.
 # Abbreviations are reserved for an intentionally/manual narrow surface rather
 # than transient construction widths reported by Qt.
-QUICK_ACTION_COMPACT_WIDTH = 300
+QUICK_ACTION_COMPACT_WIDTH = LAYOUT.quick_action_compact_width
 
 
 @dataclass(frozen=True, slots=True)

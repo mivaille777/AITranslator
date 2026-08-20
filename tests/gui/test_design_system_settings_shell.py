@@ -36,6 +36,9 @@ def test_settings_navigation_and_forms_use_design_tokens(qtbot) -> None:
     assert window.minimumWidth() == SETTINGS.navigation_minimum_width
     assert window.minimumHeight() == SETTINGS.minimum_height
     assert window.maximumHeight() == SETTINGS.maximum_height
+    assert window._settings_nav_list.count() == len(window._settings_category_names)
+    for row in range(window._settings_nav_list.count()):
+        assert not window._settings_nav_list.item(row).icon().isNull()
 
     form = window.translation_group.layout()
     assert isinstance(form, QFormLayout)

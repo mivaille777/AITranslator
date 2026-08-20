@@ -15,7 +15,10 @@ from app.models.reading_actions import (
 
 
 RESEARCH_NOTE_SAVE = "research_note_save"
-QUICK_ACTION_COMPACT_WIDTH = 420
+# The full Chinese labels comfortably fit the normal compact translation card.
+# Abbreviations are reserved for an intentionally/manual narrow surface rather
+# than transient construction widths reported by Qt.
+QUICK_ACTION_COMPACT_WIDTH = 300
 
 
 @dataclass(frozen=True, slots=True)

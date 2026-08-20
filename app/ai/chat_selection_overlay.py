@@ -8,11 +8,11 @@ from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
 
 from app.ai.chat.models import ChatMessage
-from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
 from app.ai.chat_overlay import (
     ConversationalAIOverlayManager,
     ConversationalAIOverlayWindow,
 )
+from app.ai.reading_context_ui import ReadingContextChatPanel
 from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
 from app.overlay.drag_handle import OverlayDragHandle
 from app.overlay.positioning import PositionManager
@@ -32,7 +32,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         old_panel.setParent(None)
         old_panel.deleteLater()
 
-        self._chat_panel = InteractiveManagedChatPanel(self)
+        self._chat_panel = ReadingContextChatPanel(self)
         self._chat_panel.hide()
         self._layout.addWidget(self._chat_panel)
         self._chat_panel.message_submitted.connect(
@@ -107,7 +107,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._resize_to_content()
 
     @property
-    def chat_panel(self) -> InteractiveManagedChatPanel:
+    def chat_panel(self) -> ReadingContextChatPanel:
         return self._chat_panel
 
     @property
@@ -250,6 +250,13 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         QTimer.singleShot(0, self._chat_panel.focus_input)
         return True
 
+    def set_chat_reading_context(self, context: object) -> None:
+        setter = getattr(self._chat_panel, "set_reading_context", None)
+        if callable(setter):
+            setter(context)
+            if self._chat_open:
+                self._resize_to_content(animate=False)
+
     def set_chat_conversations(
         self,
         items: tuple[dict[str, object], ...] | list[dict[str, object]],
@@ -319,6 +326,11 @@ class SelectionCaptureConversationalAIOverlayManager(ConversationalAIOverlayMana
         if not callable(inserter):
             return False
         return bool(inserter(text))
+
+    def set_chat_reading_context(self, context: object) -> None:
+        setter = getattr(self.window, "set_chat_reading_context", None)
+        if callable(setter):
+            setter(context)
 
     def set_chat_conversations(
         self,

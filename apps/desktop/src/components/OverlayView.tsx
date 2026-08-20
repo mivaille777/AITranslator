@@ -53,12 +53,15 @@ export default function OverlayView() {
   })
 
   const state = overlayQuery.data
+  const overlayVisible = state?.visible ?? false
+  const overlayContextId = state?.context_id ?? ""
+  const overlayRevision = state?.revision ?? 0
 
   useEffect(() => subscribeOverlayPreferences(setPreferences), [])
 
   useEffect(() => {
     let disposed = false
-    let unlisten = () => undefined
+    let unlisten: () => void = () => {}
 
     void desktop.overlay
       .onMoved((position) => {
@@ -104,11 +107,10 @@ export default function OverlayView() {
   }, [])
 
   useEffect(() => {
-    if (!state) return
     let cancelled = false
 
     async function syncNativeWindow() {
-      if (!state?.visible) {
+      if (!overlayVisible) {
         lastPlacedContextRef.current = ""
         await desktop.overlay.hide()
         return
@@ -118,12 +120,12 @@ export default function OverlayView() {
       await desktop.overlay.setAlwaysOnTop(currentPreferences.alwaysOnTop)
       await desktop.overlay.setClickThrough(currentPreferences.clickThrough)
 
-      if (lastPlacedContextRef.current !== state.context_id) {
+      if (lastPlacedContextRef.current !== overlayContextId) {
         await desktop.overlay.place(
           currentPreferences.positionMode,
           currentPreferences.customPosition,
         )
-        lastPlacedContextRef.current = state.context_id
+        lastPlacedContextRef.current = overlayContextId
       }
 
       if (!cancelled) await desktop.overlay.show()
@@ -133,7 +135,7 @@ export default function OverlayView() {
     return () => {
       cancelled = true
     }
-  }, [state?.context_id, state?.revision, state?.visible])
+  }, [overlayContextId, overlayRevision, overlayVisible])
 
   async function handleCopy() {
     if (!state?.translated_text) return

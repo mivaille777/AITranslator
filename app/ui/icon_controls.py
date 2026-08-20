@@ -141,9 +141,16 @@ class _MenuChevronOverlay(QObject):
 
         # QSS padding participates in Qt's size hint calculation. Preserve the
         # existing min/max width budget so adding a visual chevron cannot turn
-        # a 76px font control into a wider toolbar item.
+        # a 76px font control into a wider toolbar item. Fixed-width controls
+        # need an explicit resize as well: once a widget is hidden, Qt can keep
+        # stale geometry even after min/max constraints are restored.
         minimum_width = button.minimumWidth()
         maximum_width = button.maximumWidth()
+        self._fixed_width = (
+            minimum_width
+            if minimum_width > 0 and minimum_width == maximum_width
+            else None
+        )
         button.setStyleSheet(
             button.styleSheet()
             + f"""
@@ -159,6 +166,7 @@ class _MenuChevronOverlay(QObject):
         )
         button.setMinimumWidth(minimum_width)
         button.setMaximumWidth(maximum_width)
+        self._restore_width_contract()
         self._strip_legacy_suffix()
         self._refresh()
 
@@ -166,13 +174,24 @@ class _MenuChevronOverlay(QObject):
         self._color = str(color)
         self._disabled_color = str(disabled_color)
         self._strip_legacy_suffix()
+        self._restore_width_contract()
         self._refresh()
 
     def normalize_text(self) -> None:
         """Remove any legacy dropdown glyph reintroduced by product text sync."""
 
         self._strip_legacy_suffix()
+        self._restore_width_contract()
         self._refresh()
+
+    def _restore_width_contract(self) -> None:
+        fixed_width = self._fixed_width
+        if fixed_width is None:
+            return
+        self._button.setMinimumWidth(fixed_width)
+        self._button.setMaximumWidth(fixed_width)
+        if self._button.width() != fixed_width:
+            self._button.resize(fixed_width, self._button.height())
 
     def _strip_legacy_suffix(self) -> None:
         text = self._button.text().rstrip()
@@ -184,6 +203,7 @@ class _MenuChevronOverlay(QObject):
             self._button.setText(text)
 
     def _refresh(self) -> None:
+        self._restore_width_contract()
         color = self._color if self._button.isEnabled() else self._disabled_color
         icon = svg_icon("chevron_down", color, size=self._size)
         self._label.setPixmap(icon.pixmap(QSize(self._size, self._size)))
@@ -200,9 +220,11 @@ class _MenuChevronOverlay(QObject):
                 QEvent.Type.Paint,
                 QEvent.Type.Resize,
                 QEvent.Type.Show,
+                QEvent.Type.Hide,
                 QEvent.Type.EnabledChange,
                 QEvent.Type.StyleChange,
             }:
+                self._restore_width_contract()
                 self._refresh()
         return False
 

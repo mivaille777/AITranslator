@@ -19,10 +19,12 @@ from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
 
 
+RESEARCH_NOTES_LIBRARY = "research_notes_library"
 RESEARCH_NOTES_RECENT = "research_notes_recent"
 
 _RESEARCH_ACTION_SPECS = (
     (RESEARCH_NOTE_SAVE, "加入研究笔记", "记"),
+    (RESEARCH_NOTES_LIBRARY, "研究笔记库", "库"),
     (RESEARCH_NOTES_RECENT, "最近研究笔记", "簿"),
 )
 
@@ -63,13 +65,28 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
             target_language,
             animate=animate,
         )
-        # OverlayWindow changes source/translation state through _set_content,
-        # but its generic menu has no knowledge of Stage-6 research actions.
-        # Refresh here so a newly displayed selection immediately enables
-        # Save Note and its direct quick-action affordance.
         if hasattr(self, "_context_menu"):
             self._sync_context_menu_state()
         self._sync_selection_quick_actions()
+
+    def show_translation(
+        self,
+        source_text: object | None,
+        translated_text: object | None,
+        source_language: object = "auto",
+        target_language: object = "zh-CN",
+    ) -> None:
+        super().show_translation(
+            source_text,
+            translated_text,
+            source_language,
+            target_language,
+        )
+        # The base content measurement runs before the quick row becomes
+        # visible. Reflow once after source availability is known so the row is
+        # never clipped below the translation card.
+        self._sync_selection_quick_actions()
+        self._resize_to_content(animate=False)
 
     def _install_research_actions(self) -> None:
         menu = self.context_menu.ai_menu
@@ -141,24 +158,19 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
             return
 
         has_source = bool(str(getattr(self, "_source_text", "") or "").strip())
-
-        # Stage 5 could rely on disabling the complete AI submenu when no
-        # source existed. Stage 6 deliberately keeps that submenu reachable so
-        # users can open recent notes. Therefore every source-bound action must
-        # now carry its own enabled state instead of inheriting the menu state.
         for action in getattr(self, "_reading_actions", {}).values():
             action.setEnabled(has_source)
 
         save_action = actions.get(RESEARCH_NOTE_SAVE)
         if save_action is not None:
             save_action.setEnabled(has_source)
-        recent_action = actions.get(RESEARCH_NOTES_RECENT)
-        if recent_action is not None:
-            recent_action.setEnabled(True)
+        for key in (RESEARCH_NOTES_LIBRARY, RESEARCH_NOTES_RECENT):
+            action = actions.get(key)
+            if action is not None:
+                action.setEnabled(True)
 
-        # Base set_ai_enabled() already keeps AI translate/polish disabled when
-        # source text is absent. Re-enable only the submenu container so the
-        # source-independent Recent Notes action remains reachable.
+        # Keep the submenu available even without a current selection because
+        # the library and recent-note views are source-independent.
         self.context_menu.ai_menu.setEnabled(True)
         self._sync_selection_quick_actions()
 
@@ -206,6 +218,7 @@ class ResearchAgentOverlayManager(DesktopAgentOverlayManager):
 
 __all__ = [
     "RESEARCH_NOTE_SAVE",
+    "RESEARCH_NOTES_LIBRARY",
     "RESEARCH_NOTES_RECENT",
     "ResearchAgentOverlayManager",
     "ResearchAgentOverlayWindow",

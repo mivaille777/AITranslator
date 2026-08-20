@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QToolButton,
+    QVBoxLayout,
+)
 
 from app.ai.chat.models import ChatContext, ReadingContext
 from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
@@ -11,6 +18,12 @@ from app.ai.chat_interaction_ui import InteractiveManagedChatPanel
 
 _CONTEXT_EXCERPT_LIMIT = 220
 _CONTEXT_DETAIL_LIMIT = 420
+_CHAT_MODEL_BUTTON_MIN_WIDTH = 118
+_CHAT_MODEL_BUTTON_MAX_WIDTH = 168
+_CHAT_FONT_BUTTON_WIDTH = 76
+_CHAT_CLEAR_BUTTON_WIDTH = 48
+_CHAT_DELETE_BUTTON_WIDTH = 40
+_CHAT_MODEL_TEXT_LIMIT = 22
 
 
 def _trim(text: object, limit: int) -> str:
@@ -33,6 +46,16 @@ def _source_label(source_kind: str) -> str:
     return "Reading"
 
 
+def _compact_model_label(provider: object, model: object) -> tuple[str, str]:
+    provider_text = str(provider or "").strip()
+    model_text = str(model or "").strip()
+    if provider_text and model_text:
+        full = f"{provider_text} · {model_text}"
+    else:
+        full = provider_text or model_text or "选择模型"
+    return _trim(full, _CHAT_MODEL_TEXT_LIMIT), full
+
+
 class ReadingContextChatPanel(InteractiveManagedChatPanel):
     """Managed chat that makes the model's active reading evidence visible."""
 
@@ -40,6 +63,7 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
         super().__init__(parent)
         self._reading_chat_context = ChatContext()
         self._reading_details_expanded = False
+        self._stabilize_chat_header()
 
         # Replace the legacy character-count control with a compact evidence
         # card. Keep the old widgets alive for compatibility but out of sight.
@@ -104,6 +128,48 @@ class ReadingContextChatPanel(InteractiveManagedChatPanel):
 
         self.reading_context_expand.toggled.connect(self._toggle_reading_details)
         self.reading_context_card.hide()
+
+    def _stabilize_chat_header(self) -> None:
+        """Give variable model text and fixed actions independent layout budgets."""
+
+        root = self.layout()
+        top_item = root.itemAt(0) if root is not None else None
+        top = top_item.layout() if top_item is not None else None
+        if not isinstance(top, QHBoxLayout):
+            return
+
+        top.setSpacing(6)
+        self.title_label.setMinimumWidth(62)
+        self.title_label.setSizePolicy(
+            QSizePolicy.Policy.Fixed,
+            QSizePolicy.Policy.Fixed,
+        )
+
+        model_index = top.indexOf(self.model_button)
+        if model_index >= 0:
+            # The previous implementation made the model selector the only
+            # expanding item. Its long text could then visually collide with
+            # Clear/font controls. Put flexible space before a bounded model
+            # selector instead so the right-hand action cluster stays stable.
+            top.setStretch(model_index, 0)
+            top.insertStretch(model_index, 1)
+
+        self.model_button.setMinimumWidth(_CHAT_MODEL_BUTTON_MIN_WIDTH)
+        self.model_button.setMaximumWidth(_CHAT_MODEL_BUTTON_MAX_WIDTH)
+        self.model_button.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Fixed,
+        )
+        self.font_button.setFixedWidth(_CHAT_FONT_BUTTON_WIDTH)
+        self.clear_button.setFixedWidth(_CHAT_CLEAR_BUTTON_WIDTH)
+        self.delete_chat_button.setFixedWidth(_CHAT_DELETE_BUTTON_WIDTH)
+
+    def set_identity(self, provider: str, model: str) -> None:
+        """Elide long model names inside their own bounded toolbar control."""
+
+        compact, full = _compact_model_label(provider, model)
+        self.model_button.setText(f"{compact} ▾")
+        self.model_button.setToolTip(full if full != "选择模型" else "切换当前对话使用的模型")
 
     @property
     def reading_chat_context(self) -> ChatContext:

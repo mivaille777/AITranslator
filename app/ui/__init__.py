@@ -18,6 +18,16 @@ from app.ui.design_tokens import (
     size_class,
     theme_tokens,
 )
+from app.ui.icon_controls import (
+    ICON_BUTTON_COMPACT,
+    ICON_BUTTON_COMPOSER,
+    ICON_BUTTON_TOOLBAR,
+    IconButtonMetrics,
+    apply_icon_button_palette,
+    attach_menu_chevron,
+    configure_icon_button,
+    icon_button_stylesheet,
+)
 from app.ui.svg_icons import icon_names, svg_icon, svg_source
 
 if TYPE_CHECKING:
@@ -37,6 +47,10 @@ def __getattr__(name: str):
 __all__ = [
     "CONTROL",
     "ICON",
+    "ICON_BUTTON_COMPACT",
+    "ICON_BUTTON_COMPOSER",
+    "ICON_BUTTON_TOOLBAR",
+    "IconButtonMetrics",
     "LAYOUT",
     "MOTION",
     "RADIUS",
@@ -45,6 +59,10 @@ __all__ = [
     "THEMES",
     "TYPOGRAPHY",
     "SettingsWindow",
+    "apply_icon_button_palette",
+    "attach_menu_chevron",
+    "configure_icon_button",
+    "icon_button_stylesheet",
     "icon_names",
     "legacy_overlay_palette",
     "size_class",

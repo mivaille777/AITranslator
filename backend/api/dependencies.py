@@ -3,12 +3,15 @@ from __future__ import annotations
 from threading import Lock
 
 from backend.services.browser_context_service import BrowserContextService
+from backend.services.overlay_state_service import OverlayStateService
 from backend.services.translation_service import TranslationService
 
 _translation_service: TranslationService | None = None
 _translation_service_lock = Lock()
 _browser_context_service: BrowserContextService | None = None
 _browser_context_service_lock = Lock()
+_overlay_state_service: OverlayStateService | None = None
+_overlay_state_service_lock = Lock()
 
 
 def get_translation_service() -> TranslationService:
@@ -49,3 +52,14 @@ def close_browser_context_service() -> None:
         _browser_context_service = None
     if service is not None:
         service.close()
+
+
+def get_overlay_state_service() -> OverlayStateService:
+    global _overlay_state_service
+    if _overlay_state_service is not None:
+        return _overlay_state_service
+
+    with _overlay_state_service_lock:
+        if _overlay_state_service is None:
+            _overlay_state_service = OverlayStateService()
+        return _overlay_state_service

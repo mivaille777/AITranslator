@@ -4,12 +4,12 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { getBrowserPage, getBrowserSelection, getBrowserStatus } from "./api/browser"
 import { API_BASE_URL } from "./api/client"
 import { getHealth } from "./api/health"
+import { presentOverlay, showOverlayError, showOverlayLoading } from "./api/overlay"
 import { getTranslationStatus, translateText } from "./api/translation"
-import type { TranslationResponse } from "./api/types"
+import type { BrowserSelection, TranslationResponse } from "./api/types"
 import { desktop } from "./desktop"
 
 type BackendState = "checking" | "connected" | "offline"
-
 type LanguageOption = readonly [value: string, label: string]
 
 const sourceLanguages = [
@@ -34,7 +34,10 @@ function App() {
   const [translation, setTranslation] = useState<TranslationResponse | null>(null)
   const [translationError, setTranslationError] = useState("")
   const [followBrowserSelection, setFollowBrowserSelection] = useState(true)
+  const [autoTranslateSelection, setAutoTranslateSelection] = useState(true)
+  const [autoTranslating, setAutoTranslating] = useState(false)
   const lastSelectionId = useRef("")
+  const lastAutoSelectionId = useRef("")
 
   const healthQuery = useQuery({
     queryKey: ["health"],
@@ -60,7 +63,7 @@ function App() {
     queryKey: ["browser-selection"],
     queryFn: getBrowserSelection,
     enabled: healthQuery.isSuccess,
-    refetchInterval: 600,
+    refetchInterval: 500,
   })
 
   const browserPageQuery = useQuery({
@@ -93,7 +96,60 @@ function App() {
     setSourceText(browserSelection.text)
     setTranslation(null)
     setTranslationError("")
-  }, [browserSelection, followBrowserSelection])
+
+    if (!autoTranslateSelection) return
+    void translateBrowserSelection(browserSelection)
+  }, [browserSelection, followBrowserSelection, autoTranslateSelection])
+
+  async function translateBrowserSelection(selection: BrowserSelection) {
+    const contextId = selection.selection_id
+    lastAutoSelectionId.current = contextId
+    setAutoTranslating(true)
+
+    void showOverlayLoading({
+      context_id: contextId,
+      source_text: selection.text,
+      source_language: sourceLanguage,
+      target_language: targetLanguage,
+    }).catch(() => undefined)
+
+    try {
+      const result = await translateText({
+        source_text: selection.text,
+        source_language: sourceLanguage,
+        target_language: targetLanguage,
+      })
+      if (lastAutoSelectionId.current !== contextId) return
+
+      setTranslation(result)
+      setTranslationError("")
+      void presentOverlay({
+        context_id: contextId,
+        source_text: result.source_text,
+        translated_text: result.translated_text,
+        source_language: result.source_language,
+        target_language: result.target_language,
+        provider: result.provider,
+      }).catch(() => undefined)
+    } catch (error) {
+      if (lastAutoSelectionId.current !== contextId) return
+
+      const message = error instanceof Error ? error.message : "Translation failed."
+      setTranslation(null)
+      setTranslationError(message)
+      void showOverlayError({
+        context_id: contextId,
+        source_text: selection.text,
+        source_language: sourceLanguage,
+        target_language: targetLanguage,
+        message,
+      }).catch(() => undefined)
+    } finally {
+      if (lastAutoSelectionId.current === contextId) {
+        setAutoTranslating(false)
+      }
+    }
+  }
 
   const backendState: BackendState = healthQuery.isPending
     ? "checking"
@@ -142,6 +198,8 @@ function App() {
     setTranslation(null)
     setTranslationError("")
     lastSelectionId.current = browserSelection?.selection_id ?? ""
+    lastAutoSelectionId.current = ""
+    setAutoTranslating(false)
   }
 
   return (
@@ -151,13 +209,13 @@ function App() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Stage 2 · Translation + Browser Context
+                Stage 2 · Auto Translation Overlay
               </p>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight">
                 AITranslator WebReBuild
               </h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                React now consumes the deterministic translation service and the existing zero-keyboard browser selection bridge.
+                Browser selection now flows through FastAPI translation and into a dedicated Tauri overlay window.
               </p>
             </div>
 
@@ -189,7 +247,7 @@ function App() {
         </header>
 
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-semibold">Browser Reading Context</h2>
@@ -205,14 +263,18 @@ function App() {
               )}
             </div>
 
-            <label className="flex shrink-0 items-center gap-2 rounded-xl bg-slate-50 px-4 py-2.5 text-sm text-slate-700">
-              <input
-                type="checkbox"
+            <div className="flex flex-wrap gap-2">
+              <Toggle
+                label="Follow selection"
                 checked={followBrowserSelection}
-                onChange={(event) => setFollowBrowserSelection(event.target.checked)}
+                onChange={setFollowBrowserSelection}
               />
-              Follow browser selection
-            </label>
+              <Toggle
+                label={autoTranslating ? "Auto translating…" : "Auto translate + overlay"}
+                checked={autoTranslateSelection}
+                onChange={setAutoTranslateSelection}
+              />
+            </div>
           </div>
 
           {(browserSelection?.heading || browserPage?.heading) && (
@@ -328,7 +390,9 @@ function App() {
                 </p>
               ) : (
                 <p className="text-sm leading-6 text-slate-400">
-                  The translated text will appear here after the backend completes the request.
+                  {autoTranslating
+                    ? "The current browser selection is being translated…"
+                    : "The translated text will appear here after the backend completes the request."}
                 </p>
               )}
             </div>
@@ -365,6 +429,27 @@ function StatusRow({ label, value }: { label: string; value: string }) {
       <span className="text-slate-500">{label}</span>
       <span className="max-w-52 truncate font-medium capitalize text-slate-900">{value}</span>
     </div>
+  )
+}
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-2.5 text-sm text-slate-700">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      {label}
+    </label>
   )
 }
 

@@ -1,0 +1,91 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+
+from backend.api.dependencies import get_overlay_state_service
+from backend.models.overlay import (
+    OverlayErrorRequest,
+    OverlayLoadingRequest,
+    OverlayPresentRequest,
+    OverlayStateResponse,
+)
+from backend.services.overlay_state_service import OverlayState, OverlayStateService
+
+router = APIRouter(prefix="/api/overlay", tags=["overlay"])
+OverlayStateServiceDependency = Annotated[
+    OverlayStateService,
+    Depends(get_overlay_state_service),
+]
+
+
+def _response(state: OverlayState) -> OverlayStateResponse:
+    return OverlayStateResponse(
+        revision=state.revision,
+        visible=state.visible,
+        phase=state.phase,
+        context_id=state.context_id,
+        source_text=state.source_text,
+        translated_text=state.translated_text,
+        source_language=state.source_language,
+        target_language=state.target_language,
+        provider=state.provider,
+        message=state.message,
+    )
+
+
+@router.get("", response_model=OverlayStateResponse)
+def overlay_state(service: OverlayStateServiceDependency) -> OverlayStateResponse:
+    return _response(service.snapshot())
+
+
+@router.post("/loading", response_model=OverlayStateResponse)
+def overlay_loading(
+    payload: OverlayLoadingRequest,
+    service: OverlayStateServiceDependency,
+) -> OverlayStateResponse:
+    return _response(
+        service.show_loading(
+            context_id=payload.context_id,
+            source_text=payload.source_text,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
+        )
+    )
+
+
+@router.post("/present", response_model=OverlayStateResponse)
+def overlay_present(
+    payload: OverlayPresentRequest,
+    service: OverlayStateServiceDependency,
+) -> OverlayStateResponse:
+    return _response(
+        service.show_translation(
+            context_id=payload.context_id,
+            source_text=payload.source_text,
+            translated_text=payload.translated_text,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
+            provider=payload.provider,
+        )
+    )
+
+
+@router.post("/error", response_model=OverlayStateResponse)
+def overlay_error(
+    payload: OverlayErrorRequest,
+    service: OverlayStateServiceDependency,
+) -> OverlayStateResponse:
+    return _response(
+        service.show_error(
+            context_id=payload.context_id,
+            source_text=payload.source_text,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
+            message=payload.message,
+        )
+    )
+
+
+@router.post("/dismiss", response_model=OverlayStateResponse)
+def overlay_dismiss(service: OverlayStateServiceDependency) -> OverlayStateResponse:
+    return _response(service.dismiss())

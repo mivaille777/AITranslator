@@ -13,6 +13,7 @@ from backend.api.dependencies import (
     get_browser_context_service,
 )
 from backend.api.health import router as health_router
+from backend.api.overlay import router as overlay_router
 from backend.api.translation import router as translation_router
 
 DEV_ORIGINS = [
@@ -29,8 +30,7 @@ DEFAULT_API_PORT = 8766
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    browser_context = get_browser_context_service()
-    browser_context.start()
+    get_browser_context_service().start()
     try:
         yield
     finally:
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(translation_router)
     app.include_router(browser_context_router)
+    app.include_router(overlay_router)
     return app
 
 

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
 
 import App from './App'
+import OverlayView from './components/OverlayView'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -14,10 +15,13 @@ const queryClient = new QueryClient({
   },
 })
 
+const view = new URLSearchParams(window.location.search).get('view')
+const rootView = view === 'overlay' ? <OverlayView /> : <App />
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      {rootView}
     </QueryClientProvider>
   </StrictMode>,
 )

@@ -37,7 +37,7 @@ export interface BrowserBridgeStatusResponse {
   last_heading: string
 }
 
-export interface BrowserSelectionResponse {
+export interface BrowserSelection {
   selection_id: string
   text: string
   url: string
@@ -51,10 +51,10 @@ export interface BrowserSelectionResponse {
 }
 
 export interface BrowserSelectionEnvelope {
-  selection: BrowserSelectionResponse | null
+  selection: BrowserSelection | null
 }
 
-export interface BrowserPageResponse {
+export interface BrowserPage {
   page_id: string
   url: string
   title: string
@@ -63,5 +63,40 @@ export interface BrowserPageResponse {
 }
 
 export interface BrowserPageEnvelope {
-  page: BrowserPageResponse | null
+  page: BrowserPage | null
+}
+
+export type OverlayPhase = "hidden" | "loading" | "ready" | "error"
+
+export interface OverlayStateResponse {
+  revision: number
+  visible: boolean
+  phase: OverlayPhase
+  context_id: string
+  source_text: string
+  translated_text: string
+  source_language: string
+  target_language: string
+  provider: string
+  message: string
+}
+
+export interface OverlayLoadingRequest {
+  context_id: string
+  source_text: string
+  source_language: string
+  target_language: string
+}
+
+export interface OverlayPresentRequest extends OverlayLoadingRequest {
+  translated_text: string
+  provider: string
+}
+
+export interface OverlayErrorRequest {
+  context_id: string
+  source_text: string
+  source_language: string
+  target_language: string
+  message: string
 }

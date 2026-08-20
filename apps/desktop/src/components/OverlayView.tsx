@@ -34,6 +34,7 @@ export default function OverlayView() {
   const draggingRef = useRef(false)
   const pendingMoveRef = useRef<DesktopPoint | null>(null)
   const moveIdleTimerRef = useRef<number | null>(null)
+  const dragArmTimerRef = useRef<number | null>(null)
   const lastPlacedContextRef = useRef("")
 
   const overlayQuery = useQuery({
@@ -64,6 +65,10 @@ export default function OverlayView() {
         if (!draggingRef.current) return
         pendingMoveRef.current = position
 
+        if (dragArmTimerRef.current !== null) {
+          window.clearTimeout(dragArmTimerRef.current)
+          dragArmTimerRef.current = null
+        }
         if (moveIdleTimerRef.current !== null) {
           window.clearTimeout(moveIdleTimerRef.current)
         }
@@ -91,6 +96,9 @@ export default function OverlayView() {
       unlisten()
       if (moveIdleTimerRef.current !== null) {
         window.clearTimeout(moveIdleTimerRef.current)
+      }
+      if (dragArmTimerRef.current !== null) {
+        window.clearTimeout(dragArmTimerRef.current)
       }
     }
   }, [])
@@ -143,7 +151,19 @@ export default function OverlayView() {
     if ((event.target as HTMLElement).closest("button, [data-overlay-menu]")) return
 
     draggingRef.current = true
+    pendingMoveRef.current = null
     setMenuPosition(null)
+
+    if (dragArmTimerRef.current !== null) {
+      window.clearTimeout(dragArmTimerRef.current)
+    }
+    dragArmTimerRef.current = window.setTimeout(() => {
+      if (pendingMoveRef.current === null) {
+        draggingRef.current = false
+      }
+      dragArmTimerRef.current = null
+    }, 450)
+
     void desktop.overlay.startDragging()
   }
 
@@ -152,10 +172,13 @@ export default function OverlayView() {
     if (preferences.clickThrough) return
 
     const width = 220
-    const height = 340
+    const estimatedVisibleHeight = Math.min(244, window.innerHeight - 16)
     setMenuPosition({
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
+      y: Math.max(
+        8,
+        Math.min(event.clientY, window.innerHeight - estimatedVisibleHeight - 8),
+      ),
     })
   }
 
@@ -279,7 +302,7 @@ export default function OverlayView() {
       {menuPosition && (
         <div
           data-overlay-menu
-          className="fixed z-50 w-[220px] overflow-hidden rounded-xl border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
+          className="fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-xl border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
           style={{ left: menuPosition.x, top: menuPosition.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >

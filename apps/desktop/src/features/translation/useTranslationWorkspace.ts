@@ -11,6 +11,7 @@ import type {
   BrowserSelection,
   TranslationResponse,
 } from "../../api/types"
+import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import { resolveLanguageSwap } from "./translation-utils"
 
 export type BackendState = "checking" | "connected" | "offline"
@@ -56,37 +57,37 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
   const lastAutoSelectionId = useRef("")
 
   const healthQuery = useQuery({
-    queryKey: ["health"],
+    queryKey: queryKeys.health,
     queryFn: getHealth,
-    refetchInterval: 5_000,
+    refetchInterval: queryPolling.health,
   })
 
   const translationStatusQuery = useQuery({
-    queryKey: ["translation-status"],
+    queryKey: queryKeys.translation.status,
     queryFn: getTranslationStatus,
     enabled: healthQuery.isSuccess,
-    refetchInterval: 15_000,
+    refetchInterval: queryPolling.translationStatus,
   })
 
   const browserStatusQuery = useQuery({
-    queryKey: ["browser-status"],
+    queryKey: queryKeys.browser.status,
     queryFn: getBrowserStatus,
     enabled: healthQuery.isSuccess,
-    refetchInterval: 2_000,
+    refetchInterval: queryPolling.browserStatus,
   })
 
   const browserSelectionQuery = useQuery({
-    queryKey: ["browser-selection"],
+    queryKey: queryKeys.browser.selection,
     queryFn: getBrowserSelection,
     enabled: healthQuery.isSuccess,
-    refetchInterval: 500,
+    refetchInterval: queryPolling.browserSelection,
   })
 
   const browserPageQuery = useQuery({
-    queryKey: ["browser-page"],
+    queryKey: queryKeys.browser.page,
     queryFn: getBrowserPage,
     enabled: healthQuery.isSuccess,
-    refetchInterval: 2_000,
+    refetchInterval: queryPolling.browserPage,
   })
 
   const translationMutation = useMutation({

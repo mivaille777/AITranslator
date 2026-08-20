@@ -5,14 +5,18 @@ import { useNavigate } from "react-router-dom"
 import { createCompanionHandoff } from "../../api/companion"
 import { listResearchNotes } from "../../api/quick-actions"
 import type { ResearchNoteListItem } from "../../api/types"
+import { queryKeys, queryPolling } from "../../shared/query/query-keys"
+import { Badge } from "../../shared/ui/Badge"
+import { Button } from "../../shared/ui/Button"
+import { Card, CardContent, CardHeader } from "../../shared/ui/Card"
+import { EmptyState } from "../../shared/ui/EmptyState"
 
 export default function ResearchWorkspace() {
   const navigate = useNavigate()
   const notesQuery = useQuery({
-    queryKey: ["research-notes", "workspace"],
+    queryKey: queryKeys.research.notes(20),
     queryFn: () => listResearchNotes(20),
-    refetchInterval: 5_000,
-    retry: 1,
+    refetchInterval: queryPolling.researchNotes,
   })
 
   const reopenMutation = useMutation({
@@ -39,8 +43,8 @@ export default function ResearchWorkspace() {
 
   return (
     <div className="space-y-5">
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <Card>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
               Research Notes
@@ -52,52 +56,62 @@ export default function ResearchWorkspace() {
               Notes stay in the existing SQLite store. Opening one rebuilds a frozen Companion context and continues in AI Chat.
             </p>
           </div>
-          <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
-            Total <strong className="ml-1 text-slate-900">{notesQuery.data?.total ?? "—"}</strong>
-          </div>
-        </div>
-      </section>
+          <Badge className="self-start sm:self-auto">
+            Total · {notesQuery.data?.total ?? "—"}
+          </Badge>
+        </CardHeader>
+      </Card>
 
       {notesQuery.isPending ? (
-        <p className="rounded-2xl border border-slate-200 bg-white px-5 py-8 text-sm text-slate-400 shadow-sm">
-          Loading Research Notes…
-        </p>
+        <Card>
+          <CardContent className="pt-6 text-sm text-slate-400">
+            Loading Research Notes…
+          </CardContent>
+        </Card>
+      ) : notesQuery.isError ? (
+        <Card className="border-rose-200">
+          <CardContent className="pt-6 text-sm text-rose-700">
+            {notesQuery.error instanceof Error
+              ? notesQuery.error.message
+              : "Unable to load Research Notes."}
+          </CardContent>
+        </Card>
       ) : notes.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-          <NotebookText className="mx-auto text-slate-300" size={28} strokeWidth={1.5} />
-          <p className="mt-3 text-sm font-medium text-slate-700">No Research Notes yet</p>
-          <p className="mt-1 text-xs text-slate-400">Save a browser selection from the Overlay Quick Actions to start a research trail.</p>
-        </section>
+        <EmptyState
+          icon={<NotebookText size={28} strokeWidth={1.5} />}
+          title="No Research Notes yet"
+          description="Save a browser selection from the Overlay Quick Actions to start a research trail."
+        />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {notes.map((note) => (
-            <article key={note.note_id} className="flex min-h-56 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="min-w-0">
+            <Card key={note.note_id} className="flex min-h-56 flex-col">
+              <CardHeader className="pb-3">
                 <p className="truncate text-sm font-semibold text-slate-900">{note.display_title}</p>
                 {note.section_heading && (
                   <p className="mt-1 truncate text-xs text-slate-400">{note.section_heading}</p>
                 )}
-              </div>
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col">
+                <p className="line-clamp-5 text-sm leading-6 text-slate-600">{note.excerpt}</p>
 
-              <p className="mt-4 line-clamp-5 text-sm leading-6 text-slate-600">{note.excerpt}</p>
-
-              <div className="mt-auto pt-5">
-                {note.ai_action && (
-                  <span className="mb-3 inline-flex rounded-full bg-cyan-50 px-2.5 py-1 text-[10px] font-medium text-cyan-700">
-                    {note.ai_action}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  disabled={reopenMutation.isPending}
-                  className="flex w-full items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => reopenMutation.mutate(note)}
-                >
-                  Open in AI Chat
-                  <ArrowUpRight size={14} />
-                </button>
-              </div>
-            </article>
+                <div className="mt-auto pt-5">
+                  {note.ai_action && (
+                    <Badge tone="info" className="mb-3">
+                      {note.ai_action}
+                    </Badge>
+                  )}
+                  <Button
+                    className="w-full justify-between"
+                    disabled={reopenMutation.isPending}
+                    onClick={() => reopenMutation.mutate(note)}
+                  >
+                    Open in AI Chat
+                    <ArrowUpRight size={14} />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}

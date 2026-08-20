@@ -9,6 +9,7 @@ import ResearchWorkspace from "./features/research/ResearchWorkspace"
 import TranslationWorkspace from "./features/translation/TranslationWorkspace"
 import { useTranslationWorkspace } from "./features/translation/useTranslationWorkspace"
 import WorkspaceShell from "./features/workspace/WorkspaceShell"
+import WorkspaceRouteBoundary from "./shared/errors/WorkspaceRouteBoundary"
 
 function App() {
   const workspace = useTranslationWorkspace()
@@ -22,32 +23,34 @@ function App() {
       browserStatusChecking={workspace.browserStatusChecking}
     >
       <CompanionHandoffNavigator />
-      <Routes>
-        <Route path="/" element={<Navigate to="/translation" replace />} />
-        <Route
-          path="/translation"
-          element={(
-            <div className="space-y-5">
-              <BrowserReadingContextPanel
-                browserStatus={workspace.browserStatus}
-                browserSelection={workspace.browserSelection}
-                browserPage={workspace.browserPage}
-                followBrowserSelection={workspace.followBrowserSelection}
-                autoTranslateSelection={workspace.autoTranslateSelection}
-                autoTranslating={workspace.autoTranslating}
-                onFollowBrowserSelectionChange={workspace.setFollowBrowserSelection}
-                onAutoTranslateSelectionChange={workspace.setAutoTranslateSelection}
-              />
-              <TranslationWorkspace workspace={workspace} />
-            </div>
-          )}
-        />
-        <Route path="/reading" element={<ReadingWorkspace workspace={workspace} />} />
-        <Route path="/chat" element={<CompanionWorkspace />} />
-        <Route path="/research" element={<ResearchWorkspace />} />
-        <Route path="/settings" element={<OverlayPreferencesPanel />} />
-        <Route path="*" element={<Navigate to="/translation" replace />} />
-      </Routes>
+      <WorkspaceRouteBoundary>
+        <Routes>
+          <Route path="/" element={<Navigate to="/translation" replace />} />
+          <Route
+            path="/translation"
+            element={(
+              <div className="space-y-5">
+                <BrowserReadingContextPanel
+                  browserStatus={workspace.browserStatus}
+                  browserSelection={workspace.browserSelection}
+                  browserPage={workspace.browserPage}
+                  followBrowserSelection={workspace.followBrowserSelection}
+                  autoTranslateSelection={workspace.autoTranslateSelection}
+                  autoTranslating={workspace.autoTranslating}
+                  onFollowBrowserSelectionChange={workspace.setFollowBrowserSelection}
+                  onAutoTranslateSelectionChange={workspace.setAutoTranslateSelection}
+                />
+                <TranslationWorkspace workspace={workspace} />
+              </div>
+            )}
+          />
+          <Route path="/reading" element={<ReadingWorkspace workspace={workspace} />} />
+          <Route path="/chat" element={<CompanionWorkspace />} />
+          <Route path="/research" element={<ResearchWorkspace />} />
+          <Route path="/settings" element={<OverlayPreferencesPanel />} />
+          <Route path="*" element={<Navigate to="/translation" replace />} />
+        </Routes>
+      </WorkspaceRouteBoundary>
     </WorkspaceShell>
   )
 }

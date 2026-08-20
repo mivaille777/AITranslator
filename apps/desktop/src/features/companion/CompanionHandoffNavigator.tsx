@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "react-router-dom"
 
 import { getCompanionHandoff } from "../../api/companion"
+import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 
 export default function CompanionHandoffNavigator() {
   const navigate = useNavigate()
@@ -10,11 +11,10 @@ export default function CompanionHandoffNavigator() {
   const lastNavigatedHandoff = useRef("")
 
   const handoffQuery = useQuery({
-    queryKey: ["companion-handoff"],
+    queryKey: queryKeys.companion.handoff,
     queryFn: getCompanionHandoff,
-    refetchInterval: 650,
+    refetchInterval: queryPolling.companionHandoff,
     staleTime: 0,
-    retry: 1,
   })
 
   const handoffId = handoffQuery.data?.handoff?.handoff_id ?? ""

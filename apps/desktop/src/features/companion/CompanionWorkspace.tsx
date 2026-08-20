@@ -14,6 +14,10 @@ import type {
   CompanionChatRequest,
   CompanionHandoff,
 } from "../../api/types"
+import { queryKeys, queryPolling } from "../../shared/query/query-keys"
+import { Badge } from "../../shared/ui/Badge"
+import { Button, buttonClassName } from "../../shared/ui/Button"
+import { EmptyState } from "../../shared/ui/EmptyState"
 
 type SendVariables = {
   handoffId: string
@@ -28,17 +32,16 @@ export default function CompanionWorkspace() {
   const handoffIdRef = useRef("")
 
   const handoffQuery = useQuery({
-    queryKey: ["companion-handoff"],
+    queryKey: queryKeys.companion.handoff,
     queryFn: getCompanionHandoff,
-    refetchInterval: 650,
+    refetchInterval: queryPolling.companionHandoff,
     staleTime: 0,
-    retry: 1,
   })
 
   const chatStatusQuery = useQuery({
-    queryKey: ["companion-chat-status"],
+    queryKey: queryKeys.companion.chatStatus,
     queryFn: getCompanionChatStatus,
-    refetchInterval: 30_000,
+    refetchInterval: queryPolling.companionChatStatus,
     retry: 0,
   })
 
@@ -116,20 +119,20 @@ export default function CompanionWorkspace() {
 
   if (!handoff) {
     return (
-      <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-sm">
-        <p className="text-sm font-semibold text-slate-800">No active AI Chat context</p>
-        <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
-          Select text in the browser and choose AI Chat from the overlay, or reopen a saved Research Note. The selected text, translation, section, URL, and nearby context will be frozen into the conversation handoff.
-        </p>
-        <div className="mt-5 flex justify-center gap-2">
-          <Link to="/reading" className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-            Reading Context
-          </Link>
-          <Link to="/research" className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800">
-            Research Notes
-          </Link>
-        </div>
-      </section>
+      <EmptyState
+        title="No active AI Chat context"
+        description="Select text in the browser and choose AI Chat from the overlay, or reopen a saved Research Note. The selected text, translation, section, URL, and nearby context will be frozen into the conversation handoff."
+        actions={(
+          <>
+            <Link to="/reading" className={buttonClassName()}>
+              Reading Context
+            </Link>
+            <Link to="/research" className={buttonClassName({ variant: "primary" })}>
+              Research Notes
+            </Link>
+          </>
+        )}
+      />
     )
   }
 
@@ -144,23 +147,23 @@ export default function CompanionWorkspace() {
             </h2>
             {handoff.section_heading && <p className="mt-1 truncate text-xs text-slate-500">{handoff.section_heading}</p>}
           </div>
-          <button
-            type="button"
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-500 hover:text-slate-800"
+          <Button
+            size="xs"
             disabled={dismissMutation.isPending}
             onClick={() => dismissMutation.mutate(handoff.handoff_id)}
           >
             Clear
-          </button>
+          </Button>
         </div>
 
         <ContextPreview handoff={handoff} />
 
         {handoff.ai_content && (
           <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/70 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-700/70">
-              Quick Action{handoff.ai_action ? ` · ${handoff.ai_action}` : ""}
-            </p>
+            <div className="flex items-center gap-2">
+              <Badge tone="info">Quick Action</Badge>
+              {handoff.ai_action && <span className="text-[10px] text-cyan-700/70">{handoff.ai_action}</span>}
+            </div>
             <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">{handoff.ai_content}</p>
           </div>
         )}
@@ -226,13 +229,14 @@ export default function CompanionWorkspace() {
                 }
               }}
             />
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              size="md"
               disabled={!chatAvailable || !draft.trim() || chatMutation.isPending}
-              className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             >
               发送
-            </button>
+            </Button>
           </div>
           <p className="mt-2 text-[10px] text-slate-400">Enter 发送 · Shift+Enter 换行 · 当前历史仅保存在此 WebView 内</p>
         </form>

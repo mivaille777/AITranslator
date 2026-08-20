@@ -1,14 +1,14 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { getOverlayState } from "../api/overlay"
+import { queryKeys, queryPolling } from "../shared/query/query-keys"
 import OverlayQuickActions from "./OverlayQuickActions"
 
 export default function OverlayQuickActionDock() {
   const overlayQuery = useQuery({
-    queryKey: ["overlay-state"],
+    queryKey: queryKeys.overlay.state,
     queryFn: getOverlayState,
-    refetchInterval: 250,
-    retry: 1,
+    refetchInterval: queryPolling.overlayState,
     staleTime: 0,
   })
 

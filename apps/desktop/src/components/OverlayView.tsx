@@ -16,6 +16,7 @@ import {
   updateOverlayPreferences,
   type OverlayPreferences,
 } from "../desktop/overlay-preferences"
+import { queryKeys, queryPolling } from "../shared/query/query-keys"
 
 type MenuPosition = { x: number; y: number }
 
@@ -38,10 +39,9 @@ export default function OverlayView() {
   const lastPlacedContextRef = useRef("")
 
   const overlayQuery = useQuery({
-    queryKey: ["overlay-state"],
+    queryKey: queryKeys.overlay.state,
     queryFn: getOverlayState,
-    refetchInterval: 250,
-    retry: 1,
+    refetchInterval: queryPolling.overlayState,
     staleTime: 0,
   })
 

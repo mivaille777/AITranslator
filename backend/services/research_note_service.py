@@ -17,6 +17,8 @@ class ResearchNoteService:
         *,
         source_text: str,
         translated_text: str = "",
+        source_language: str = "auto",
+        target_language: str = "zh-CN",
         resource_url: str = "",
         resource_title: str = "",
         section_heading: str = "",
@@ -28,6 +30,10 @@ class ResearchNoteService:
         user_note: str = "",
         conversation_id: str = "",
     ) -> ResearchNoteSaveResult:
+        # Language fields are part of the shared reading-context HTTP contract.
+        # ResearchNoteStore does not persist them independently because the
+        # selected source/translation already carry the relevant language data.
+        _ = (source_language, target_language)
         context = ChatContext(
             source_text=source_text,
             translated_text=translated_text,

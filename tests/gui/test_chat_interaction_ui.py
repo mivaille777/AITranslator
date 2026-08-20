@@ -146,7 +146,9 @@ def test_message_surface_uses_opaque_theme_background_and_wraps_long_markdown(qt
     )
 
 
-def test_completed_long_reply_opens_at_its_beginning_instead_of_tail(qtbot) -> None:
+def test_completed_long_reply_follows_tail_when_user_stays_at_bottom(qtbot) -> None:
+    """A user who has not scrolled away should continue seeing the latest text."""
+
     panel = InteractiveManagedChatPanel()
     qtbot.addWidget(panel)
     panel.resize(520, 430)
@@ -158,11 +160,10 @@ def test_completed_long_reply_opens_at_its_beginning_instead_of_tail(qtbot) -> N
         for index in range(1, 45)
     )
     panel.append_message(ChatRole.ASSISTANT, long_reply)
-    qtbot.wait(80)
+    qtbot.wait(100)
 
     bar = panel.messages_scroll.verticalScrollBar()
-    row = panel._message_rows[-1]
     assert bar.maximum() > 0
-    assert bar.value() < bar.maximum()
-    visible_offset = row.y() - bar.value()
-    assert -8 <= visible_offset <= 24
+    assert panel.follow_tail
+    assert bar.value() == bar.maximum()
+    assert panel.jump_to_bottom_button.isHidden()

@@ -1,4 +1,4 @@
-import type { LanguageOption } from "../../features/translation/languages"
+export type SelectOption = readonly [value: string, label: string]
 
 export function LanguageSelect({
   label,
@@ -8,7 +8,7 @@ export function LanguageSelect({
 }: {
   label: string
   value: string
-  options: readonly LanguageOption[]
+  options: readonly SelectOption[]
   onChange: (value: string) => void
 }) {
   return (

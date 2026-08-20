@@ -1,16 +1,32 @@
+import type {
+  BrowserBridgeStatusResponse,
+  BrowserPage,
+  BrowserSelection,
+} from "../../api/types"
 import { Toggle } from "../../shared/components/Toggle"
-import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
 
 export default function BrowserReadingContextPanel({
-  workspace,
+  browserStatus,
+  browserSelection,
+  browserPage,
+  followBrowserSelection,
+  autoTranslateSelection,
+  autoTranslating,
+  onFollowBrowserSelectionChange,
+  onAutoTranslateSelectionChange,
 }: {
-  workspace: TranslationWorkspaceController
+  browserStatus: BrowserBridgeStatusResponse | undefined
+  browserSelection: BrowserSelection | null
+  browserPage: BrowserPage | null
+  followBrowserSelection: boolean
+  autoTranslateSelection: boolean
+  autoTranslating: boolean
+  onFollowBrowserSelectionChange: (checked: boolean) => void
+  onAutoTranslateSelectionChange: (checked: boolean) => void
 }) {
-  const selection = workspace.browserSelection
-  const page = workspace.browserPage
-  const title = page?.title || selection?.title || "Waiting for the browser extension…"
-  const url = page?.url || selection?.url || ""
-  const heading = selection?.heading || page?.heading || ""
+  const title = browserPage?.title || browserSelection?.title || "Waiting for the browser extension…"
+  const url = browserPage?.url || browserSelection?.url || ""
+  const heading = browserSelection?.heading || browserPage?.heading || ""
 
   return (
     <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -20,7 +36,7 @@ export default function BrowserReadingContextPanel({
             <h2 className="text-sm font-semibold">Browser Reading Context</h2>
             <span
               className={`h-2 w-2 rounded-full ${
-                workspace.browserStatus?.has_extension_activity
+                browserStatus?.has_extension_activity
                   ? "bg-emerald-500"
                   : "bg-slate-300"
               }`}
@@ -33,17 +49,13 @@ export default function BrowserReadingContextPanel({
         <div className="flex flex-wrap gap-2">
           <Toggle
             label="Follow selection"
-            checked={workspace.followBrowserSelection}
-            onChange={workspace.setFollowBrowserSelection}
+            checked={followBrowserSelection}
+            onChange={onFollowBrowserSelectionChange}
           />
           <Toggle
-            label={
-              workspace.autoTranslating
-                ? "Auto translating…"
-                : "Auto translate + overlay"
-            }
-            checked={workspace.autoTranslateSelection}
-            onChange={workspace.setAutoTranslateSelection}
+            label={autoTranslating ? "Auto translating…" : "Auto translate + overlay"}
+            checked={autoTranslateSelection}
+            onChange={onAutoTranslateSelectionChange}
           />
         </div>
       </div>

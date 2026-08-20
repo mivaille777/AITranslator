@@ -1,21 +1,29 @@
 import { API_BASE_URL } from "../../api/client"
+import type { BrowserBridgeStatusResponse } from "../../api/types"
 import { desktop } from "../../desktop"
-import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
 
 export default function WorkspaceHeader({
-  workspace,
+  backendState,
+  backendService,
+  providerName,
+  browserStatus,
+  browserStatusChecking,
 }: {
-  workspace: TranslationWorkspaceController
+  backendState: "checking" | "connected" | "offline"
+  backendService: string
+  providerName: string
+  browserStatus: BrowserBridgeStatusResponse | undefined
+  browserStatusChecking: boolean
 }) {
-  const backendLabel = workspace.backendState === "checking"
+  const backendLabel = backendState === "checking"
     ? "Checking…"
-    : workspace.backendState === "connected"
-      ? `${workspace.backendService} · Connected`
+    : backendState === "connected"
+      ? `${backendService} · Connected`
       : `Offline · ${API_BASE_URL}`
 
-  const browserLabel = workspace.browserStatus?.running
-    ? `Listening · ${workspace.browserStatus.port}`
-    : workspace.browserStatusChecking
+  const browserLabel = browserStatus?.running
+    ? `Listening · ${browserStatus.port}`
+    : browserStatusChecking
       ? "Checking…"
       : "Unavailable / port busy"
 
@@ -37,7 +45,7 @@ export default function WorkspaceHeader({
         <div className="grid min-w-80 gap-2 text-sm">
           <StatusRow label="Runtime" value={desktop.runtime} />
           <StatusRow label="Backend" value={backendLabel} />
-          <StatusRow label="Provider" value={workspace.providerName} />
+          <StatusRow label="Provider" value={providerName} />
           <StatusRow label="Browser bridge" value={browserLabel} />
         </div>
       </div>

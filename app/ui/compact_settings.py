@@ -16,13 +16,15 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QListWidget,
+    QListWidgetItem,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from app.overlay.context_menu import OVERLAY_THEMES
-from app.ui.design_tokens import RADIUS, SETTINGS, SPACING, TYPOGRAPHY
+from app.ui.design_tokens import ICON, RADIUS, SETTINGS, SPACING, TYPOGRAPHY
+from app.ui.svg_icons import svg_icon
 
 
 # Public compatibility constants are now derived from the Settings component
@@ -36,6 +38,16 @@ SETTINGS_WINDOW_MIN_HEIGHT = SETTINGS.minimum_height
 SETTINGS_WINDOW_MAX_HEIGHT = SETTINGS.maximum_height
 SETTINGS_SCROLL_STEP = SETTINGS.scroll_step
 SETTINGS_NAVIGATION_WIDTH = SETTINGS.navigation_rail_width
+
+_SETTINGS_CATEGORY_ICONS: dict[str, str] = {
+    "基础": "translate",
+    "AI 模型": "sparkle",
+    "划词与阅读": "document",
+    "浏览器集成": "language",
+    "外观": "eye",
+    "研究数据": "library",
+    "高级": "settings",
+}
 
 
 def apply_compact_settings_layout(window: Any) -> QScrollArea | None:
@@ -118,8 +130,16 @@ def _apply_navigation_settings_layout(
     nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     nav.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     nav.setSpacing(SPACING.xxs)
+    manager = getattr(window, "settings_manager", None)
+    theme = str(getattr(manager, "overlay_theme", "dark") or "dark")
+    palette = OVERLAY_THEMES.get(theme, OVERLAY_THEMES["dark"])
     for name, _groups in normalized:
-        nav.addItem(name)
+        icon_name = _SETTINGS_CATEGORY_ICONS.get(name, "settings")
+        item = QListWidgetItem(
+            svg_icon(icon_name, palette["text_secondary"], size=ICON.md),
+            name,
+        )
+        nav.addItem(item)
     container_layout.addWidget(nav)
 
     scroll_area = QScrollArea(container)

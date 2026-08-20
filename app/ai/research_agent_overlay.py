@@ -12,6 +12,7 @@ from app.ai.desktop_agent_overlay import (
 )
 from app.ai.research_quick_actions import (
     RESEARCH_NOTE_SAVE,
+    ResearchNoteToast,
     SelectionQuickActionBar,
 )
 from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
@@ -35,9 +36,11 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._research_actions: dict[str, QAction] = {}
         self._selection_quick_actions: SelectionQuickActionBar | None = None
+        self._research_note_toast: ResearchNoteToast | None = None
         super().__init__(*args, **kwargs)
         self._install_research_actions()
         self._install_selection_quick_actions()
+        self._install_research_note_toast()
 
     @property
     def research_actions(self) -> dict[str, QAction]:
@@ -46,6 +49,10 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
     @property
     def selection_quick_actions(self) -> SelectionQuickActionBar | None:
         return self._selection_quick_actions
+
+    @property
+    def research_note_toast(self) -> ResearchNoteToast | None:
+        return self._research_note_toast
 
     def _set_content(
         self,
@@ -56,8 +63,6 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
         *,
         animate: bool = False,
     ) -> None:
-        """Keep source-bound research actions aligned with displayed content."""
-
         super()._set_content(
             source_text,
             translated_text,
@@ -82,9 +87,6 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
             source_language,
             target_language,
         )
-        # The base content measurement runs before the quick row becomes
-        # visible. Reflow once after source availability is known so the row is
-        # never clipped below the translation card.
         self._sync_selection_quick_actions()
         self._resize_to_content(animate=False)
 
@@ -113,14 +115,37 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
 
     def _install_selection_quick_actions(self) -> None:
         bar = SelectionQuickActionBar(self)
-        bar.action_requested.connect(
-            lambda key: self.context_action.emit(key, None)
-        )
+        bar.action_requested.connect(lambda key: self.context_action.emit(key, None))
         content_index = self._layout.indexOf(self._content_scroll)
         self._layout.insertWidget(max(0, content_index + 1), bar)
         self._selection_quick_actions = bar
         bar.apply_palette(OVERLAY_THEMES[self._theme_name])
         self._sync_selection_quick_actions()
+
+    def _install_research_note_toast(self) -> None:
+        toast = ResearchNoteToast(self)
+        toast.view_requested.connect(
+            lambda: self.context_action.emit(RESEARCH_NOTES_LIBRARY, None)
+        )
+        toast.dismissed.connect(lambda: self._resize_to_content(animate=False))
+        quick = self._selection_quick_actions
+        quick_index = self._layout.indexOf(quick) if quick is not None else -1
+        self._layout.insertWidget(max(0, quick_index + 1), toast)
+        self._research_note_toast = toast
+        toast.apply_palette(OVERLAY_THEMES[self._theme_name])
+
+    def show_research_note_toast(
+        self,
+        message: object,
+        *,
+        show_view: bool = True,
+        timeout_ms: int = 2200,
+    ) -> None:
+        toast = self._research_note_toast
+        if toast is None:
+            return
+        toast.show_message(message, show_view=show_view, timeout_ms=timeout_ms)
+        self._resize_to_content(animate=False)
 
     def _sync_selection_quick_actions(self) -> None:
         bar = getattr(self, "_selection_quick_actions", None)
@@ -147,9 +172,13 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
     def _apply_theme(self, theme: str) -> None:
         super()._apply_theme(theme)
         self._apply_research_action_theme()
+        palette = OVERLAY_THEMES[self._theme_name]
         bar = getattr(self, "_selection_quick_actions", None)
         if bar is not None:
-            bar.apply_palette(OVERLAY_THEMES[self._theme_name])
+            bar.apply_palette(palette)
+        toast = getattr(self, "_research_note_toast", None)
+        if toast is not None:
+            toast.apply_palette(palette)
 
     def _sync_context_menu_state(self) -> None:
         super()._sync_context_menu_state()
@@ -169,8 +198,6 @@ class ResearchAgentOverlayWindow(DesktopAgentOverlayWindow):
             if action is not None:
                 action.setEnabled(True)
 
-        # Keep the submenu available even without a current selection because
-        # the library and recent-note views are source-independent.
         self.context_menu.ai_menu.setEnabled(True)
         self._sync_selection_quick_actions()
 
@@ -214,6 +241,17 @@ class ResearchAgentOverlayManager(DesktopAgentOverlayManager):
             position_manager=position_manager,
             config_manager=config_manager,
         )
+
+    def show_research_note_toast(
+        self,
+        message: object,
+        *,
+        show_view: bool = True,
+        timeout_ms: int = 2200,
+    ) -> None:
+        callback = getattr(self.window, "show_research_note_toast", None)
+        if callable(callback):
+            callback(message, show_view=show_view, timeout_ms=timeout_ms)
 
 
 __all__ = [

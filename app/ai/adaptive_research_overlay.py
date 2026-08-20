@@ -6,12 +6,20 @@ from typing import Any
 
 from PySide6.QtCore import QSize
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QSizePolicy
+from PySide6.QtWidgets import QSizePolicy, QToolButton
 
 from app.ai.research_agent_overlay import ResearchAgentOverlayManager, ResearchAgentOverlayWindow
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
-from app.ui.design_tokens import CONTROL, LAYOUT, SPACING, TYPOGRAPHY
+from app.ui.design_tokens import CONTROL, LAYOUT, SPACING, TYPOGRAPHY, legacy_overlay_palette
+from app.ui.icon_controls import (
+    ICON_BUTTON_COMPACT,
+    ICON_BUTTON_COMPOSER,
+    ICON_BUTTON_TOOLBAR,
+    apply_icon_button_palette,
+    attach_menu_chevron,
+    configure_icon_button,
+)
 
 
 QT_WIDGET_SIZE_MAX = 16_777_215
@@ -34,6 +42,77 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
         self._resize_to_content(animate=False)
         self._translation_surface_size = QSize(self.size())
         self._translation_font_size_before_chat = int(self._font_size)
+
+    def _resolved_palette(self) -> dict[str, str]:
+        panel = getattr(self, "_chat_panel", None)
+        panel_palette = getattr(panel, "_palette", None) if panel is not None else None
+        if isinstance(panel_palette, dict) and panel_palette:
+            return dict(panel_palette)
+        return legacy_overlay_palette(getattr(self, "_theme_name", "dark"))
+
+    def _apply_chat_control_metrics(self) -> None:
+        """Normalize production Chat controls without changing their behavior."""
+
+        panel = getattr(self, "_chat_panel", None)
+        if panel is None:
+            return
+        palette = self._resolved_palette()
+        muted = palette.get("chrome_muted_text", palette["muted_text"])
+        disabled = palette.get("text_muted", palette["muted_text"])
+
+        # Header icon controls share one 36px hit target and an 18px glyph.
+        for attribute in (
+            "history_button",
+            "new_chat_button",
+            "delete_chat_button",
+            "back_button",
+        ):
+            button = getattr(panel, attribute, None)
+            if isinstance(button, QToolButton):
+                configure_icon_button(button, ICON_BUTTON_TOOLBAR)
+                apply_icon_button_palette(button, palette)
+
+        # The floating follow-tail control keeps the same hit target but stays
+        # circular so it reads as a viewport affordance rather than toolbar UI.
+        jump = getattr(panel, "jump_to_bottom_button", None)
+        if isinstance(jump, QToolButton):
+            configure_icon_button(jump, ICON_BUTTON_TOOLBAR)
+            apply_icon_button_palette(
+                jump,
+                palette,
+                radius=ICON_BUTTON_TOOLBAR.button_size // 2,
+            )
+
+        # Composer actions need the 44px target used by the input/send row.
+        undo = getattr(panel, "undo_selection_button", None)
+        if isinstance(undo, QToolButton):
+            configure_icon_button(undo, ICON_BUTTON_COMPOSER)
+            apply_icon_button_palette(undo, palette)
+
+        # Reading Context is intentionally denser than the main toolbar.
+        expand = getattr(panel, "reading_context_expand", None)
+        if isinstance(expand, QToolButton):
+            configure_icon_button(expand, ICON_BUTTON_COMPACT)
+            apply_icon_button_palette(expand, palette)
+
+        # Text-menu buttons use one custom SVG chevron on the right. The
+        # controller strips legacy `▾` suffixes on every paint and suppresses
+        # Qt's platform-specific native menu indicator.
+        for attribute in ("model_button", "font_button"):
+            button = getattr(panel, attribute, None)
+            if isinstance(button, QToolButton):
+                button.setMinimumHeight(CONTROL.normal_height)
+                button.setMaximumHeight(CONTROL.normal_height)
+                attach_menu_chevron(
+                    button,
+                    color=muted,
+                    disabled_color=disabled,
+                )
+
+        clear_button = getattr(panel, "clear_button", None)
+        if isinstance(clear_button, QToolButton):
+            clear_button.setMinimumHeight(CONTROL.normal_height)
+            clear_button.setMaximumHeight(CONTROL.normal_height)
 
     def _apply_design_metrics(self) -> None:
         """Apply shared spacing/control metrics to the production surface."""
@@ -64,8 +143,27 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
 
         for attribute in ("_copy_button", "_menu_button"):
             button = getattr(self, attribute, None)
-            if button is not None:
-                button.setFixedSize(CONTROL.icon_button, CONTROL.icon_button)
+            if isinstance(button, QToolButton):
+                configure_icon_button(button, ICON_BUTTON_TOOLBAR)
+
+        self._apply_chat_control_metrics()
+
+    def _apply_header_style(self, palette: dict[str, str]) -> None:
+        """Add one shared hover/pressed contract to production icon chrome."""
+
+        super()._apply_header_style(palette)
+        for attribute in ("_copy_button", "_menu_button", "_ai_button", "_chat_button"):
+            button = getattr(self, attribute, None)
+            if not isinstance(button, QToolButton):
+                continue
+            if not button.text().strip():
+                configure_icon_button(button, ICON_BUTTON_TOOLBAR)
+                apply_icon_button_palette(button, palette)
+        self._apply_chat_control_metrics()
+
+    def _apply_theme(self, theme: str) -> None:
+        super()._apply_theme(theme)
+        self._apply_design_metrics()
 
     def _stabilize_outer_header(self) -> None:
         """Never let extra window height stretch the toolbar vertically."""

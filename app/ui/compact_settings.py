@@ -21,17 +21,20 @@ from PySide6.QtWidgets import (
 )
 
 from app.overlay.context_menu import OVERLAY_THEMES
+from app.ui.design_tokens import RADIUS, SETTINGS, SPACING, TYPOGRAPHY
 
 
-SETTINGS_WINDOW_DEFAULT_WIDTH = 620
-SETTINGS_WINDOW_NAV_WIDTH = 860
-SETTINGS_WINDOW_DEFAULT_HEIGHT = 660
-SETTINGS_WINDOW_MIN_WIDTH = 540
-SETTINGS_WINDOW_NAV_MIN_WIDTH = 720
-SETTINGS_WINDOW_MIN_HEIGHT = 500
-SETTINGS_WINDOW_MAX_HEIGHT = 720
-SETTINGS_SCROLL_STEP = 48
-SETTINGS_NAVIGATION_WIDTH = 154
+# Public compatibility constants are now derived from the Settings component
+# tokens rather than maintained as a second layout source of truth.
+SETTINGS_WINDOW_DEFAULT_WIDTH = SETTINGS.default_width
+SETTINGS_WINDOW_NAV_WIDTH = SETTINGS.navigation_width
+SETTINGS_WINDOW_DEFAULT_HEIGHT = SETTINGS.default_height
+SETTINGS_WINDOW_MIN_WIDTH = SETTINGS.minimum_width
+SETTINGS_WINDOW_NAV_MIN_WIDTH = SETTINGS.navigation_minimum_width
+SETTINGS_WINDOW_MIN_HEIGHT = SETTINGS.minimum_height
+SETTINGS_WINDOW_MAX_HEIGHT = SETTINGS.maximum_height
+SETTINGS_SCROLL_STEP = SETTINGS.scroll_step
+SETTINGS_NAVIGATION_WIDTH = SETTINGS.navigation_rail_width
 
 
 def apply_compact_settings_layout(window: Any) -> QScrollArea | None:
@@ -78,14 +81,14 @@ def _apply_navigation_settings_layout(
     container.setObjectName("SettingsNavigationContainer")
     container_layout = QHBoxLayout(container)
     container_layout.setContentsMargins(0, 0, 0, 0)
-    container_layout.setSpacing(12)
+    container_layout.setSpacing(SPACING.md)
 
     nav = QListWidget(container)
     nav.setObjectName("SettingsNavigation")
     nav.setFixedWidth(SETTINGS_NAVIGATION_WIDTH)
     nav.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     nav.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    nav.setSpacing(2)
+    nav.setSpacing(SPACING.xxs)
     for name, _groups in normalized:
         nav.addItem(name)
     container_layout.addWidget(nav)
@@ -101,8 +104,13 @@ def _apply_navigation_settings_layout(
     content = QWidget(scroll_area)
     content.setObjectName("SettingsScrollContent")
     content_layout = QVBoxLayout(content)
-    content_layout.setContentsMargins(2, 2, 6, 2)
-    content_layout.setSpacing(10)
+    content_layout.setContentsMargins(
+        SPACING.xxs,
+        SPACING.xxs,
+        SPACING.sm,
+        SPACING.xxs,
+    )
+    content_layout.setSpacing(SPACING.md)
     for group in all_groups:
         group.setParent(content)
         content_layout.addWidget(group)
@@ -174,8 +182,8 @@ def _apply_legacy_scroll_layout(window: Any) -> QScrollArea | None:
     content.setObjectName("SettingsScrollContent")
     content.setAutoFillBackground(False)
     content_layout = QVBoxLayout(content)
-    content_layout.setContentsMargins(0, 0, 2, 0)
-    content_layout.setSpacing(10)
+    content_layout.setContentsMargins(0, 0, SPACING.xxs, 0)
+    content_layout.setSpacing(SPACING.md)
 
     for group in groups:
         root_layout.removeWidget(group)
@@ -220,7 +228,7 @@ def ensure_settings_widget_visible(window: Any, widget: QWidget | None) -> None:
         row = group_rows.get(id(widget))
         if isinstance(row, int):
             nav.setCurrentRow(row)
-    scroll_area.ensureWidgetVisible(widget, 16, 16)
+    scroll_area.ensureWidgetVisible(widget, SPACING.lg, SPACING.lg)
 
 
 def _apply_product_style(window: Any) -> None:
@@ -230,68 +238,70 @@ def _apply_product_style(window: Any) -> None:
     window.setStyleSheet(
         f"""
         QDialog#SettingsWindow {{
-            background-color: {palette['menu_background']};
-            color: {palette['text']};
+            background-color: {palette['surface_elevated']};
+            color: {palette['text_primary']};
+            font-family: "{TYPOGRAPHY.family}";
+            font-size: {TYPOGRAPHY.body}px;
         }}
         QLabel#SettingsIntro,
         QLabel#SettingsReadingNote,
         QLabel#BrowserIntegrationHelp,
         QLabel#ResearchDataHelp {{
-            color: {palette['muted_text']};
+            color: {palette['text_secondary']};
         }}
         QListWidget#SettingsNavigation {{
-            color: {palette['muted_text']};
+            color: {palette['text_secondary']};
             background: transparent;
             border: none;
             outline: none;
-            padding: 2px;
+            padding: {SPACING.xxs}px;
         }}
         QListWidget#SettingsNavigation::item {{
-            border-radius: 8px;
-            padding: 9px 10px;
-            margin: 1px 0;
+            border-radius: {RADIUS.md}px;
+            padding: {SPACING.sm}px {SPACING.md}px;
+            margin: {SPACING.xxs}px 0;
         }}
         QListWidget#SettingsNavigation::item:selected {{
-            color: {palette['text']};
-            background-color: {palette['hover']};
+            color: {palette['text_primary']};
+            background-color: {palette['surface_hover']};
         }}
         QGroupBox {{
-            color: {palette['text']};
-            border: 1px solid {palette['border']};
-            border-radius: 10px;
-            margin-top: 12px;
-            padding-top: 8px;
-            font-weight: 600;
+            color: {palette['text_primary']};
+            border: 1px solid {palette['border_subtle']};
+            border-radius: {RADIUS.lg}px;
+            margin-top: {SPACING.md}px;
+            padding-top: {SPACING.sm}px;
+            font-weight: {TYPOGRAPHY.weight_semibold};
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
-            left: 10px;
-            padding: 0 5px;
+            left: {SPACING.md}px;
+            padding: 0 {SPACING.xs}px;
             color: {palette['accent']};
         }}
         QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
-            color: {palette['text']};
-            background-color: {palette['label_background']};
-            border: 1px solid {palette['border']};
-            border-radius: 7px;
-            padding: 5px 7px;
+            color: {palette['text_primary']};
+            background-color: {palette['content_surface']};
+            border: 1px solid {palette['border_subtle']};
+            border-radius: {RADIUS.sm}px;
+            padding: {SPACING.xs}px {SPACING.sm}px;
             selection-background-color: {palette['accent']};
         }}
         QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
             border-color: {palette['accent']};
         }}
         QPushButton {{
-            color: {palette['text']};
+            color: {palette['text_primary']};
             background-color: transparent;
-            border: 1px solid {palette['border']};
-            border-radius: 7px;
-            padding: 6px 10px;
+            border: 1px solid {palette['border_subtle']};
+            border-radius: {RADIUS.sm}px;
+            padding: {SPACING.sm}px {SPACING.md}px;
         }}
         QPushButton:hover:enabled {{
-            background-color: {palette['hover']};
+            background-color: {palette['surface_hover']};
             border-color: {palette['accent']};
         }}
-        QCheckBox {{ color: {palette['text']}; }}
+        QCheckBox {{ color: {palette['text_primary']}; }}
         QLabel#SettingsStatusLabel {{ color: {palette['accent']}; }}
         """
     )

@@ -18,6 +18,7 @@ from app.ui.design_tokens import (
     size_class,
     theme_tokens,
 )
+from app.ui.svg_icons import icon_names, svg_icon, svg_source
 
 if TYPE_CHECKING:
     from app.ui.settings import SettingsWindow
@@ -44,7 +45,10 @@ __all__ = [
     "THEMES",
     "TYPOGRAPHY",
     "SettingsWindow",
+    "icon_names",
     "legacy_overlay_palette",
     "size_class",
+    "svg_icon",
+    "svg_source",
     "theme_tokens",
 ]

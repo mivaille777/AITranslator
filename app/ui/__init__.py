@@ -1,5 +1,9 @@
 """User-interface components and shared AITrans design-system primitives."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from app.ui.design_tokens import (
     CONTROL,
     ICON,
@@ -14,7 +18,20 @@ from app.ui.design_tokens import (
     size_class,
     theme_tokens,
 )
-from app.ui.settings import SettingsWindow
+
+if TYPE_CHECKING:
+    from app.ui.settings import SettingsWindow
+
+
+def __getattr__(name: str):
+    """Lazy-load heavyweight QWidget surfaces while keeping the public API."""
+
+    if name == "SettingsWindow":
+        from app.ui.settings import SettingsWindow
+
+        return SettingsWindow
+    raise AttributeError(name)
+
 
 __all__ = [
     "CONTROL",

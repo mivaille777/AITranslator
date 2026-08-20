@@ -7,6 +7,7 @@ from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import QApplication, QLabel, QToolButton
 
 from app.ai.chat.models import ChatRole
+from app.ai.chat.ui import CHAT_PANEL_MAX_HEIGHT
 from app.ai.chat_overlay import ConversationalAIOverlayWindow
 
 
@@ -47,7 +48,8 @@ def test_chat_button_switches_overlay_into_bounded_conversation_mode(qtbot) -> N
     assert window.content_scroll_area.isHidden()
     assert "DeepSeek" in window.chat_panel.identity_label.text()
     assert "14 chars" in window.chat_panel.context_button.text()
-    assert window.chat_panel.maximumHeight() == 430
+    assert window.chat_panel.maximumHeight() == CHAT_PANEL_MAX_HEIGHT
+    assert window.chat_panel.minimumHeight() < window.chat_panel.maximumHeight()
 
     window.append_chat_message(ChatRole.ASSISTANT, "GP 用于统计定位。")
     assert window.chat_panel.message_count == 1

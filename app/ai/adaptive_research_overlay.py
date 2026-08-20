@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QSizePolicy
 from app.ai.research_agent_overlay import ResearchAgentOverlayManager, ResearchAgentOverlayWindow
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
+from app.ui.design_tokens import CONTROL, LAYOUT, SPACING, TYPOGRAPHY
 
 
 QT_WIDGET_SIZE_MAX = 16_777_215
@@ -26,12 +27,45 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
         self._translation_font_size_before_chat = 0
         super().__init__(*args, **kwargs)
         self._remove_legacy_size_caps()
+        self._apply_design_metrics()
         self._stabilize_outer_header()
         self._apply_configured_chat_font_size()
         self._apply_responsive_minimum_width()
         self._resize_to_content(animate=False)
         self._translation_surface_size = QSize(self.size())
         self._translation_font_size_before_chat = int(self._font_size)
+
+    def _apply_design_metrics(self) -> None:
+        """Apply shared spacing/control metrics to the production surface."""
+
+        root = getattr(self, "_layout", None)
+        if root is not None:
+            root.setContentsMargins(
+                LAYOUT.floating_margin,
+                SPACING.sm,
+                LAYOUT.floating_margin,
+                LAYOUT.floating_margin,
+            )
+            root.setSpacing(SPACING.xs)
+
+        header_layout = getattr(self, "_header_layout", None)
+        if header_layout is not None:
+            header_layout.setSpacing(SPACING.sm)
+
+        content_layout = getattr(self, "_content_layout", None)
+        if content_layout is not None:
+            content_layout.setSpacing(SPACING.xs)
+
+        for attribute in ("_ai_button", "_chat_button", "_language_button"):
+            button = getattr(self, attribute, None)
+            if button is not None:
+                button.setMinimumHeight(CONTROL.normal_height)
+                button.setMaximumHeight(CONTROL.normal_height)
+
+        for attribute in ("_copy_button", "_menu_button"):
+            button = getattr(self, attribute, None)
+            if button is not None:
+                button.setFixedSize(CONTROL.icon_button, CONTROL.icon_button)
 
     def _stabilize_outer_header(self) -> None:
         """Never let extra window height stretch the toolbar vertically."""
@@ -87,8 +121,8 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
         if source is not None:
             source.setFont(
                 QFont(
-                    self._font_family,
-                    max(8, min(18, round(size * 0.55))),
+                    self._font_family or TYPOGRAPHY.family,
+                    max(8, min(TYPOGRAPHY.title, round(size * 0.55))),
                 )
             )
         self._apply_theme(self._theme_name)
@@ -114,6 +148,7 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
             self._manual_size_locked = False
 
         super().open_chat(**kwargs)
+        self._apply_design_metrics()
         self._stabilize_outer_header()
         self._apply_configured_chat_font_size()
 
@@ -148,6 +183,7 @@ class AdaptiveResearchAgentOverlayWindow(ResearchAgentOverlayWindow):
         if editor is not None:
             editor.adjust_editor_height()
 
+        self._apply_design_metrics()
         self._stabilize_outer_header()
         if self._manual_height_locked:
             self._update_scroll_area_limits()

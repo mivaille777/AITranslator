@@ -5,13 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QToolButton,
-)
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QToolButton
 
 from app.models.reading_actions import (
     READING_CONTEXT_TRANSLATE,
@@ -50,26 +44,20 @@ class SelectionQuickActionBar(QFrame):
         self.setObjectName("SelectionQuickActionBar")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._compact = False
-
         self._layout = QHBoxLayout(self)
         self._layout.setContentsMargins(6, 4, 6, 4)
         self._layout.setSpacing(5)
         self._layout.addStretch(1)
-
         self._buttons: dict[str, QToolButton] = {}
         for spec in QUICK_ACTION_SPECS:
             button = QToolButton(self)
-            button.setObjectName(
-                f"SelectionQuick{spec.key.title().replace('_', '')}Button"
-            )
+            button.setObjectName(f"SelectionQuick{spec.key.title().replace('_', '')}Button")
             button.setText(spec.label)
             button.setToolTip(spec.tooltip)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setAutoRaise(False)
             button.setMinimumHeight(30)
-            button.clicked.connect(
-                lambda _checked=False, key=spec.key: self.action_requested.emit(key)
-            )
+            button.clicked.connect(lambda _checked=False, key=spec.key: self.action_requested.emit(key))
             self._buttons[spec.key] = button
             self._layout.addWidget(button)
         self._layout.addStretch(1)
@@ -96,7 +84,7 @@ class SelectionQuickActionBar(QFrame):
                 button.setText(spec.compact_label if resolved and spec.compact_label else spec.label)
                 button.setMinimumWidth(34 if resolved else 0)
 
-    def resizeEvent(self, event) -> None:  # noqa: N802 - Qt override
+    def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self.set_compact(self.width() < QUICK_ACTION_COMPACT_WIDTH)
 
@@ -111,29 +99,19 @@ class SelectionQuickActionBar(QFrame):
     def apply_palette(self, palette: dict[str, str]) -> None:
         self.setStyleSheet(
             f"""
-            QFrame#SelectionQuickActionBar {{
-                background-color: transparent;
-                border: none;
-            }}
+            QFrame#SelectionQuickActionBar {{ background-color: transparent; border: none; }}
             QToolButton {{
-                color: {palette['text']};
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['border']};
-                border-radius: 7px;
-                padding: 4px 9px;
-                font-size: 12px;
+                color: {palette['text']}; background-color: {palette['menu_background']};
+                border: 1px solid {palette['border']}; border-radius: 7px;
+                padding: 4px 9px; font-size: 12px;
             }}
             QToolButton:hover:enabled {{
-                color: {palette['text']};
-                background-color: {palette['hover']};
+                color: {palette['text']}; background-color: {palette['hover']};
                 border-color: {palette['accent']};
             }}
-            QToolButton:pressed:enabled {{
-                border-color: {palette['accent']};
-            }}
+            QToolButton:pressed:enabled {{ border-color: {palette['accent']}; }}
             QToolButton:disabled {{
-                color: {palette['muted_text']};
-                background-color: transparent;
+                color: {palette['muted_text']}; background-color: transparent;
                 border-color: {palette['border']};
             }}
             """
@@ -144,6 +122,7 @@ class ResearchNoteToast(QFrame):
     """Non-modal inline feedback with an optional jump to Research Notes."""
 
     view_requested = Signal()
+    dismissed = Signal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -161,22 +140,27 @@ class ResearchNoteToast(QFrame):
         self.view_button.setFixedHeight(28)
         layout.addWidget(self.message_label, 1)
         layout.addWidget(self.view_button)
-        self.view_button.clicked.connect(self.view_requested.emit)
+        self.view_button.clicked.connect(self._view)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self.hide)
+        self._timer.timeout.connect(self.dismiss)
         self.hide()
 
-    def show_message(
-        self,
-        message: object,
-        *,
-        show_view: bool = True,
-        timeout_ms: int = 2200,
-    ) -> None:
+    def _view(self) -> None:
+        self.view_requested.emit()
+        self.dismiss()
+
+    def dismiss(self) -> None:
+        was_visible = not self.isHidden()
+        self._timer.stop()
+        self.hide()
+        if was_visible:
+            self.dismissed.emit()
+
+    def show_message(self, message: object, *, show_view: bool = True, timeout_ms: int = 2200) -> None:
         text = str(message or "").strip()
         if not text:
-            self.hide()
+            self.dismiss()
             return
         self.message_label.setText(text)
         self.view_button.setVisible(bool(show_view))
@@ -188,26 +172,17 @@ class ResearchNoteToast(QFrame):
         self.setStyleSheet(
             f"""
             QFrame#ResearchNoteToast {{
-                color: {palette['text']};
-                background-color: {palette['menu_background']};
-                border: 1px solid {palette['accent']};
-                border-radius: 9px;
+                color: {palette['text']}; background-color: {palette['menu_background']};
+                border: 1px solid {palette['accent']}; border-radius: 9px;
             }}
-            QLabel#ResearchNoteToastMessage {{
-                color: {palette['text']};
-                font-size: 12px;
-            }}
+            QLabel#ResearchNoteToastMessage {{ color: {palette['text']}; font-size: 12px; }}
             QPushButton#ResearchNoteToastView {{
-                color: {palette['accent']};
-                background: transparent;
-                border: 1px solid {palette['border']};
-                border-radius: 6px;
-                padding: 3px 8px;
-                font-weight: 600;
+                color: {palette['accent']}; background: transparent;
+                border: 1px solid {palette['border']}; border-radius: 6px;
+                padding: 3px 8px; font-weight: 600;
             }}
             QPushButton#ResearchNoteToastView:hover {{
-                background-color: {palette['hover']};
-                border-color: {palette['accent']};
+                background-color: {palette['hover']}; border-color: {palette['accent']};
             }}
             """
         )

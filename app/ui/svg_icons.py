@@ -52,11 +52,22 @@ _ICON_BODIES: dict[str, str] = {
     "close": '<path d="M6 6l12 12M18 6 6 18"/>',
 }
 
+# A very small compatibility alias set lets the old symbol_icon bridge resolve
+# feedback-only glyphs without reintroducing font rendering into the registry.
+_ICON_ALIASES: dict[str, str] = {
+    "✓": "check",
+}
+
+
+def _normalize_name(name: object) -> str:
+    key = str(name or "").strip().lower()
+    return _ICON_ALIASES.get(key, key)
+
 
 def icon_names() -> tuple[str, ...]:
-    """Return stable semantic names exposed by the AITrans icon system."""
+    """Return stable semantic names plus supported compatibility aliases."""
 
-    return tuple(sorted(_ICON_BODIES))
+    return tuple(sorted(set(_ICON_BODIES) | set(_ICON_ALIASES)))
 
 
 def _safe_color(value: object) -> str:
@@ -69,7 +80,7 @@ def _safe_color(value: object) -> str:
 def svg_source(name: object, color: object = "#F8FAFC") -> str:
     """Return a complete local SVG document for one semantic icon."""
 
-    key = str(name or "").strip().lower()
+    key = _normalize_name(name)
     body = _ICON_BODIES.get(key)
     if body is None:
         raise KeyError(f"Unknown AITrans icon: {key or name!r}")
@@ -102,7 +113,7 @@ def _render_cached(name: str, color: str, size: int) -> QIcon:
 def svg_icon(name: object, color: object = "#F8FAFC", *, size: int = ICON.md) -> QIcon:
     """Render one theme-colored SVG icon at a DPI-safe logical size."""
 
-    key = str(name or "").strip().lower()
+    key = _normalize_name(name)
     if key not in _ICON_BODIES:
         raise KeyError(f"Unknown AITrans icon: {key or name!r}")
     safe = _safe_color(color)

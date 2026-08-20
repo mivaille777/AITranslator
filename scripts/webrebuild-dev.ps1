@@ -33,7 +33,7 @@ if (-not (Test-Path $PackageJson)) {
     Stop-WithError "package.json not found: $PackageJson"
 }
 
-Write-Host "[1/4] Desktop project found" -ForegroundColor Green
+Write-Host "[1/5] Desktop project found" -ForegroundColor Green
 Write-Host "      $DesktopDir"
 Write-Host ""
 
@@ -44,7 +44,7 @@ try {
     # 2. Frontend lint
     # --------------------------------------------------------
 
-    Write-Host "[2/4] Running frontend lint..." -ForegroundColor Yellow
+    Write-Host "[2/5] Running frontend lint..." -ForegroundColor Yellow
     Write-Host ""
 
     & npm run lint
@@ -58,10 +58,27 @@ try {
     Write-Host ""
 
     # --------------------------------------------------------
-    # 3. Production build
+    # 3. Frontend tests
     # --------------------------------------------------------
 
-    Write-Host "[3/4] Running frontend production build..." -ForegroundColor Yellow
+    Write-Host "[3/5] Running frontend tests..." -ForegroundColor Yellow
+    Write-Host ""
+
+    & npm run test
+
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithError "npm run test failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host ""
+    Write-Host "Frontend tests passed." -ForegroundColor Green
+    Write-Host ""
+
+    # --------------------------------------------------------
+    # 4. Production build
+    # --------------------------------------------------------
+
+    Write-Host "[4/5] Running frontend production build..." -ForegroundColor Yellow
     Write-Host ""
 
     & npm run build
@@ -75,10 +92,10 @@ try {
     Write-Host ""
 
     # --------------------------------------------------------
-    # 4. Start backend and Tauri in separate PowerShell windows
+    # 5. Start backend and Tauri in separate PowerShell windows
     # --------------------------------------------------------
 
-    Write-Host "[4/4] Starting development services..." -ForegroundColor Yellow
+    Write-Host "[5/5] Starting development services..." -ForegroundColor Yellow
     Write-Host ""
 
     $BackendCommand = @"

@@ -1,8 +1,8 @@
 """AITrans design-system primitives shared by QWidget and future QML surfaces.
 
-The module intentionally contains no Qt imports.  It is the single semantic
+The module intentionally contains no Qt imports. It is the single semantic
 source for spacing, radius, typography, control metrics, motion, breakpoints,
-and theme colors.  QWidget/QSS code can consume the plain values today while
+and theme colors. QWidget/QSS code can consume the plain values today while
 future Qt Quick/QML adapters can expose the same tokens without duplicating
 visual constants.
 """
@@ -90,6 +90,11 @@ class LayoutTokens:
     readable_content_width: int = 780
     compact_max_width: int = 479
     medium_max_width: int = 760
+    menu_min_width: int = 260
+    menu_max_height: int = 260
+    menu_item_min_width: int = 150
+    menu_visible_items: int = 6
+    quick_action_compact_width: int = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,7 +230,7 @@ THEMES: Mapping[str, ThemeTokens] = MappingProxyType(
     }
 )
 
-# Transitional compatibility map.  Existing Overlay code can compare against
+# Transitional compatibility map. Existing Overlay code can compare against
 # this contract while each surface is migrated from legacy palette keys to the
 # semantic ThemeTokens API.
 LEGACY_OVERLAY_THEMES: Mapping[str, Mapping[str, str]] = MappingProxyType(

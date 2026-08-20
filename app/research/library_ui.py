@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QUrl, Qt, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -20,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.overlay.context_menu import OVERLAY_THEMES
 from app.research.notes import ResearchNote
 
 
@@ -30,7 +30,7 @@ class ResearchNotesLibraryWindow(QDialog):
     user_note_save_requested = Signal(str, str)
     note_delete_requested = Signal(str)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, palette: dict[str, str] | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ResearchNotesLibraryWindow")
         self.setWindowTitle("AITrans · Research Notes")
@@ -39,6 +39,7 @@ class ResearchNotesLibraryWindow(QDialog):
         self.setMinimumSize(760, 520)
         self._notes: dict[str, ResearchNote] = {}
         self._active_note_id = ""
+        self._palette = dict(palette or OVERLAY_THEMES["dark"])
 
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 14)
@@ -142,7 +143,7 @@ class ResearchNotesLibraryWindow(QDialog):
         self.open_source_button.clicked.connect(self._open_source)
         self.close_button.clicked.connect(self.hide)
         self._sync_detail_state()
-        self._apply_style()
+        self.apply_palette(self._palette)
 
     @staticmethod
     def _section_label(text: str, parent: QWidget) -> QLabel:
@@ -165,6 +166,10 @@ class ResearchNotesLibraryWindow(QDialog):
     @property
     def search_query(self) -> str:
         return self.search_edit.text().strip()
+
+    @property
+    def palette(self) -> dict[str, str]:
+        return dict(self._palette)
 
     def set_notes(self, notes: tuple[ResearchNote, ...] | list[ResearchNote]) -> None:
         previous = self._active_note_id
@@ -244,80 +249,58 @@ class ResearchNotesLibraryWindow(QDialog):
             return
         QDesktopServices.openUrl(QUrl(note.resource_url))
 
-    def _apply_style(self) -> None:
+    def apply_palette(self, palette: dict[str, str]) -> None:
+        self._palette = dict(palette or OVERLAY_THEMES["dark"])
+        p = self._palette
         self.setStyleSheet(
-            """
-            QDialog#ResearchNotesLibraryWindow {
-                background: #111827;
-                color: #E5E7EB;
-            }
-            QLabel#ResearchNotesTitle {
-                color: #F8FAFC;
-                font-size: 22px;
-                font-weight: 650;
-            }
+            f"""
+            QDialog#ResearchNotesLibraryWindow {{
+                background: {p['menu_background']}; color: {p['text']};
+            }}
+            QLabel#ResearchNotesTitle {{
+                color: {p['text']}; font-size: 22px; font-weight: 650;
+            }}
             QLabel#ResearchNotesSubtitle,
             QLabel#ResearchNotesResultCount,
-            QLabel#ResearchNoteDetailMeta {
-                color: #94A3B8;
-            }
+            QLabel#ResearchNoteDetailMeta {{ color: {p['muted_text']}; }}
             QFrame#ResearchNotesListPane,
-            QFrame#ResearchNotesDetailPane {
-                background: #172033;
-                border: 1px solid #2B3850;
-                border-radius: 10px;
-            }
-            QLineEdit#ResearchNotesSearch,
-            QPlainTextEdit {
-                color: #E5E7EB;
-                background: #0F172A;
-                border: 1px solid #334155;
-                border-radius: 8px;
-                padding: 7px 9px;
-                selection-background-color: #475569;
-            }
-            QListWidget#ResearchNotesList {
-                color: #CBD5E1;
-                background: transparent;
-                border: none;
-                outline: none;
-            }
-            QListWidget#ResearchNotesList::item {
-                border-radius: 7px;
-                padding: 8px;
-                margin: 1px 0;
-            }
-            QListWidget#ResearchNotesList::item:selected {
-                color: #F8FAFC;
-                background: #263449;
-            }
-            QLabel#ResearchNoteDetailTitle {
-                color: #F8FAFC;
-                font-size: 18px;
-                font-weight: 620;
-            }
-            QLabel#ResearchNoteSectionLabel {
-                color: #AFC3DD;
-                font-size: 11px;
-                font-weight: 600;
-            }
-            QPushButton {
-                color: #E5E7EB;
-                background: transparent;
-                border: 1px solid #334155;
-                border-radius: 7px;
+            QFrame#ResearchNotesDetailPane {{
+                background: {p['label_background']};
+                border: 1px solid {p['border']}; border-radius: 10px;
+            }}
+            QLineEdit#ResearchNotesSearch, QPlainTextEdit {{
+                color: {p['text']}; background: {p['menu_background']};
+                border: 1px solid {p['border']}; border-radius: 8px;
+                padding: 7px 9px; selection-background-color: {p['accent']};
+            }}
+            QListWidget#ResearchNotesList {{
+                color: {p['muted_text']}; background: transparent;
+                border: none; outline: none;
+            }}
+            QListWidget#ResearchNotesList::item {{
+                border-radius: 7px; padding: 8px; margin: 1px 0;
+            }}
+            QListWidget#ResearchNotesList::item:selected {{
+                color: {p['text']}; background: {p['hover']};
+            }}
+            QLabel#ResearchNoteDetailTitle {{
+                color: {p['text']}; font-size: 18px; font-weight: 620;
+            }}
+            QLabel#ResearchNoteSectionLabel {{
+                color: {p['accent']}; font-size: 11px; font-weight: 600;
+            }}
+            QPushButton {{
+                color: {p['text']}; background: transparent;
+                border: 1px solid {p['border']}; border-radius: 7px;
                 padding: 7px 12px;
-            }
-            QPushButton:hover:enabled {
-                background: #263449;
-                border-color: #64748B;
-            }
-            QPushButton#ResearchNoteSaveUserNote {
-                background: #263449;
-            }
-            QPushButton:disabled {
-                color: #64748B;
-            }
+            }}
+            QPushButton:hover:enabled {{
+                background: {p['hover']}; border-color: {p['accent']};
+            }}
+            QPushButton#ResearchNoteSaveUserNote {{
+                color: {p['text']}; background: {p['hover']};
+            }}
+            QPushButton:disabled {{ color: {p['muted_text']}; }}
             """
         )
 

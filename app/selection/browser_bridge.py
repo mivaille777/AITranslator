@@ -1,8 +1,8 @@
 """Loopback bridge for zero-keyboard browser selection capture.
 
 The browser extension posts structured selection snapshots to a local HTTP
-endpoint bound only to 127.0.0.1.  Automatic translation can then consume the
-fresh snapshot before falling back to Windows UI Automation.  This module does
+endpoint bound only to 127.0.0.1. Automatic translation can then consume the
+fresh snapshot before falling back to Windows UI Automation. This module does
 not read or write the clipboard and never synthesizes keyboard input.
 """
 
@@ -75,6 +75,24 @@ class BrowserSelectionSnapshot:
         return " ".join(part for part in parts if part).strip()
 
 
+@dataclass(frozen=True, slots=True)
+class BrowserBridgeStatus:
+    """Privacy-bounded diagnostics suitable for a user-facing settings page."""
+
+    running: bool
+    host: str
+    port: int
+    has_extension_activity: bool
+    last_activity_age_seconds: float | None = None
+    last_title: str = ""
+    last_url: str = ""
+    last_heading: str = ""
+
+    @property
+    def endpoint(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+
 class _BridgeHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -102,7 +120,7 @@ class _BrowserBridgeRequestHandler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:  # noqa: N802 - stdlib handler contract
         # A normal webpage attempting the custom bridge header would need a
-        # successful CORS preflight.  Refuse it; the extension service worker
+        # successful CORS preflight. Refuse it; the extension service worker
         # has explicit localhost host permission and does not need page CORS.
         self._write_status(403)
 
@@ -203,6 +221,31 @@ class BrowserSelectionBridge:
             if server is None:
                 return self.port
             return int(server.server_address[1])
+
+    def status_snapshot(self) -> BrowserBridgeStatus:
+        """Return safe runtime diagnostics without exposing selected text."""
+
+        with self._lock:
+            server = self._server
+            snapshot = self._latest
+            running = server is not None
+            port = int(server.server_address[1]) if server is not None else self.port
+        age: float | None = None
+        if snapshot is not None:
+            try:
+                age = max(0.0, float(self._clock()) - float(snapshot.received_at))
+            except (TypeError, ValueError):
+                age = None
+        return BrowserBridgeStatus(
+            running=running,
+            host=self.host,
+            port=port,
+            has_extension_activity=snapshot is not None,
+            last_activity_age_seconds=age,
+            last_title=snapshot.title if snapshot is not None else "",
+            last_url=snapshot.url if snapshot is not None else "",
+            last_heading=snapshot.heading if snapshot is not None else "",
+        )
 
     def start(self) -> bool:
         """Start the loopback receiver once without blocking the Qt thread."""
@@ -357,6 +400,7 @@ __all__ = [
     "BROWSER_SELECTION_PATH",
     "BRIDGE_HEADER_NAME",
     "BRIDGE_HEADER_VALUE",
+    "BrowserBridgeStatus",
     "BrowserSelectionBridge",
     "BrowserSelectionSnapshot",
     "DEFAULT_BROWSER_BRIDGE_HOST",

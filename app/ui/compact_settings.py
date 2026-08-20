@@ -11,6 +11,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QFormLayout,
     QFrame,
     QGroupBox,
     QHBoxLayout,
@@ -51,6 +52,25 @@ def apply_compact_settings_layout(window: Any) -> QScrollArea | None:
     return _apply_legacy_scroll_layout(window)
 
 
+def _apply_group_form_metrics(groups: list[QGroupBox] | tuple[QGroupBox, ...]) -> None:
+    """Apply one form rhythm to every settings group without touching its fields."""
+
+    for group in groups:
+        layout = group.layout()
+        if not isinstance(layout, QFormLayout):
+            continue
+        layout.setHorizontalSpacing(SPACING.md)
+        layout.setVerticalSpacing(SPACING.sm)
+        layout.setContentsMargins(
+            SPACING.md,
+            SPACING.lg,
+            SPACING.md,
+            SPACING.md,
+        )
+        layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        layout.setFormAlignment(Qt.AlignmentFlag.AlignTop)
+
+
 def _apply_navigation_settings_layout(
     window: Any,
     categories: object,
@@ -58,6 +78,14 @@ def _apply_navigation_settings_layout(
     root_layout = window.layout()
     if not isinstance(root_layout, QVBoxLayout):
         return None
+
+    root_layout.setContentsMargins(
+        SPACING.md,
+        SPACING.md,
+        SPACING.md,
+        SPACING.md,
+    )
+    root_layout.setSpacing(SPACING.sm)
 
     normalized: list[tuple[str, tuple[QGroupBox, ...]]] = []
     all_groups: list[QGroupBox] = []
@@ -74,6 +102,7 @@ def _apply_navigation_settings_layout(
     if not normalized:
         return _apply_legacy_scroll_layout(window)
 
+    _apply_group_form_metrics(all_groups)
     for group in all_groups:
         root_layout.removeWidget(group)
 
@@ -167,6 +196,7 @@ def _apply_legacy_scroll_layout(window: Any) -> QScrollArea | None:
     if not isinstance(root_layout, QVBoxLayout):
         return None
 
+    root_layout.setSpacing(SPACING.sm)
     groups: list[QGroupBox] = []
     for index in range(root_layout.count()):
         item = root_layout.itemAt(index)
@@ -178,6 +208,7 @@ def _apply_legacy_scroll_layout(window: Any) -> QScrollArea | None:
         _apply_window_bounds(window)
         return None
 
+    _apply_group_form_metrics(groups)
     content = QWidget(window)
     content.setObjectName("SettingsScrollContent")
     content.setAutoFillBackground(False)

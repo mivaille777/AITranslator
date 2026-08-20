@@ -83,16 +83,19 @@ class SelectionManager:
 
             self.clipboard_provider = resolved_clipboard
 
-            # Preserve the explicit legacy compatibility contract.  A caller
-            # that injects Word + Clipboard but deliberately omits UIA is
-            # defining a two-tier Word -> Clipboard chain.  Do not silently
-            # insert a live system UIA provider into that chain: doing so makes
-            # deterministic tests/integrations depend on whatever application
-            # happens to own the real desktop selection at that instant.
+            # Preserve the explicit legacy compatibility contract only when
+            # the caller has not supplied runtime configuration.  A caller
+            # that injects Word + Clipboard with no config is defining a
+            # deterministic two-tier Word -> Clipboard chain and should not
+            # inherit a live system UIA provider from the developer desktop.
+            # Supplying config_manager, however, is an explicit request to use
+            # the configured native stack, including the configured UIA
+            # timeout, so the default UIA provider must remain in that chain.
             explicit_word_clipboard_chain = bool(
                 word_provider is not None
                 and clipboard_provider is not None
                 and uia_provider is None
+                and config_manager is None
             )
             if explicit_word_clipboard_chain:
                 self.providers = (resolved_word, resolved_clipboard)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import re
 
-from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtCore import QSize, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 
 from app.ai.chat.models import ChatRole
 from app.ai.chat_selection_ui import SelectionCaptureChatPanel
-from app.ui.design_tokens import CONTROL, LAYOUT, RADIUS, SPACING, TYPOGRAPHY
+from app.ui.design_tokens import CONTROL, ICON, LAYOUT, RADIUS, SPACING, TYPOGRAPHY
+from app.ui.svg_icons import svg_icon
 
 
 CHAT_DISPLAY_FONT_MIN = 10
@@ -78,8 +79,10 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
 
         self.history_button = QToolButton(self)
         self.history_button.setObjectName("OverlayChatHistoryButton")
-        self.history_button.setText("☰")
+        self.history_button.setText("")
         self.history_button.setToolTip("历史会话")
+        self.history_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.history_button.setIconSize(QSize(ICON.md, ICON.md))
         self.history_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.history_menu = QMenu(self.history_button)
         self.history_menu.setObjectName("OverlayChatHistoryMenu")
@@ -88,8 +91,10 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
 
         self.new_chat_button = QToolButton(self)
         self.new_chat_button.setObjectName("OverlayChatNewConversationButton")
-        self.new_chat_button.setText("＋")
+        self.new_chat_button.setText("")
         self.new_chat_button.setToolTip("新建对话")
+        self.new_chat_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.new_chat_button.setIconSize(QSize(ICON.md, ICON.md))
         self.new_chat_button.clicked.connect(self.new_conversation_requested.emit)
         top.insertWidget(1, self.new_chat_button)
 
@@ -117,8 +122,10 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
 
         self.delete_chat_button = QToolButton(self)
         self.delete_chat_button.setObjectName("OverlayChatDeleteConversationButton")
-        self.delete_chat_button.setText("⌫")
+        self.delete_chat_button.setText("")
         self.delete_chat_button.setToolTip("删除当前对话")
+        self.delete_chat_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.delete_chat_button.setIconSize(QSize(ICON.md, ICON.md))
         self.delete_chat_button.clicked.connect(self._request_delete_current)
         close_index = top.indexOf(self.close_button)
         top.insertWidget(max(0, close_index), self.delete_chat_button)
@@ -127,6 +134,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
         self.title_label.setMinimumWidth(CONTROL.large_height + TYPOGRAPHY.title_large)
         self.model_button.setMinimumWidth(LAYOUT.chat_model_min_width)
         self._build_font_menu()
+        self._update_header_icons()
         self.input_edit.textChanged.connect(self._schedule_input_height_refresh)
         self.set_display_font_size(self._display_font_size)
         self._schedule_input_height_refresh()
@@ -138,6 +146,19 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
     @property
     def display_font_size(self) -> int:
         return int(self._display_font_size)
+
+    def _header_icon_color(self) -> str:
+        palette = getattr(self, "_palette", {})
+        return palette.get("chrome_muted_text", palette.get("muted_text", "#CBD5E1"))
+
+    def _update_header_icons(self) -> None:
+        color = self._header_icon_color()
+        if hasattr(self, "history_button"):
+            self.history_button.setIcon(svg_icon("history", color, size=ICON.md))
+        if hasattr(self, "new_chat_button"):
+            self.new_chat_button.setIcon(svg_icon("add", color, size=ICON.md))
+        if hasattr(self, "delete_chat_button"):
+            self.delete_chat_button.setIcon(svg_icon("delete", color, size=ICON.md))
 
     def _request_delete_current(self) -> None:
         if self._active_conversation_id:
@@ -187,8 +208,9 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
     ) -> None:
         self._active_conversation_id = str(active_id or "")
         self.history_menu.clear()
+        icon_color = self._header_icon_color()
 
-        new_action = QAction("＋  新建对话", self.history_menu)
+        new_action = QAction(svg_icon("add", icon_color, size=ICON.sm), "新建对话", self.history_menu)
         new_action.triggered.connect(self.new_conversation_requested.emit)
         self.history_menu.addAction(new_action)
         self.history_menu.addSeparator()
@@ -458,6 +480,7 @@ class ManagedChatPanel(SelectionCaptureChatPanel):
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
+        self._update_header_icons()
         chrome_background = palette.get("chrome_background", palette["menu_background"])
         chrome_border = palette.get("chrome_border", palette["border"])
         chrome_hover = palette.get("chrome_hover", palette["hover"])

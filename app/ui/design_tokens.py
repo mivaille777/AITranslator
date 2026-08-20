@@ -100,6 +100,19 @@ class LayoutTokens:
 
 
 @dataclass(frozen=True, slots=True)
+class SettingsTokens:
+    default_width: int = 620
+    navigation_width: int = 860
+    default_height: int = 660
+    minimum_width: int = 540
+    navigation_minimum_width: int = 720
+    minimum_height: int = 500
+    maximum_height: int = 720
+    scroll_step: int = 48
+    navigation_rail_width: int = 154
+
+
+@dataclass(frozen=True, slots=True)
 class ThemeTokens:
     name: str
     surface_base: str
@@ -131,8 +144,6 @@ class ThemeTokens:
             "hover": self.surface_hover,
             "accent": self.accent,
             "shadow": self.shadow,
-            # New semantic names are included so migrated surfaces can stop
-            # translating between old palette keys and design-system terms.
             "surface_base": self.surface_base,
             "surface_elevated": self.surface_elevated,
             "surface_floating": self.surface_floating,
@@ -162,6 +173,7 @@ CONTROL = ControlTokens()
 ICON = IconTokens()
 MOTION = MotionTokens()
 LAYOUT = LayoutTokens()
+SETTINGS = SettingsTokens()
 
 
 _DARK = ThemeTokens(
@@ -232,9 +244,6 @@ THEMES: Mapping[str, ThemeTokens] = MappingProxyType(
     }
 )
 
-# Transitional compatibility map. Existing Overlay code can compare against
-# this contract while each surface is migrated from legacy palette keys to the
-# semantic ThemeTokens API.
 LEGACY_OVERLAY_THEMES: Mapping[str, Mapping[str, str]] = MappingProxyType(
     {
         name: MappingProxyType(theme.legacy_overlay_palette())
@@ -275,6 +284,7 @@ __all__ = [
     "LEGACY_OVERLAY_THEMES",
     "MOTION",
     "RADIUS",
+    "SETTINGS",
     "SPACING",
     "THEMES",
     "TYPOGRAPHY",
@@ -283,6 +293,7 @@ __all__ = [
     "LayoutTokens",
     "MotionTokens",
     "RadiusTokens",
+    "SettingsTokens",
     "SpacingTokens",
     "ThemeTokens",
     "TypographyTokens",

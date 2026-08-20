@@ -1,8 +1,11 @@
 (() => {
   const CONTEXT_LIMIT = 900;
   const SIGNATURE_WINDOW_MS = 120;
+  const PAGE_DEBOUNCE_MS = 90;
   let lastSignature = "";
   let lastSentAt = 0;
+  let lastPageSignature = "";
+  let pageTimer = null;
 
   function cleanText(value) {
     return String(value || "")
@@ -102,6 +105,11 @@
     return "";
   }
 
+  function currentPageHeading() {
+    const heading = document.querySelector("h1, main h2, article h2, h2");
+    return cleanText(heading?.innerText || heading?.textContent || "").slice(0, 1024);
+  }
+
   function buildPayload() {
     const inputSelection = activeInputSelection();
     if (inputSelection?.text) {
@@ -172,6 +180,55 @@
     }
   }
 
+  function publishPageContext(force = false) {
+    if (window.top !== window || document.visibilityState === "hidden") {
+      return;
+    }
+    const payload = {
+      url: location.href,
+      frame_url: location.href,
+      title: document.title || "",
+      heading: currentPageHeading(),
+      top_level: true,
+      captured_at_ms: Date.now()
+    };
+    const signature = `${payload.url}\n${payload.title}`;
+    if (!force && signature === lastPageSignature) {
+      return;
+    }
+    lastPageSignature = signature;
+    try {
+      chrome.runtime.sendMessage({
+        type: "aitrans-page-context",
+        payload
+      });
+    } catch (_error) {
+      // Page context is an optional companion signal and must stay silent.
+    }
+  }
+
+  function schedulePageContext(force = false) {
+    if (pageTimer !== null) {
+      clearTimeout(pageTimer);
+    }
+    pageTimer = setTimeout(() => {
+      pageTimer = null;
+      publishPageContext(force);
+    }, PAGE_DEBOUNCE_MS);
+  }
+
+  function wrapHistoryMethod(name) {
+    const original = history[name];
+    if (typeof original !== "function") {
+      return;
+    }
+    history[name] = function (...args) {
+      const result = original.apply(this, args);
+      schedulePageContext(true);
+      return result;
+    };
+  }
+
   document.addEventListener(
     "mouseup",
     () => {
@@ -190,4 +247,17 @@
     },
     true
   );
+
+  window.addEventListener("focus", () => schedulePageContext(true), true);
+  window.addEventListener("pageshow", () => schedulePageContext(true), true);
+  window.addEventListener("hashchange", () => schedulePageContext(true), true);
+  window.addEventListener("popstate", () => schedulePageContext(true), true);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      schedulePageContext(true);
+    }
+  });
+  wrapHistoryMethod("pushState");
+  wrapHistoryMethod("replaceState");
+  schedulePageContext(true);
 })();

@@ -17,6 +17,8 @@ import type {
   ConversationContextUpdate,
   ConversationDetail,
 } from "../../api/types"
+import { desktop } from "../../desktop"
+import type { CompanionConversationChangeSignal } from "../../desktop/adapter"
 import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import {
   buildCompanionChatRequest,
@@ -27,6 +29,7 @@ import {
   type CompanionContextSnapshot,
   type CompanionRuntimeMessage,
 } from "./companion-runtime"
+import { companionExternalChangeDecision } from "./companion-sync"
 
 type StreamEventContext = {
   scopeId: string
@@ -112,6 +115,7 @@ export function useCompanionConversationRuntime(
   const activeRequestRef = useRef<number | null>(null)
   const streamHandleRef = useRef<CompanionChatStreamHandle | null>(null)
   const openingConversationRef = useRef(false)
+  const pendingExternalChangeRef = useRef<CompanionConversationChangeSignal | null>(null)
   const onConversationAcceptedRef = useRef(options.onConversationAccepted)
 
   useEffect(() => {
@@ -157,6 +161,7 @@ export function useCompanionConversationRuntime(
 
   const reset = useCallback((next: CompanionRuntimeResetOptions = {}) => {
     closeActiveStream()
+    pendingExternalChangeRef.current = null
     applyConversationId("")
     applyContext(next.context ?? EMPTY_COMPANION_CONTEXT)
     applyContextMode(next.contextMode ?? "general")
@@ -180,6 +185,117 @@ export function useCompanionConversationRuntime(
       conversation,
     )
   }, [applyContext, applyContextMode, applyConversationId, queryClient])
+
+  const refreshConversationFromExternalChange = useCallback(async (
+    nextConversationId: string,
+  ) => {
+    const normalized = nextConversationId.trim()
+    if (
+      !normalized ||
+      conversationIdRef.current !== normalized ||
+      activeRequestRef.current !== null ||
+      openingConversationRef.current
+    ) {
+      return
+    }
+
+    try {
+      const conversation = await getConversation(normalized)
+      if (
+        conversationIdRef.current !== normalized ||
+        activeRequestRef.current !== null ||
+        openingConversationRef.current
+      ) {
+        return
+      }
+      applyConversation(conversation)
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] })
+    } catch {
+      // Background synchronization is best-effort. Explicit open/recovery paths
+      // still surface actionable errors to the user.
+    }
+  }, [applyConversation, queryClient])
+
+  const applyExternalConversationDeletion = useCallback((nextConversationId: string) => {
+    const normalized = nextConversationId.trim()
+    if (!normalized || conversationIdRef.current !== normalized) return
+
+    pendingExternalChangeRef.current = null
+    closeActiveStream()
+    applyConversationId("")
+    setMessages([])
+    setDraft("")
+    setErrorMessage("This conversation was deleted in another window.")
+    void queryClient.invalidateQueries({ queryKey: ["conversations"] })
+  }, [applyConversationId, closeActiveStream, queryClient])
+
+  useEffect(() => {
+    let disposed = false
+    let unlisten: () => void = () => undefined
+
+    void desktop.overlay.onCompanionConversationChanged((signal) => {
+      if (disposed) return
+      const decision = companionExternalChangeDecision(
+        signal,
+        conversationIdRef.current,
+        activeRequestRef.current !== null || openingConversationRef.current,
+      )
+
+      if (decision === "ignore") return
+      if (decision === "delete") {
+        applyExternalConversationDeletion(signal.conversationId)
+        return
+      }
+      if (decision === "queue") {
+        pendingExternalChangeRef.current = signal
+        return
+      }
+
+      void refreshConversationFromExternalChange(signal.conversationId)
+    }).then((stopListening) => {
+      if (disposed) {
+        stopListening()
+        return
+      }
+      unlisten = stopListening
+    })
+
+    return () => {
+      disposed = true
+      unlisten()
+    }
+  }, [applyExternalConversationDeletion, refreshConversationFromExternalChange])
+
+  useEffect(() => {
+    if (activeRequestId !== null || openingConversation || !conversationId) return
+    const pending = pendingExternalChangeRef.current
+    if (!pending) return
+
+    const decision = companionExternalChangeDecision(pending, conversationId, false)
+    pendingExternalChangeRef.current = null
+    if (decision === "delete") {
+      applyExternalConversationDeletion(pending.conversationId)
+    } else if (decision === "refresh") {
+      void refreshConversationFromExternalChange(pending.conversationId)
+    }
+  }, [
+    activeRequestId,
+    applyExternalConversationDeletion,
+    conversationId,
+    openingConversation,
+    refreshConversationFromExternalChange,
+  ])
+
+  const notifyConversationUpdated = useCallback((nextConversationId: string) => {
+    const normalized = nextConversationId.trim()
+    if (!normalized) return
+    void desktop.overlay.notifyCompanionConversationChanged({
+      conversationId: normalized,
+      kind: "updated",
+    }).catch(() => {
+      // Persisted storage remains the source of truth when the peer window is unavailable.
+    })
+  }, [])
 
   const openConversation = useCallback(async (nextConversationId: string) => {
     if (!nextConversationId || openingConversationRef.current) return null
@@ -296,6 +412,7 @@ export function useCompanionConversationRuntime(
         ),
       )
       finishRequest(requestId)
+      notifyConversationUpdated(event.conversation_id)
       return
     }
 
@@ -313,6 +430,7 @@ export function useCompanionConversationRuntime(
         ),
       )
       finishRequest(requestId)
+      notifyConversationUpdated(event.conversation_id)
       return
     }
 
@@ -330,7 +448,8 @@ export function useCompanionConversationRuntime(
     )
     setErrorMessage(event.message || "AI Chat streaming failed.")
     finishRequest(requestId)
-  }, [applyConversationId, finishRequest, queryClient])
+    notifyConversationUpdated(event.conversation_id)
+  }, [applyConversationId, finishRequest, notifyConversationUpdated, queryClient])
 
   const sendMessage = useCallback((
     message = draft,

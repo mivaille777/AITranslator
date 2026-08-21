@@ -7,6 +7,9 @@ level = "INFO"
 directory = "logs"
 
 [translation]
+# WebReBuild currently defaults to Youdao's web-compatible translator.
+# Set to "google_web" to restore the previous provider.
+provider = "youdao_web"
 source_language = "auto"
 target_language = "zh-CN"
 cache_enabled = true
@@ -27,6 +30,14 @@ timeout_ms = 8000
 max_retries = 1
 # Keep automatic/manual live translation from creating back-to-back web hits.
 min_interval_ms = 120
+
+[youdao_web]
+enabled = true
+endpoint = "https://fanyi.youdao.com/translate"
+timeout_ms = 8000
+# Keep retries bounded; web-compatible endpoints may rate-limit automation.
+max_retries = 1
+min_interval_ms = 200
 
 [cache]
 enabled = true

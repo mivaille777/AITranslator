@@ -30,6 +30,7 @@ $DesktopDir = Join-Path $RepoRoot "apps\desktop"
 $TauriDir = Join-Path $DesktopDir "src-tauri"
 $ExpectedBranch = "WebReBuild"
 $ExpectedCondaEnvironment = "aitrans"
+$FrontendDependenciesPrepared = $false
 
 function Write-Step {
     param(
@@ -127,6 +128,18 @@ function Get-GitDirtyClassification {
         Generated = @($generated)
         Blocking = @($blocking)
     }
+}
+
+function Prepare-FrontendDependencies {
+    if ($script:FrontendDependenciesPrepared) {
+        return
+    }
+
+    Set-Location $DesktopDir
+    Write-Host "-> npm ci --no-audit --prefer-offline" -ForegroundColor Cyan
+    npm ci --no-audit --prefer-offline
+    Assert-LastExitCode "Frontend dependency installation failed."
+    $script:FrontendDependenciesPrepared = $true
 }
 
 Write-Host ""
@@ -237,6 +250,7 @@ if ($ResolvedPythonTests.Count -gt 0) {
 }
 
 if ($ResolvedFrontendTests.Count -gt 0) {
+    Prepare-FrontendDependencies
     Set-Location $DesktopDir
     foreach ($testTarget in $ResolvedFrontendTests) {
         Write-Host "-> npx vitest run $testTarget" -ForegroundColor Cyan
@@ -257,16 +271,17 @@ if ($SkipFullPythonTests) {
     Write-Host "Full Python suite skipped by -SkipFullPythonTests." -ForegroundColor DarkYellow
 }
 else {
-    python -m pytest tests -q
+    python -m pytest -q --ignore=tests/manual
     Assert-LastExitCode "Python test suite failed."
     Write-Host "Python test suite PASSED." -ForegroundColor Green
 }
 
 # ------------------------------------------------------------
-# 5. Frontend lint/test/build
+# 5. Frontend dependency parity + lint/test/build
 # ------------------------------------------------------------
 
 Write-Step "Verify desktop frontend" 5
+Prepare-FrontendDependencies
 Set-Location $DesktopDir
 
 Write-Host "-> npm run lint" -ForegroundColor Cyan
@@ -286,14 +301,14 @@ Assert-LastExitCode "Frontend production build failed."
 Write-Host "Frontend verification PASSED." -ForegroundColor Green
 
 # ------------------------------------------------------------
-# 6. Rust/Tauri compile check
+# 6. Rust/Tauri compile check - match GitHub CI feature set
 # ------------------------------------------------------------
 
 Write-Step "Run Cargo check" 6
 Set-Location $TauriDir
 
-cargo check
-Assert-LastExitCode "cargo check failed."
+cargo check --no-default-features
+Assert-LastExitCode "cargo check --no-default-features failed."
 Write-Host "Cargo check PASSED." -ForegroundColor Green
 
 # ------------------------------------------------------------

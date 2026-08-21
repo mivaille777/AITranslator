@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -12,6 +13,14 @@ on:
 
 permissions:
   contents: read
+
+# Keep only the newest CI for a source branch. This is especially important
+# for WebReBuild, where one development batch may update several files in
+# rapid succession. Push and pull_request runs for the same source branch use
+# the same group, so they do not duplicate work.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   python-tests:
@@ -38,13 +47,26 @@ jobs:
         shell: pwsh
         run: python -m pip install --upgrade pip
 
+      - name: Prepare test results directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force test-results | Out-Null
+
       - name: Run test suite
         shell: pwsh
-        run: .\scripts\test.ps1 -Install
+        run: .\scripts\test.ps1 -Install -PytestArgs '--junitxml=test-results/pytest.xml'
 
       - name: Run legacy application smoke test
         shell: pwsh
         run: python -m app.main --smoke-test
+
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-pytest-${{ github.run_id }}
+          path: test-results/pytest.xml
+          if-no-files-found: warn
+          retention-days: 14
 
   web-frontend:
     name: React lint, tests, and build
@@ -67,7 +89,7 @@ jobs:
           cache-dependency-path: apps/desktop/package-lock.json
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: npm ci --no-audit --prefer-offline
 
       - name: Lint frontend
         run: npm run lint

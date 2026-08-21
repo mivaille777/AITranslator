@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch } from "./client"
+import { apiDelete, apiGet, apiPatch, apiPost } from "./client"
 import type {
   ConversationDeleteResponse,
   ConversationDetail,
@@ -20,6 +20,16 @@ export function renameConversation(
   return apiPatch<ConversationDetail, { title: string }>(
     `/api/conversations/${encodeURIComponent(conversationId)}`,
     { title },
+  )
+}
+
+export function rewindConversation(
+  conversationId: string,
+  userMessageId: string,
+): Promise<ConversationDetail> {
+  return apiPost<ConversationDetail, { user_message_id: string }>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/rewind`,
+    { user_message_id: userMessageId },
   )
 }
 

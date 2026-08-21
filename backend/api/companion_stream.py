@@ -52,6 +52,19 @@ def _validation_message(exc: ValidationError) -> str:
     return str(errors[0].get("msg") or "Invalid streaming chat request.")
 
 
+def _incoming_identity(incoming: object) -> tuple[int, str]:
+    if not isinstance(incoming, dict):
+        return 0, ""
+    request = incoming.get("request")
+    if not isinstance(request, dict):
+        return 0, ""
+    request_id = request.get("request_id", 0)
+    if isinstance(request_id, bool) or not isinstance(request_id, int) or request_id < 0:
+        request_id = 0
+    conversation_id = str(request.get("session_id", ""))[:128]
+    return request_id, conversation_id
+
+
 def _error_code(exc: Exception) -> str:
     if isinstance(exc, AIConfigurationError):
         return "configuration"
@@ -85,11 +98,12 @@ async def stream_companion_chat(
         try:
             start = CompanionChatStreamStart.model_validate(incoming)
         except ValidationError as exc:
+            request_id, conversation_id = _incoming_identity(incoming)
             await websocket.send_json(
                 {
                     "type": "error",
-                    "request_id": 0,
-                    "conversation_id": "",
+                    "request_id": request_id,
+                    "conversation_id": conversation_id,
                     "message_id": "",
                     "code": "invalid_request",
                     "message": _validation_message(exc),

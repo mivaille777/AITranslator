@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { ArrowUpRight, NotebookText } from "lucide-react"
+import { ArrowUpRight, MessageSquareText, NotebookText } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 
 import { createCompanionHandoff } from "../../api/companion"
@@ -41,6 +41,14 @@ export default function ResearchWorkspace() {
 
   const notes = notesQuery.data?.notes ?? []
 
+  function openNote(note: ResearchNoteListItem) {
+    if (note.conversation_id) {
+      navigate(`/chat?conversation=${encodeURIComponent(note.conversation_id)}`)
+      return
+    }
+    reopenMutation.mutate(note)
+  }
+
   return (
     <div className="space-y-5">
       <Card>
@@ -53,7 +61,7 @@ export default function ResearchWorkspace() {
               Reading evidence saved for later reasoning
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-              Notes stay in the existing SQLite store. Opening one rebuilds a frozen Companion context and continues in AI Chat.
+              Notes saved from an active Chat keep their conversation link. Older standalone notes rebuild a frozen Companion context when reopened.
             </p>
           </div>
           <Badge className="self-start sm:self-auto">
@@ -80,17 +88,26 @@ export default function ResearchWorkspace() {
         <EmptyState
           icon={<NotebookText size={28} strokeWidth={1.5} />}
           title="No Research Notes yet"
-          description="Save a browser selection from the Overlay Quick Actions to start a research trail."
+          description="Save a browser selection from the Overlay Quick Actions or save a linked note from AI Chat to start a research trail."
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {notes.map((note) => (
             <Card key={note.note_id} className="flex min-h-56 flex-col">
               <CardHeader className="pb-3">
-                <p className="truncate text-sm font-semibold text-slate-900">{note.display_title}</p>
-                {note.section_heading && (
-                  <p className="mt-1 truncate text-xs text-slate-400">{note.section_heading}</p>
-                )}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">{note.display_title}</p>
+                    {note.section_heading && (
+                      <p className="mt-1 truncate text-xs text-slate-400">{note.section_heading}</p>
+                    )}
+                  </div>
+                  {note.conversation_id && (
+                    <Badge tone="success" className="shrink-0">
+                      Linked Chat
+                    </Badge>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="flex flex-1 flex-col">
                 <p className="line-clamp-5 text-sm leading-6 text-slate-600">{note.excerpt}</p>
@@ -104,10 +121,19 @@ export default function ResearchWorkspace() {
                   <Button
                     className="w-full justify-between"
                     disabled={reopenMutation.isPending}
-                    onClick={() => reopenMutation.mutate(note)}
+                    onClick={() => openNote(note)}
                   >
-                    Open in AI Chat
-                    <ArrowUpRight size={14} />
+                    {note.conversation_id ? (
+                      <>
+                        Continue conversation
+                        <MessageSquareText size={14} />
+                      </>
+                    ) : (
+                      <>
+                        Open in AI Chat
+                        <ArrowUpRight size={14} />
+                      </>
+                    )}
                   </Button>
                 </div>
               </CardContent>

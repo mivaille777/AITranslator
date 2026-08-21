@@ -1,5 +1,10 @@
-html[data-ait-view="overlay"] main {
-  padding: 5px !important;
+/*
+ * The native overlay window is transparent. Keep the glass shell flush with
+ * the WebView viewport so the old 5px inset cannot render as a rectangular
+ * transparent frame around the rounded surface.
+ */
+html[data-ait-view="overlay"] .ait-overlay-root {
+  padding: 0 !important;
 }
 
 /*

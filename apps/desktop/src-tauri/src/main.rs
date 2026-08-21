@@ -8,6 +8,50 @@ use std::{
 use tauri::{Manager, PhysicalPosition};
 
 static OVERLAY_MOVE_GENERATION: AtomicU64 = AtomicU64::new(0);
+const OVERLAY_CORNER_RADIUS_CSS_PX: f64 = 24.0;
+
+#[cfg(windows)]
+fn apply_overlay_window_region(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::HWND as Win32Hwnd;
+    use windows_sys::Win32::Graphics::Gdi::{
+        CreateRoundRectRgn, DeleteObject, SetWindowRgn, HGDIOBJ,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let scale_factor = window.scale_factor().map_err(|error| error.to_string())?;
+    let width = i32::try_from(size.width).map_err(|_| "overlay width is too large")?;
+    let height = i32::try_from(size.height).map_err(|_| "overlay height is too large")?;
+
+    if width <= 0 || height <= 0 {
+        return Err("overlay window has an invalid size".to_string());
+    }
+
+    let radius = (OVERLAY_CORNER_RADIUS_CSS_PX * scale_factor)
+        .round()
+        .clamp(1.0, f64::from(width.min(height) / 2)) as i32;
+    let region = unsafe { CreateRoundRectRgn(0, 0, width, height, radius * 2, radius * 2) };
+
+    if region.is_null() {
+        return Err("CreateRoundRectRgn failed".to_string());
+    }
+
+    let result = unsafe { SetWindowRgn(hwnd.0 as Win32Hwnd, region, 1) };
+    if result == 0 {
+        unsafe {
+            DeleteObject(region as HGDIOBJ);
+        }
+        return Err("SetWindowRgn failed".to_string());
+    }
+
+    // SetWindowRgn takes ownership of `region` after a successful call.
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn apply_overlay_window_region(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
 
 fn next_overlay_move_generation() -> u64 {
     OVERLAY_MOVE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
@@ -59,6 +103,15 @@ fn window_close(app: tauri::AppHandle, window_label: String) -> Result<(), Strin
     resolve_window(&app, &window_label)?
         .close()
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn update_overlay_window_shape(app: tauri::AppHandle) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window is unavailable".to_string())?;
+
+    apply_overlay_window_region(&overlay)
 }
 
 #[tauri::command]
@@ -123,13 +176,36 @@ fn animate_overlay_position(
 
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            if let Some(overlay) = app.get_webview_window("overlay") {
+                if let Err(error) = apply_overlay_window_region(&overlay) {
+                    eprintln!("failed to initialize overlay window region: {error}");
+                }
+
+                let overlay_for_resize = overlay.clone();
+                overlay.on_window_event(move |event| {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::Resized(_)
+                            | tauri::WindowEvent::ScaleFactorChanged { .. }
+                    ) {
+                        if let Err(error) = apply_overlay_window_region(&overlay_for_resize) {
+                            eprintln!("failed to update overlay window region: {error}");
+                        }
+                    }
+                });
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             animate_overlay_position,
             cancel_overlay_motion,
             window_minimize,
             window_toggle_maximize,
             window_is_maximized,
-            window_close
+            window_close,
+            update_overlay_window_shape
         ])
         .run(tauri::generate_context!())
         .expect("error while running AITranslator desktop shell");

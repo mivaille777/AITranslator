@@ -393,7 +393,7 @@ export default function OverlayView() {
 
   return (
     <main
-      className="h-screen w-screen overflow-hidden bg-transparent p-2 text-slate-100"
+      className="ait-overlay-root h-screen w-screen overflow-hidden bg-transparent text-slate-100"
       onContextMenu={handleContextMenu}
       onPointerDown={() => {
         cancelAutoDismiss()

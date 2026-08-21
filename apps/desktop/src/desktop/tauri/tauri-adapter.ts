@@ -59,6 +59,14 @@ async function cancelOverlayMotion(): Promise<void> {
   }
 }
 
+async function updateOverlayWindowShape(): Promise<void> {
+  try {
+    await invoke("update_overlay_window_shape")
+  } catch {
+    // The browser adapter and a reloading Tauri shell can briefly lack the native window.
+  }
+}
+
 async function keepOverlayInsideWorkArea(overlay: TauriWindow): Promise<void> {
   const position = await overlay.outerPosition()
   const size = await overlay.outerSize()
@@ -142,6 +150,7 @@ async function resizeOverlay(target: DesktopSize): Promise<void> {
 
   if (Math.abs(deltaWidth) < 1 && Math.abs(deltaHeight) < 1) {
     await keepOverlayInsideWorkArea(overlay)
+    await updateOverlayWindowShape()
     return
   }
 
@@ -164,6 +173,7 @@ async function resizeOverlay(target: DesktopSize): Promise<void> {
 
   if (generation === overlayResizeGeneration) {
     await keepOverlayInsideWorkArea(overlay)
+    await updateOverlayWindowShape()
   }
 }
 
@@ -227,6 +237,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
   overlay: {
     async show() {
       const overlay = await getOverlayWindow()
+      await updateOverlayWindowShape()
       await overlay?.show()
     },
     async hide() {

@@ -162,8 +162,8 @@ class OverlayStateService:
     ) -> OverlayState:
         normalized_context_id = str(context_id or "").strip()
         normalized_conversation_id = str(conversation_id or "").strip()
-        if not normalized_context_id or not normalized_conversation_id:
-            raise ValueError("Overlay companion binding requires context and conversation IDs.")
+        if not normalized_context_id:
+            raise ValueError("Overlay companion binding requires a context ID.")
 
         with self._lock:
             if normalized_context_id != self._state.context_id:

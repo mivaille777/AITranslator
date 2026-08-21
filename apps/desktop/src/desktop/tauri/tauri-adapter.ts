@@ -22,6 +22,7 @@ import { readOverlayPreferences } from "../overlay-preferences"
 const OVERLAY_STATE_CHANGED_EVENT = "aitrans-overlay-state-changed"
 
 let overlayResizeGeneration = 0
+let lastPrepositionedContextId = ""
 
 async function getMainWindow(): Promise<TauriWindow | null> {
   const current = getCurrentWindow()
@@ -107,7 +108,6 @@ async function placeOverlay(
   })
 
   if (mode === "mouse_follow" && (await overlay.isVisible())) {
-    // Response-first motion: the latest target replaces any in-flight native motion.
     await invoke("animate_overlay_position", {
       x: position.x,
       y: position.y,
@@ -184,6 +184,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     },
     async hide() {
       overlayResizeGeneration += 1
+      lastPrepositionedContextId = ""
       await cancelOverlayMotion()
       const overlay = await getOverlayWindow()
       await overlay?.hide()
@@ -220,19 +221,25 @@ export const tauriDesktopAdapter: DesktopAdapter = {
         callback({ x: payload.x, y: payload.y })
       })
     },
-    async notifyStateChanged() {
-      // When the main window publishes a fresh selection, submit the latest near-cursor
-      // target immediately. Content refresh is notified separately below.
-      if (getCurrentWindow().label !== "overlay") {
+    async notifyStateChanged(contextId = "") {
+      if (!contextId) {
+        lastPrepositionedContextId = ""
+      } else if (
+        getCurrentWindow().label !== "overlay" &&
+        contextId !== lastPrepositionedContextId
+      ) {
         const preferences = readOverlayPreferences()
         if (preferences.positionMode === "mouse_follow" && !preferences.locked) {
           await placeOverlay(preferences.positionMode, preferences.customPosition)
+          lastPrepositionedContextId = contextId
         }
       }
-      await emitTo("overlay", OVERLAY_STATE_CHANGED_EVENT)
+      await emitTo("overlay", OVERLAY_STATE_CHANGED_EVENT, { contextId })
     },
     async onStateChanged(callback) {
-      return listen(OVERLAY_STATE_CHANGED_EVENT, () => callback())
+      return listen<{ contextId?: string }>(OVERLAY_STATE_CHANGED_EVENT, (event) => {
+        callback(event.payload?.contextId ?? "")
+      })
     },
   },
 }

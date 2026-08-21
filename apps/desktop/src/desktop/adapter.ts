@@ -50,7 +50,6 @@ export interface OverlayWindowAdapter extends WindowAdapter {
     customPosition?: DesktopPoint | null,
   ): Promise<DesktopPoint | null>
   resize(size: DesktopSize): Promise<void>
-  startDragging(): Promise<void>
   getPosition(): Promise<DesktopPoint | null>
   setAlwaysOnTop(enabled: boolean): Promise<void>
   setClickThrough(enabled: boolean): Promise<void>

@@ -26,6 +26,7 @@ const COMPANION_CONVERSATION_CHANGED_EVENT = "aitrans-companion-conversation-cha
 const OVERLAY_INTERACTIVE_DATASET_KEY = "aitOverlayInteractive"
 
 let overlayResizeGeneration = 0
+let ignoreProgrammaticOverlayMovesUntil = 0
 
 async function getMainWindow(): Promise<TauriWindow | null> {
   const current = getCurrentWindow()
@@ -49,6 +50,13 @@ function wait(milliseconds: number): Promise<void> {
 
 function overlayRequiresPointerInteraction(): boolean {
   return document.documentElement.dataset[OVERLAY_INTERACTIVE_DATASET_KEY] === "true"
+}
+
+function suppressProgrammaticOverlayMoves(duration = 160): void {
+  ignoreProgrammaticOverlayMovesUntil = Math.max(
+    ignoreProgrammaticOverlayMovesUntil,
+    Date.now() + duration,
+  )
 }
 
 async function cancelOverlayMotion(): Promise<void> {
@@ -84,6 +92,7 @@ async function keepOverlayInsideWorkArea(overlay: TauriWindow): Promise<void> {
   const nextY = clamp(position.y, minY, maxY)
 
   if (nextX !== position.x || nextY !== position.y) {
+    suppressProgrammaticOverlayMoves()
     await overlay.setPosition(new PhysicalPosition(nextX, nextY))
   }
 }
@@ -122,7 +131,10 @@ async function placeOverlay(
     customPosition,
   })
 
-  if (mode === "mouse_follow" && (await overlay.isVisible())) {
+  const animate = mode === "mouse_follow" && (await overlay.isVisible())
+  suppressProgrammaticOverlayMoves(animate ? 180 : 120)
+
+  if (animate) {
     await invoke("animate_overlay_position", {
       x: position.x,
       y: position.y,
@@ -252,11 +264,6 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     },
     place: placeOverlay,
     resize: resizeOverlay,
-    async startDragging() {
-      await cancelOverlayMotion()
-      const overlay = await getOverlayWindow()
-      await overlay?.startDragging()
-    },
     async getPosition() {
       const overlay = await getOverlayWindow()
       if (!overlay) return null
@@ -276,6 +283,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
       const overlay = await getOverlayWindow()
       if (!overlay) return () => undefined
       return overlay.onMoved(({ payload }) => {
+        if (Date.now() < ignoreProgrammaticOverlayMovesUntil) return
         callback({ x: payload.x, y: payload.y })
       })
     },

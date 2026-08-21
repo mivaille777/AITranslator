@@ -84,15 +84,6 @@ html[data-ait-view="overlay"] .ait-overlay-shell.ait-overlay-near-enter {
   animation: ait-overlay-near-enter 280ms var(--ait-ease-spring) both;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-shell.is-dragging {
-  transform: scale(0.992);
-  border-color: rgba(255, 255, 255, 0.13) !important;
-  box-shadow:
-    0 12px 34px rgba(0, 0, 0, 0.24),
-    0 3px 10px rgba(0, 0, 0, 0.13),
-    inset 0 1px 0 rgba(255, 255, 255, 0.065) !important;
-}
-
 html[data-ait-view="overlay"] .ait-overlay-drag-handle {
   transition:
     color 160ms var(--ait-ease-standard),
@@ -102,11 +93,6 @@ html[data-ait-view="overlay"] .ait-overlay-drag-handle {
 html[data-ait-view="overlay"] header:hover .ait-overlay-drag-handle {
   color: rgba(235, 235, 245, 0.48) !important;
   transform: translateX(1px);
-}
-
-html[data-ait-view="overlay"] .ait-overlay-shell.is-dragging .ait-overlay-drag-handle {
-  color: rgba(235, 235, 245, 0.7) !important;
-  transform: scaleX(1.08);
 }
 
 html[data-ait-view="overlay"] .ait-overlay-action-surface {

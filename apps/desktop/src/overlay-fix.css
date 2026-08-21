@@ -11,19 +11,6 @@ html[data-ait-view="overlay"] .ait-overlay-shell {
   contain: layout paint;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-shell > header {
-  flex: 0 0 auto;
-  height: 64px;
-  -webkit-app-region: drag;
-  user-select: none;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-shell > header button,
-html[data-ait-view="overlay"] .ait-overlay-shell > header input,
-html[data-ait-view="overlay"] .ait-overlay-shell > header [role="button"] {
-  -webkit-app-region: no-drag;
-}
-
 html[data-ait-view="overlay"] .ait-overlay-shell > div {
   min-height: 0;
   overflow-y: auto;

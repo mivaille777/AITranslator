@@ -5,13 +5,12 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { dismissOverlay, getOverlayState } from "../api/overlay"
 import { desktop } from "../desktop"
-import type { DesktopPoint, OverlayPositionMode } from "../desktop"
+import type { OverlayPositionMode } from "../desktop"
 import { dispatchOverlayCommand } from "../desktop/overlay-commands"
 import {
   readOverlayPreferences,
@@ -27,6 +26,7 @@ import { queryKeys, queryPolling } from "../shared/query/query-keys"
 import OverlayQuickActions, {
   type OverlayCompletedInteraction,
 } from "./OverlayQuickActions"
+import OverlayHeader from "./OverlayHeader"
 
 type MenuPosition = { x: number; y: number }
 type ActionPresentationState = {
@@ -44,17 +44,12 @@ const positionLabels: Record<OverlayPositionMode, string> = {
 
 export default function OverlayView() {
   const [copied, setCopied] = useState(false)
-  const [dragVisualActive, setDragVisualActive] = useState(false)
   const [preferences, setPreferences] = useState(readOverlayPreferences)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
   const [actionPresentationState, setActionPresentationState] = useState<ActionPresentationState>({
     contextId: "",
     presentation: "compact",
   })
-  const draggingRef = useRef(false)
-  const pendingMoveRef = useRef<DesktopPoint | null>(null)
-  const moveIdleTimerRef = useRef<number | null>(null)
-  const dragArmTimerRef = useRef<number | null>(null)
   const autoDismissTimerRef = useRef<number | null>(null)
   const lastPlacedContextRef = useRef("")
   const lastSizeKeyRef = useRef("")
@@ -136,29 +131,11 @@ export default function OverlayView() {
 
     void desktop.overlay
       .onMoved((position) => {
-        if (!draggingRef.current) return
-        pendingMoveRef.current = position
-
-        if (dragArmTimerRef.current !== null) {
-          window.clearTimeout(dragArmTimerRef.current)
-          dragArmTimerRef.current = null
-        }
-        if (moveIdleTimerRef.current !== null) {
-          window.clearTimeout(moveIdleTimerRef.current)
-        }
-        moveIdleTimerRef.current = window.setTimeout(() => {
-          const finalPosition = pendingMoveRef.current
-          if (finalPosition) {
-            const next = updateOverlayPreferences({
-              positionMode: "custom_fixed_position",
-              customPosition: finalPosition,
-            })
-            setPreferences(next)
-          }
-          draggingRef.current = false
-          pendingMoveRef.current = null
-          moveIdleTimerRef.current = null
-        }, 180)
+        const next = updateOverlayPreferences({
+          positionMode: "custom_fixed_position",
+          customPosition: position,
+        })
+        setPreferences(next)
       })
       .then((dispose) => {
         if (disposed) dispose()
@@ -168,12 +145,6 @@ export default function OverlayView() {
     return () => {
       disposed = true
       unlisten()
-      if (moveIdleTimerRef.current !== null) {
-        window.clearTimeout(moveIdleTimerRef.current)
-      }
-      if (dragArmTimerRef.current !== null) {
-        window.clearTimeout(dragArmTimerRef.current)
-      }
     }
   }, [])
 
@@ -299,33 +270,6 @@ export default function OverlayView() {
     })
   }
 
-  async function handleDragStart(event: ReactPointerEvent<HTMLElement>) {
-    if (event.button !== 0 || preferences.locked || preferences.clickThrough) return
-    if ((event.target as HTMLElement).closest("button, [data-overlay-menu]")) return
-
-    cancelAutoDismiss()
-    draggingRef.current = true
-    pendingMoveRef.current = null
-    setDragVisualActive(true)
-    setMenuPosition(null)
-
-    if (dragArmTimerRef.current !== null) {
-      window.clearTimeout(dragArmTimerRef.current)
-    }
-    dragArmTimerRef.current = window.setTimeout(() => {
-      if (pendingMoveRef.current === null) {
-        draggingRef.current = false
-      }
-      dragArmTimerRef.current = null
-    }, 450)
-
-    try {
-      await desktop.overlay.startDragging()
-    } finally {
-      setDragVisualActive(false)
-    }
-  }
-
   function handleContextMenu(event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault()
     if (preferences.clickThrough) return
@@ -403,46 +347,17 @@ export default function OverlayView() {
       <section
         key={overlayContextId}
         className={`ait-overlay-shell flex h-full flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900 shadow-2xl ${
-          dragVisualActive ? "is-dragging" : ""
-        } ${preferences.positionMode === "mouse_follow" ? "ait-overlay-near-enter" : ""}`}
+          preferences.positionMode === "mouse_follow" ? "ait-overlay-near-enter" : ""
+        }`}
       >
-        <header
-          className={`flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 ${
-            preferences.locked ? "cursor-default" : "cursor-move"
-          }`}
-          onPointerDown={(event) => void handleDragStart(event)}
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="ait-overlay-drag-handle select-none text-xs tracking-[-0.15em] text-slate-600">••••</span>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                AITranslator
-              </p>
-              <p className="mt-1 truncate text-xs text-slate-500">
-                {state.source_language} → {state.target_language}
-                {state.provider ? ` · ${state.provider}` : ""}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1">
-            {preferences.locked && (
-              <span className="rounded-md bg-white/5 px-2 py-1 text-[10px] font-medium text-slate-500">
-                Locked
-              </span>
-            )}
-            <button
-              type="button"
-              aria-label="Close overlay"
-              title="关闭 · Esc"
-              className="ait-overlay-quiet-button flex h-7 w-7 items-center justify-center rounded-full text-sm text-slate-400"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => dismiss()}
-            >
-              ×
-            </button>
-          </div>
-        </header>
+        <OverlayHeader
+          sourceLanguage={state.source_language}
+          targetLanguage={state.target_language}
+          provider={state.provider}
+          locked={preferences.locked}
+          dragEnabled={!preferences.locked && !preferences.clickThrough}
+          onClose={() => dismiss()}
+        />
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {state.phase === "loading" && (

@@ -92,7 +92,7 @@ export default function ResearchWorkspace() {
       <EmptyState
         icon={<NotebookText size={30} strokeWidth={1.5} />}
         title="No Research Notes yet"
-        description="Save a browser selection from Overlay Quick Actions or link evidence from AI Chat. Sources, notes and annotations will be organized here automatically."
+        description="Save a reading selection from the Overlay or Reading Workspace, or link evidence from AI Chat. Sources, notes and annotations will be organized here automatically."
       />
     )
   }

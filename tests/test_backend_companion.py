@@ -153,3 +153,4 @@ def test_research_note_list_endpoint_exposes_recent_notes_and_total() -> None:
     assert response.json()["notes"][0]["note_id"] == "note-1"
     assert response.json()["notes"][0]["resource_title"] == "A Research Paper"
     assert response.json()["notes"][0]["section_heading"] == "3. Method"
+    assert response.json()["notes"][0]["conversation_id"] == ""

@@ -14,9 +14,11 @@ from app.translation.cache import TranslationCache
 from app.translation.errors import TranslationError
 from app.translation.google_web_provider import GoogleWebTranslationProvider
 from app.translation.normalizer import DEFAULT_MAX_TEXT_LENGTH, TextNormalizer
+from app.translation.youdao_web_provider import YoudaoWebTranslationProvider
 
 DEFAULT_SOURCE_LANGUAGE = "auto"
 DEFAULT_TARGET_LANGUAGE = "zh-CN"
+DEFAULT_TRANSLATION_PROVIDER = "google_web"
 LOGGER_NAME = "desktop_translator"
 
 
@@ -44,17 +46,16 @@ class TranslationManager:
         resolved_config = config_manager or ConfigManager()
         self.config_manager = resolved_config
         self._provider_managed = provider is None
-        # The web provider is lazy: constructing the manager performs no
+
+        # Managed web providers are lazy: constructing the manager performs no
         # network request. Tests and offline callers can continue to inject a
         # fake provider explicitly.
         if provider is None:
-            self.provider = GoogleWebTranslationProvider(
-                config_manager=resolved_config,
-                logger=self.logger,
-            )
+            self.provider = self._build_managed_provider()
         else:
             self.provider = provider
         self._provider_signature = self._read_provider_signature()
+
         configured_source = getattr(
             resolved_config,
             "translation_source_language",
@@ -185,21 +186,33 @@ class TranslationManager:
         if next_size < 1:
             next_size = 1
         if next_size != self.cache.max_size:
-            next_sqlite_enabled = getattr(
-                self.cache,
-                "sqlite_enabled",
-                False,
-            ) if sqlite_enabled is None else bool(sqlite_enabled)
-            next_sqlite_path = getattr(
-                self.cache,
-                "sqlite_path",
-                None,
-            ) if sqlite_path is None else sqlite_path
-            next_history_enabled = getattr(
-                self.cache,
-                "history_enabled",
-                False,
-            ) if history_enabled is None else bool(history_enabled)
+            next_sqlite_enabled = (
+                getattr(
+                    self.cache,
+                    "sqlite_enabled",
+                    False,
+                )
+                if sqlite_enabled is None
+                else bool(sqlite_enabled)
+            )
+            next_sqlite_path = (
+                getattr(
+                    self.cache,
+                    "sqlite_path",
+                    None,
+                )
+                if sqlite_path is None
+                else sqlite_path
+            )
+            next_history_enabled = (
+                getattr(
+                    self.cache,
+                    "history_enabled",
+                    False,
+                )
+                if history_enabled is None
+                else bool(history_enabled)
+            )
             old_cache = self.cache
             self.cache = TranslationCache(
                 max_size=next_size,
@@ -263,8 +276,59 @@ class TranslationManager:
             return name.strip()
         return type(provider).__name__
 
+    @staticmethod
+    def _normalize_managed_provider_name(value: object) -> str:
+        normalized = str(value or "").strip().lower().replace("-", "_")
+        aliases = {
+            "google": "google_web",
+            "google_web": "google_web",
+            "youdao": "youdao_web",
+            "youdao_web": "youdao_web",
+        }
+        return aliases.get(normalized, DEFAULT_TRANSLATION_PROVIDER)
+
+    @staticmethod
+    def _config_value(
+        config: object,
+        section: str,
+        key: str,
+        default: object,
+    ) -> object:
+        getter = getattr(config, "get", None)
+        if callable(getter):
+            try:
+                return getter(section, key, default)
+            except TypeError:
+                pass
+        return getattr(config, f"{section}_{key}", default)
+
+    def _configured_provider_name(self) -> str:
+        return self._normalize_managed_provider_name(
+            self._config_value(
+                self.config_manager,
+                "translation",
+                "provider",
+                DEFAULT_TRANSLATION_PROVIDER,
+            )
+        )
+
+    def _build_managed_provider(self) -> TranslationProvider:
+        provider_name = self._configured_provider_name()
+        if provider_name == "youdao_web":
+            return YoudaoWebTranslationProvider(
+                config_manager=self.config_manager,
+                logger=self.logger,
+            )
+        return GoogleWebTranslationProvider(
+            config_manager=self.config_manager,
+            logger=self.logger,
+        )
+
     def _read_provider_signature(self) -> tuple[object, ...]:
+        """Return config values whose change requires rebuilding the provider."""
+
         return (
+            self._configured_provider_name(),
             getattr(self.config_manager, "google_web_enabled", True),
             getattr(
                 self.config_manager,
@@ -274,13 +338,44 @@ class TranslationManager:
             getattr(self.config_manager, "google_web_timeout_seconds", 8.0),
             getattr(self.config_manager, "google_web_max_retries", 0),
             getattr(self.config_manager, "google_web_min_interval_seconds", 0.0),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "enabled",
+                True,
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "endpoint",
+                "https://fanyi.youdao.com/translate",
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "timeout_ms",
+                8000,
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "max_retries",
+                1,
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "min_interval_ms",
+                200,
+            ),
         )
 
     def configure_provider(self, *, force: bool = False) -> bool:
-        """Apply the current web-provider configuration to future requests.
+        """Apply current provider configuration to future requests.
 
-        Changing the endpoint or request policy clears the in-memory cache so
-        a result produced under an older web configuration is not reused.
+        Changing provider, endpoint, or request policy clears the in-memory
+        translation cache so a result produced by an older provider policy is
+        not reused accidentally.
         """
 
         if not self._provider_managed and not force:
@@ -288,14 +383,13 @@ class TranslationManager:
         signature = self._read_provider_signature()
         if not force and signature == self._provider_signature:
             return False
+
         old_provider = self.provider
         close = getattr(old_provider, "close", None)
         if callable(close):
             close()
-        self.provider = GoogleWebTranslationProvider(
-            config_manager=self.config_manager,
-            logger=self.logger,
-        )
+
+        self.provider = self._build_managed_provider()
         self._provider_signature = signature
         self.cache.clear()
         self.logger.info(

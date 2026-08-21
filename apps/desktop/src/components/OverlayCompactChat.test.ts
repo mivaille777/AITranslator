@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import type { OverlayStateResponse, QuickActionResponse } from "../api/types"
-import { buildOverlayChatHandoff } from "./overlay-chat-context"
+import {
+  buildOverlayChatHandoff,
+  overlayCompanionConversationId,
+} from "./overlay-chat-context"
 
 const overlayState: OverlayStateResponse = {
   revision: 4,
@@ -30,7 +33,7 @@ const quickResult: QuickActionResponse = {
   request_id: 8,
 }
 
-describe("buildOverlayChatHandoff", () => {
+describe("overlay compact chat context", () => {
   it("preserves the active reading evidence when opening the main chat", () => {
     const handoff = buildOverlayChatHandoff(overlayState, quickResult, "")
 
@@ -64,5 +67,17 @@ describe("buildOverlayChatHandoff", () => {
 
     expect(handoff.conversation_id).toBe("conversation-overlay-42")
     expect(handoff.ai_content).toBe("A completed compact-chat answer.")
+  })
+
+  it("recovers the persisted conversation ID from overlay backend state", () => {
+    const stateWithConversation = {
+      ...overlayState,
+      companion_conversation_id: "  conversation-overlay-42  ",
+    }
+
+    expect(overlayCompanionConversationId(stateWithConversation)).toBe(
+      "conversation-overlay-42",
+    )
+    expect(overlayCompanionConversationId(overlayState)).toBe("")
   })
 })

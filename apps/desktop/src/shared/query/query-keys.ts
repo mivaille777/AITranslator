@@ -40,7 +40,7 @@ export const queryPolling = {
   browserSelection: 500,
   browserPage: 2_000,
   readingSelection: 500,
-  overlayState: 250,
+  overlayState: 1_000,
   companionHandoff: 650,
   companionChatStatus: 30_000,
   conversationList: 5_000,

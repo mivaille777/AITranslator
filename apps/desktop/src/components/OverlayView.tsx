@@ -27,6 +27,7 @@ import OverlayQuickActions, {
   type OverlayCompletedInteraction,
 } from "./OverlayQuickActions"
 import OverlayHeader from "./OverlayHeader"
+import OverlayWindowShell from "./OverlayWindowShell"
 
 type MenuPosition = { x: number; y: number }
 type ActionPresentationState = {
@@ -336,20 +337,90 @@ export default function OverlayView() {
   }
 
   return (
-    <main
-      className="ait-overlay-root h-screen w-screen overflow-hidden bg-transparent text-slate-100"
+    <OverlayWindowShell
+      contextId={overlayContextId}
+      nearCursor={preferences.positionMode === "mouse_follow"}
       onContextMenu={handleContextMenu}
-      onPointerDown={() => {
+      onBackgroundPointerDown={() => {
         cancelAutoDismiss()
         setMenuPosition(null)
       }}
+      menu={
+        menuPosition && (
+          <div
+            data-overlay-menu
+            data-tauri-drag-region="false"
+            className="ait-overlay-context-menu ait-system-popover fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-[16px] border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
+            style={{ left: menuPosition.x, top: menuPosition.y }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <MenuHeading>Position</MenuHeading>
+            <MenuItem
+              label="Near cursor"
+              active={preferences.positionMode === "mouse_follow"}
+              disabled={preferences.locked}
+              onClick={() => void applyPreferences({ positionMode: "mouse_follow" })}
+            />
+            <MenuItem
+              label="Fix here"
+              active={preferences.positionMode === "custom_fixed_position"}
+              disabled={preferences.locked}
+              onClick={() => void fixAtCurrentPosition()}
+            />
+            <MenuItem
+              label="Screen top"
+              active={preferences.positionMode === "desktop_lyrics_top"}
+              disabled={preferences.locked}
+              onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_top" })}
+            />
+            <MenuItem
+              label="Screen center"
+              active={preferences.positionMode === "desktop_lyrics_center"}
+              disabled={preferences.locked}
+              onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_center" })}
+            />
+            <MenuItem
+              label="Screen bottom"
+              active={preferences.positionMode === "desktop_lyrics_bottom"}
+              disabled={preferences.locked}
+              onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_bottom" })}
+            />
+
+            <div className="my-1 border-t border-white/10" />
+            <MenuItem
+              label="Always on top"
+              active={preferences.alwaysOnTop}
+              onClick={() => void applyPreferences({ alwaysOnTop: !preferences.alwaysOnTop })}
+            />
+            <MenuItem
+              label="Lock position"
+              active={preferences.locked}
+              onClick={() => void togglePositionLock()}
+            />
+            <MenuItem
+              label="Click-through"
+              active={preferences.clickThrough}
+              onClick={() => void applyPreferences({ clickThrough: !preferences.clickThrough })}
+            />
+            <MenuItem
+              label="Smart auto-dismiss"
+              active={preferences.smartAutoDismiss}
+              onClick={() => void applyPreferences({ smartAutoDismiss: !preferences.smartAutoDismiss })}
+            />
+
+            <div className="my-1 border-t border-white/10" />
+            <MenuHeading>Shortcuts</MenuHeading>
+            <MenuShortcut label="Close / collapse" keys="Esc" />
+            <MenuShortcut label="Copy active view" keys="Ctrl+C" />
+            <MenuShortcut label="AI actions" keys="1–4" />
+            <MenuShortcut label="More actions" keys="M" />
+
+            <div className="my-1 border-t border-white/10" />
+            <MenuItem label="Hide overlay" danger onClick={() => dismiss()} />
+          </div>
+        )
+      }
     >
-      <section
-        key={overlayContextId}
-        className={`ait-overlay-shell flex h-full flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900 shadow-2xl ${
-          preferences.positionMode === "mouse_follow" ? "ait-overlay-near-enter" : ""
-        }`}
-      >
         <OverlayHeader
           sourceLanguage={state.source_language}
           targetLanguage={state.target_language}
@@ -414,6 +485,7 @@ export default function OverlayView() {
           {state.phase === "ready" && (
             <button
               type="button"
+              data-tauri-drag-region="false"
               aria-live="polite"
               title="复制当前译文 · Ctrl/Cmd+C"
               className={`ait-overlay-copy-button ait-control-motion rounded-full px-3 py-1.5 text-xs font-medium ${copied ? "is-copied" : ""}`}
@@ -423,81 +495,7 @@ export default function OverlayView() {
             </button>
           )}
         </footer>
-      </section>
-
-      {menuPosition && (
-        <div
-          data-overlay-menu
-          className="ait-overlay-context-menu ait-system-popover fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-[16px] border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
-          style={{ left: menuPosition.x, top: menuPosition.y }}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <MenuHeading>Position</MenuHeading>
-          <MenuItem
-            label="Near cursor"
-            active={preferences.positionMode === "mouse_follow"}
-            disabled={preferences.locked}
-            onClick={() => void applyPreferences({ positionMode: "mouse_follow" })}
-          />
-          <MenuItem
-            label="Fix here"
-            active={preferences.positionMode === "custom_fixed_position"}
-            disabled={preferences.locked}
-            onClick={() => void fixAtCurrentPosition()}
-          />
-          <MenuItem
-            label="Screen top"
-            active={preferences.positionMode === "desktop_lyrics_top"}
-            disabled={preferences.locked}
-            onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_top" })}
-          />
-          <MenuItem
-            label="Screen center"
-            active={preferences.positionMode === "desktop_lyrics_center"}
-            disabled={preferences.locked}
-            onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_center" })}
-          />
-          <MenuItem
-            label="Screen bottom"
-            active={preferences.positionMode === "desktop_lyrics_bottom"}
-            disabled={preferences.locked}
-            onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_bottom" })}
-          />
-
-          <div className="my-1 border-t border-white/10" />
-          <MenuItem
-            label="Always on top"
-            active={preferences.alwaysOnTop}
-            onClick={() => void applyPreferences({ alwaysOnTop: !preferences.alwaysOnTop })}
-          />
-          <MenuItem
-            label="Lock position"
-            active={preferences.locked}
-            onClick={() => void togglePositionLock()}
-          />
-          <MenuItem
-            label="Click-through"
-            active={preferences.clickThrough}
-            onClick={() => void applyPreferences({ clickThrough: !preferences.clickThrough })}
-          />
-          <MenuItem
-            label="Smart auto-dismiss"
-            active={preferences.smartAutoDismiss}
-            onClick={() => void applyPreferences({ smartAutoDismiss: !preferences.smartAutoDismiss })}
-          />
-
-          <div className="my-1 border-t border-white/10" />
-          <MenuHeading>Shortcuts</MenuHeading>
-          <MenuShortcut label="Close / collapse" keys="Esc" />
-          <MenuShortcut label="Copy active view" keys="Ctrl+C" />
-          <MenuShortcut label="AI actions" keys="1–4" />
-          <MenuShortcut label="More actions" keys="M" />
-
-          <div className="my-1 border-t border-white/10" />
-          <MenuItem label="Hide overlay" danger onClick={() => dismiss()} />
-        </div>
-      )}
-    </main>
+    </OverlayWindowShell>
   )
 }
 
@@ -536,6 +534,7 @@ function MenuItem({
   return (
     <button
       type="button"
+      data-tauri-drag-region="false"
       disabled={disabled}
       className={`ait-control-motion flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left disabled:cursor-not-allowed disabled:opacity-35 ${
         danger

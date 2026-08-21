@@ -1,0 +1,592 @@
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import ReactMarkdown from "react-markdown"
+import { Link, useSearchParams } from "react-router-dom"
+
+import {
+  dismissCompanionHandoff,
+  getCompanionHandoff,
+} from "../../api/companion"
+import { saveResearchNote } from "../../api/quick-actions"
+import type {
+  CompanionHandoff,
+  ResearchNoteSaveRequest,
+} from "../../api/types"
+import { queryKeys, queryPolling } from "../../shared/query/query-keys"
+import { Badge } from "../../shared/ui/Badge"
+import { Button } from "../../shared/ui/Button"
+import { buttonClassName } from "../../shared/ui/button-styles"
+import { EmptyState } from "../../shared/ui/EmptyState"
+import {
+  companionContextSnapshot,
+  createCompanionScope,
+  EMPTY_COMPANION_CONTEXT,
+  previousCompanionUserMessage,
+  type CompanionContextSnapshot,
+  type CompanionRuntimeMessage,
+} from "./companion-runtime"
+import ConversationHistoryPanel from "./ConversationHistoryPanel"
+import { useCompanionConversationRuntime } from "./useCompanionConversationRuntime"
+
+export default function CompanionWorkspaceV2() {
+  const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [editingMessageId, setEditingMessageId] = useState("")
+  const [editingText, setEditingText] = useState("")
+  const [branchingMessageId, setBranchingMessageId] = useState("")
+  const handoffIdRef = useRef("")
+  const usingHandoffRef = useRef(false)
+
+  const routedConversationId = searchParams.get("conversation") ?? ""
+
+  const setConversationRoute = useCallback((conversationId: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (conversationId) next.set("conversation", conversationId)
+    else next.delete("conversation")
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  const runtime = useCompanionConversationRuntime({
+    onConversationAccepted: setConversationRoute,
+  })
+
+  const handoffQuery = useQuery({
+    queryKey: queryKeys.companion.handoff,
+    queryFn: getCompanionHandoff,
+    refetchInterval: queryPolling.companionHandoff,
+    staleTime: 0,
+  })
+  const handoff = handoffQuery.data?.handoff ?? null
+
+  useEffect(() => {
+    if (!routedConversationId || runtime.conversationId === routedConversationId) return
+    queueMicrotask(() => void runtime.openConversation(routedConversationId))
+  }, [routedConversationId, runtime.conversationId, runtime.openConversation])
+
+  useEffect(() => {
+    const nextId = handoff?.handoff_id ?? ""
+    if (!nextId) {
+      handoffIdRef.current = ""
+      return
+    }
+    if (routedConversationId) {
+      handoffIdRef.current = nextId
+      return
+    }
+    if (nextId === handoffIdRef.current && usingHandoffRef.current) return
+
+    handoffIdRef.current = nextId
+    usingHandoffRef.current = true
+    queueMicrotask(() => {
+      runtime.reset({
+        context: companionContextSnapshot(handoff),
+        contextMode: "reading",
+        draft: handoff.suggested_prompt ?? "",
+        sessionId: `companion-${handoff.handoff_id}`,
+        scopeId: `handoff:${handoff.handoff_id}`,
+      })
+      setEditingMessageId("")
+      setEditingText("")
+      setConversationRoute("")
+    })
+  }, [handoff, routedConversationId, runtime.reset, setConversationRoute])
+
+  const dismissMutation = useMutation({
+    mutationFn: (handoffId: string) => dismissCompanionHandoff(handoffId),
+    onMutate: runtime.closeActiveStream,
+    onSuccess: () => {
+      usingHandoffRef.current = false
+      runtime.reset({
+        context: EMPTY_COMPANION_CONTEXT,
+        contextMode: "general",
+      })
+      setConversationRoute("")
+      void handoffQuery.refetch()
+    },
+  })
+
+  const saveNoteMutation = useMutation({
+    mutationFn: (payload: ResearchNoteSaveRequest) => saveResearchNote(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["research", "notes"] })
+    },
+  })
+
+  function useCurrentReading() {
+    if (!handoff) return
+    usingHandoffRef.current = true
+    runtime.reset({
+      context: companionContextSnapshot(handoff),
+      contextMode: "reading",
+      draft: handoff.suggested_prompt ?? "",
+      sessionId: `companion-${handoff.handoff_id}`,
+      scopeId: `handoff:${handoff.handoff_id}`,
+    })
+    setConversationRoute("")
+  }
+
+  function startNewGeneralConversation() {
+    usingHandoffRef.current = false
+    runtime.reset({
+      context: runtime.context,
+      contextMode: "general",
+      sessionId: createCompanionScope("session"),
+      scopeId: createCompanionScope("draft-general"),
+    })
+    setConversationRoute("")
+    setEditingMessageId("")
+    setEditingText("")
+  }
+
+  function handleDeletedActive() {
+    if (handoff) {
+      useCurrentReading()
+      return
+    }
+    startNewGeneralConversation()
+  }
+
+  async function attachCurrentReading() {
+    if (!handoff) return
+    usingHandoffRef.current = true
+    await runtime.attachReadingContext(companionContextSnapshot(handoff))
+  }
+
+  async function rewriteFromUser(
+    message: CompanionRuntimeMessage,
+    replacementText: string,
+  ) {
+    const messageId = message.serverMessageId || message.id
+    if (!messageId || branchingMessageId || runtime.activeRequestId !== null) return
+    setBranchingMessageId(messageId)
+    try {
+      const started = await runtime.rewriteFromUser(message, replacementText)
+      if (started) {
+        setEditingMessageId("")
+        setEditingText("")
+      }
+    } finally {
+      setBranchingMessageId("")
+    }
+  }
+
+  function commitEditMessage(message: CompanionRuntimeMessage) {
+    const edited = editingText.trim()
+    if (!edited || edited === message.content) {
+      setEditingMessageId("")
+      setEditingText("")
+      return
+    }
+    void rewriteFromUser(message, edited)
+  }
+
+  function saveLinkedNote() {
+    if (
+      !runtime.conversationId ||
+      runtime.contextMode !== "reading" ||
+      !runtime.context.source_text
+    ) {
+      return
+    }
+
+    const lastAssistant = [...runtime.messages]
+      .reverse()
+      .find((message) => message.role === "assistant" && message.status === "complete")
+
+    saveNoteMutation.mutate({
+      source_text: runtime.context.source_text,
+      translated_text: runtime.context.translated_text,
+      source_language: runtime.context.source_language,
+      target_language: runtime.context.target_language,
+      resource_url: runtime.context.resource_url,
+      resource_title: runtime.context.resource_title,
+      section_heading: runtime.context.section_heading,
+      context_before: runtime.context.context_before,
+      context_after: runtime.context.context_after,
+      source_kind: runtime.context.source_kind,
+      ai_content: lastAssistant?.content || runtime.context.ai_content || "",
+      ai_action: lastAssistant ? "conversation_answer" : runtime.context.ai_action || "",
+      conversation_id: runtime.conversationId,
+    })
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    runtime.sendMessage()
+  }
+
+  const contextTitle = runtime.contextMode === "general"
+    ? "General Chat"
+    : runtime.context.resource_title || runtime.context.section_heading || "Reading context"
+  const canAttachSaved = Boolean(runtime.context.source_text)
+  const branchBusy = Boolean(branchingMessageId) || runtime.activeRequestId !== null
+  const showingHandoff = Boolean(
+    handoff &&
+      !runtime.conversationId &&
+      runtime.contextMode === "reading" &&
+      runtime.context.source_text === handoff.source_text,
+  )
+
+  return (
+    <section className="ait-chat-shell ait-surface grid min-h-[680px] overflow-hidden xl:grid-cols-[270px_340px_minmax(0,1fr)]">
+      <ConversationHistoryPanel
+        activeConversationId={runtime.conversationId}
+        hasCurrentReading={Boolean(handoff)}
+        onOpen={(conversationId) => {
+          usingHandoffRef.current = false
+          setConversationRoute(conversationId)
+          void runtime.openConversation(conversationId)
+        }}
+        onUseCurrentReading={useCurrentReading}
+        onNewGeneralConversation={startNewGeneralConversation}
+        onDeletedActive={handleDeletedActive}
+      />
+
+      <aside className="border-b border-slate-200/70 bg-slate-50/60 p-5 xl:border-b-0 xl:border-r">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Chat context
+            </p>
+            <h2 className="mt-2 truncate text-sm font-semibold text-slate-900">
+              {contextTitle}
+            </h2>
+          </div>
+          <Badge tone={runtime.contextMode === "reading" ? "info" : "neutral"}>
+            {runtime.contextMode === "reading" ? "Reading-grounded" : "General"}
+          </Badge>
+        </div>
+
+        <div className="relative mt-4 grid grid-cols-2 overflow-hidden rounded-[14px] bg-slate-200/70 p-1">
+          <span
+            aria-hidden="true"
+            className={`ait-segment-indicator absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-[11px] bg-white shadow-sm ${
+              runtime.contextMode === "reading" ? "translate-x-full" : "translate-x-0"
+            }`}
+          />
+          <button
+            type="button"
+            disabled={runtime.contextUpdating || runtime.activeRequestId !== null}
+            className={`relative z-10 rounded-[11px] px-2 py-2 text-xs font-medium ${
+              runtime.contextMode === "general" ? "text-slate-900" : "text-slate-500"
+            }`}
+            onClick={() => void runtime.detachReadingContext()}
+          >
+            General
+          </button>
+          <button
+            type="button"
+            disabled={
+              runtime.contextUpdating ||
+              runtime.activeRequestId !== null ||
+              (!canAttachSaved && !handoff)
+            }
+            className={`relative z-10 rounded-[11px] px-2 py-2 text-xs font-medium disabled:opacity-40 ${
+              runtime.contextMode === "reading" ? "text-slate-900" : "text-slate-500"
+            }`}
+            onClick={() => void (
+              canAttachSaved
+                ? runtime.attachSavedContext()
+                : attachCurrentReading()
+            )}
+          >
+            Reading
+          </button>
+        </div>
+
+        <div key={runtime.contextMode} className="ait-context-panel-enter">
+          {runtime.contextMode === "general" ? (
+            <div className="mt-4 rounded-[16px] border border-slate-200/70 bg-white/85 p-3.5">
+              <p className="text-xs font-medium text-slate-700">No reading context attached.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Conversation history remains available. Attach the latest reading evidence whenever you need grounded analysis.
+              </p>
+              {handoff && (
+                <Button
+                  className="mt-3"
+                  size="xs"
+                  disabled={runtime.contextUpdating}
+                  onClick={() => void attachCurrentReading()}
+                >
+                  Attach current reading
+                </Button>
+              )}
+            </div>
+          ) : runtime.context.source_text ? (
+            <>
+              <ContextPreview context={runtime.context} />
+              {handoff && (
+                <Button
+                  className="mt-3"
+                  size="xs"
+                  disabled={runtime.contextUpdating}
+                  onClick={() => void attachCurrentReading()}
+                >
+                  Replace with current reading
+                </Button>
+              )}
+              {runtime.context.ai_content && (
+                <div className="mt-3 rounded-[16px] border border-cyan-100 bg-cyan-50/70 p-3.5">
+                  <div className="flex items-center gap-2">
+                    <Badge tone="info">Quick Action</Badge>
+                    {runtime.context.ai_action && (
+                      <span className="text-[10px] text-cyan-700/70">
+                        {runtime.context.ai_action}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                    {runtime.context.ai_content}
+                  </p>
+                </div>
+              )}
+              {runtime.conversationId && (
+                <div className="mt-4">
+                  <Button
+                    size="xs"
+                    disabled={saveNoteMutation.isPending}
+                    onClick={saveLinkedNote}
+                  >
+                    {saveNoteMutation.isPending ? "Saving…" : "Save linked note"}
+                  </Button>
+                  {saveNoteMutation.isSuccess && (
+                    <p className="mt-2 text-[10px] text-emerald-600">
+                      Research Note linked to this conversation.
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="mt-4 text-xs leading-5 text-slate-500">
+              Attach the current reading selection to use grounded chat.
+            </p>
+          )}
+
+          {showingHandoff && handoff && (
+            <Button
+              className="mt-4"
+              size="xs"
+              disabled={dismissMutation.isPending}
+              onClick={() => dismissMutation.mutate(handoff.handoff_id)}
+            >
+              Clear handoff
+            </Button>
+          )}
+        </div>
+      </aside>
+
+      <div className="flex min-h-0 flex-col bg-white/95">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-6">
+          {runtime.messages.length === 0 && (
+            <EmptyState
+              title={runtime.contextMode === "general"
+                ? "Start a General Chat"
+                : "Ask about this reading context"}
+              description={runtime.contextMode === "general"
+                ? "This conversation has no active reading evidence."
+                : "The selected passage and bounded nearby context are supplied as reference evidence."}
+              actions={!runtime.context.source_text && runtime.contextMode === "reading" ? (
+                <>
+                  <Link to="/reading" className={buttonClassName()}>Reading Context</Link>
+                  <Link to="/research" className={buttonClassName({ variant: "primary" })}>
+                    Research Notes
+                  </Link>
+                </>
+              ) : undefined}
+            />
+          )}
+
+          <div className="mt-4 space-y-3">
+            {runtime.messages.map((message, index) => {
+              const userBefore = message.role === "assistant"
+                ? previousCompanionUserMessage(runtime.messages, index)
+                : null
+              const userServerId = message.role === "user"
+                ? message.serverMessageId || message.id
+                : ""
+              const editing = message.role === "user" && editingMessageId === message.id
+
+              return (
+                <div
+                  key={message.id}
+                  className={`ait-chat-message-enter ${message.role === "user"
+                    ? "ml-auto max-w-[78%] rounded-[20px] bg-slate-950 px-4 py-3 text-sm leading-6 text-white shadow-sm"
+                    : "max-w-[88%] rounded-[20px] border border-slate-100 bg-slate-50/85 px-4 py-3 text-sm leading-6 text-slate-700"}`}
+                >
+                  {message.role === "assistant" ? (
+                    <>
+                      {message.content ? (
+                        <div className="max-w-none">
+                          <ReactMarkdown>{message.content}</ReactMarkdown>
+                        </div>
+                      ) : message.status === "streaming" ? (
+                        <div className="flex items-center gap-2 text-slate-400">
+                          <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-700" />
+                          Waiting for the first token…
+                        </div>
+                      ) : (
+                        <p className="text-slate-400">
+                          {message.status === "cancelled" ? "Generation stopped." : "No response content."}
+                        </p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {message.status === "streaming" && <Badge tone="info">Streaming</Badge>}
+                        {message.status === "cancelled" && <Badge tone="warning">Stopped</Badge>}
+                        {message.status === "error" && <Badge tone="danger">Failed</Badge>}
+                        {message.status === "complete" && message.provider && (
+                          <Badge tone="success">
+                            {message.provider}{message.model ? ` · ${message.model}` : ""}
+                          </Badge>
+                        )}
+                        {userBefore && message.status !== "streaming" && (
+                          <button
+                            type="button"
+                            disabled={branchBusy}
+                            className="text-[10px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-40"
+                            onClick={() => void rewriteFromUser(userBefore, userBefore.content)}
+                          >
+                            {message.status === "complete" ? "Regenerate" : "Retry"}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  ) : editing ? (
+                    <div>
+                      <textarea
+                        autoFocus
+                        className="min-h-24 w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-slate-500"
+                        value={editingText}
+                        onChange={(event) => setEditingText(event.target.value)}
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          className="text-[10px] text-slate-400 hover:text-white"
+                          onClick={() => {
+                            setEditingMessageId("")
+                            setEditingText("")
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-white px-2 py-1 text-[10px] font-medium text-slate-900 disabled:opacity-40"
+                          disabled={!editingText.trim() || branchBusy}
+                          onClick={() => commitEditMessage(message)}
+                        >
+                          Resend
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      {userServerId && !userServerId.startsWith("user-local-") && (
+                        <div className="mt-2 text-right">
+                          <button
+                            type="button"
+                            disabled={branchBusy}
+                            className="text-[10px] text-slate-400 hover:text-white disabled:opacity-40"
+                            onClick={() => {
+                              setEditingMessageId(message.id)
+                              setEditingText(message.content)
+                            }}
+                          >
+                            Edit & resend
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })}
+
+            {runtime.errorMessage && (
+              <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {runtime.errorMessage}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <form
+          className="border-t border-slate-100/80 bg-white/90 p-4 backdrop-blur-xl"
+          onSubmit={handleSubmit}
+        >
+          {!runtime.chatAvailable && runtime.chatStatusLoaded && (
+            <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
+              AI Chat 未配置：{runtime.chatStatusDetail}
+            </p>
+          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              className="max-h-36 min-h-12 flex-1 resize-none rounded-[16px] border border-slate-200/80 bg-slate-50/85 px-3.5 py-2.5 text-sm leading-6 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              placeholder={runtime.activeRequestId === null
+                ? runtime.contextMode === "general" ? "Ask anything…" : "继续问这段内容…"
+                : "当前回复仍在生成，可先编辑下一条消息…"}
+              value={runtime.draft}
+              disabled={runtime.openingConversation}
+              onChange={(event) => runtime.setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  event.currentTarget.form?.requestSubmit()
+                }
+              }}
+            />
+            {runtime.activeRequestId !== null ? (
+              <Button type="button" variant="danger" size="md" onClick={runtime.cancelStream}>
+                停止
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                disabled={
+                  !runtime.chatAvailable ||
+                  !runtime.draft.trim() ||
+                  runtime.openingConversation ||
+                  Boolean(branchingMessageId)
+                }
+              >
+                发送
+              </Button>
+            )}
+          </div>
+          <p className="mt-2 text-[10px] text-slate-400">
+            Enter 发送 · Shift+Enter 换行 · {runtime.contextMode === "reading" ? "Reading-grounded" : "General"} · Shared Companion Runtime
+          </p>
+        </form>
+      </div>
+    </section>
+  )
+}
+
+function ContextPreview({ context }: { context: CompanionContextSnapshot }) {
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="rounded-[16px] border border-slate-200/70 bg-white/85 p-3.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+          Selection
+        </p>
+        <p className="mt-2 line-clamp-8 text-xs leading-5 text-slate-700">
+          {context.source_text}
+        </p>
+      </div>
+      {context.translated_text && (
+        <div className="rounded-[16px] border border-slate-200/70 bg-white/85 p-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            Translation
+          </p>
+          <p className="mt-2 line-clamp-7 text-xs leading-5 text-slate-600">
+            {context.translated_text}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}

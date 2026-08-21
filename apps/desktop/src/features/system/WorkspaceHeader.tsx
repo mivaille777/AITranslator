@@ -25,25 +25,22 @@ export default function WorkspaceHeader({
       : `Offline · ${API_BASE_URL}`
 
   const browserLabel = browserStatus?.running
-    ? `Bridge :${browserStatus.port}`
+    ? `:${browserStatus.port}`
     : browserStatusChecking
-      ? "Bridge checking…"
-      : "Bridge unavailable"
+      ? "Checking…"
+      : "Unavailable"
 
   return (
-    <header className="border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/[0.85] px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-            Stage 3 · Workspace
-          </p>
-          <div className="mt-1 flex items-baseline gap-3">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-950">{title}</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-[22px] font-semibold tracking-[-0.025em] text-slate-950">{title}</h1>
             <p className="hidden truncate text-sm text-slate-500 lg:block">{description}</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 text-[11px]">
+        <div className="flex flex-wrap gap-1.5 text-[11px]">
           <StatusPill
             label="Backend"
             value={backendLabel}
@@ -51,7 +48,7 @@ export default function WorkspaceHeader({
           />
           <StatusPill label="Provider" value={providerName} />
           <StatusPill
-            label="Browser"
+            label="Bridge"
             value={browserLabel}
             healthy={Boolean(browserStatus?.running)}
           />
@@ -71,12 +68,15 @@ function StatusPill({
   healthy?: boolean
 }) {
   return (
-    <div className="flex max-w-72 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-slate-500">
+    <div
+      className="flex max-w-72 items-center gap-2 rounded-full border border-slate-200/80 bg-slate-50/90 px-3 py-1.5 text-slate-500 shadow-sm"
+      title={`${label}: ${value}`}
+    >
       {healthy !== undefined && (
         <span className={`h-1.5 w-1.5 rounded-full ${healthy ? "bg-emerald-500" : "bg-slate-300"}`} />
       )}
-      <span>{label}</span>
-      <span className="truncate font-medium text-slate-800">{value}</span>
+      <span className="text-slate-400">{label}</span>
+      <span className="truncate font-medium text-slate-700">{value}</span>
     </div>
   )
 }

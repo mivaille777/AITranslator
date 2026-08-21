@@ -15,12 +15,12 @@ export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
   {
     path: "/translation",
     label: "Translation",
-    description: "Translate manual input or the latest browser selection.",
+    description: "Translate manual input or the latest reading selection.",
   },
   {
     path: "/reading",
     label: "Reading",
-    description: "Inspect the active page, selection, section, and nearby context.",
+    description: "Inspect the active selection, document identity, section, and nearby context.",
   },
   {
     path: "/chat",
@@ -30,7 +30,7 @@ export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
   {
     path: "/research",
     label: "Research",
-    description: "Browse recent Research Notes and reopen them as chat context.",
+    description: "Browse saved reading evidence and reopen it as chat context.",
   },
   {
     path: "/settings",

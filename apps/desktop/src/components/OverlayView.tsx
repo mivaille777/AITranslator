@@ -21,7 +21,7 @@ import { queryKeys, queryPolling } from "../shared/query/query-keys"
 type MenuPosition = { x: number; y: number }
 
 const positionLabels: Record<OverlayPositionMode, string> = {
-  mouse_follow: "Follow mouse",
+  mouse_follow: "Near cursor",
   custom_fixed_position: "Fixed position",
   desktop_lyrics_top: "Screen top",
   desktop_lyrics_center: "Screen center",
@@ -209,6 +209,25 @@ export default function OverlayView() {
     })
   }
 
+  async function togglePositionLock() {
+    if (preferences.locked) {
+      await applyPreferences({ locked: false })
+      return
+    }
+
+    const position = await desktop.overlay.getPosition()
+    if (!position) {
+      await applyPreferences({ locked: true })
+      return
+    }
+
+    await applyPreferences({
+      locked: true,
+      positionMode: "custom_fixed_position",
+      customPosition: position,
+    })
+  }
+
   if (!state?.visible) {
     return <div className="h-screen w-screen bg-transparent" />
   }
@@ -219,7 +238,7 @@ export default function OverlayView() {
       onContextMenu={handleContextMenu}
       onPointerDown={() => setMenuPosition(null)}
     >
-      <section className="flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
+      <section className="flex h-full flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900 shadow-2xl">
         <header
           className={`flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 ${
             preferences.locked ? "cursor-default" : "cursor-move"
@@ -248,7 +267,7 @@ export default function OverlayView() {
             <button
               type="button"
               aria-label="Close overlay"
-              className="rounded-lg px-2.5 py-1.5 text-sm text-slate-400 transition hover:bg-white/10 hover:text-white"
+              className="ait-control-motion rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-white/10 hover:text-white"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => dismissMutation.mutate()}
             >
@@ -292,7 +311,7 @@ export default function OverlayView() {
           {state.phase === "ready" && (
             <button
               type="button"
-              className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/15"
+              className="ait-control-motion rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/15"
               onClick={() => void handleCopy()}
             >
               {copied ? "Copied" : "Copy"}
@@ -304,34 +323,39 @@ export default function OverlayView() {
       {menuPosition && (
         <div
           data-overlay-menu
-          className="fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-xl border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
+          className="fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-[16px] border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
           style={{ left: menuPosition.x, top: menuPosition.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <MenuHeading>Position</MenuHeading>
           <MenuItem
-            label="Follow mouse"
+            label="Near cursor"
             active={preferences.positionMode === "mouse_follow"}
+            disabled={preferences.locked}
             onClick={() => void applyPreferences({ positionMode: "mouse_follow" })}
           />
           <MenuItem
             label="Fix here"
             active={preferences.positionMode === "custom_fixed_position"}
+            disabled={preferences.locked}
             onClick={() => void fixAtCurrentPosition()}
           />
           <MenuItem
             label="Screen top"
             active={preferences.positionMode === "desktop_lyrics_top"}
+            disabled={preferences.locked}
             onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_top" })}
           />
           <MenuItem
             label="Screen center"
             active={preferences.positionMode === "desktop_lyrics_center"}
+            disabled={preferences.locked}
             onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_center" })}
           />
           <MenuItem
             label="Screen bottom"
             active={preferences.positionMode === "desktop_lyrics_bottom"}
+            disabled={preferences.locked}
             onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_bottom" })}
           />
 
@@ -344,7 +368,7 @@ export default function OverlayView() {
           <MenuItem
             label="Lock position"
             active={preferences.locked}
-            onClick={() => void applyPreferences({ locked: !preferences.locked })}
+            onClick={() => void togglePositionLock()}
           />
           <MenuItem
             label="Click-through"
@@ -372,17 +396,20 @@ function MenuItem({
   label,
   active = false,
   danger = false,
+  disabled = false,
   onClick,
 }: {
   label: string
   active?: boolean
   danger?: boolean
+  disabled?: boolean
   onClick: () => void
 }) {
   return (
     <button
       type="button"
-      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition ${
+      disabled={disabled}
+      className={`ait-control-motion flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left disabled:cursor-not-allowed disabled:opacity-35 ${
         danger
           ? "text-rose-300 hover:bg-rose-400/10"
           : "text-slate-300 hover:bg-white/10 hover:text-white"

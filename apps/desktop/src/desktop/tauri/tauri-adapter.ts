@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core"
+import { emitTo, listen } from "@tauri-apps/api/event"
 import {
   LogicalSize,
   PhysicalPosition,
@@ -16,6 +17,8 @@ import type {
   OverlayPositionMode,
 } from "../adapter"
 import { computeOverlayPosition } from "../overlay-positioning"
+
+const OVERLAY_STATE_CHANGED_EVENT = "aitrans-overlay-state-changed"
 
 let overlayResizeGeneration = 0
 
@@ -43,8 +46,7 @@ async function cancelOverlayMotion(): Promise<void> {
   try {
     await invoke("cancel_overlay_motion")
   } catch {
-    // The browser adapter never reaches this path; keep native motion cancellation
-    // best-effort so resize/hide still works if a dev shell is momentarily reloading.
+    // Keep cancellation best-effort so resize/hide still works while the dev shell reloads.
   }
 }
 
@@ -104,12 +106,12 @@ async function placeOverlay(
   })
 
   if (mode === "mouse_follow" && (await overlay.isVisible())) {
-    // One IPC call submits the latest target. Interpolation and cancellation happen
-    // inside Rust so repeated selections do not pay an IPC round-trip per frame.
+    // Keep motion perceptible but response-first. State changes now reach the overlay
+    // via a native event instead of waiting for the polling interval.
     await invoke("animate_overlay_position", {
       x: position.x,
       y: position.y,
-      durationMs: 96,
+      durationMs: 76,
     })
   } else {
     await cancelOverlayMotion()
@@ -217,6 +219,12 @@ export const tauriDesktopAdapter: DesktopAdapter = {
       return overlay.onMoved(({ payload }) => {
         callback({ x: payload.x, y: payload.y })
       })
+    },
+    async notifyStateChanged() {
+      await emitTo("overlay", OVERLAY_STATE_CHANGED_EVENT)
+    },
+    async onStateChanged(callback) {
+      return listen(OVERLAY_STATE_CHANGED_EVENT, () => callback())
     },
   },
 }

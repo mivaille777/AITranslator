@@ -8,6 +8,7 @@ export interface OverlayPreferences {
   alwaysOnTop: boolean
   locked: boolean
   clickThrough: boolean
+  smartAutoDismiss: boolean
   customPosition: DesktopPoint | null
 }
 
@@ -16,6 +17,7 @@ export const DEFAULT_OVERLAY_PREFERENCES: OverlayPreferences = {
   alwaysOnTop: true,
   locked: false,
   clickThrough: false,
+  smartAutoDismiss: true,
   customPosition: null,
 }
 
@@ -64,6 +66,10 @@ export function readOverlayPreferences(): OverlayPreferences {
         typeof parsed.clickThrough === "boolean"
           ? parsed.clickThrough
           : DEFAULT_OVERLAY_PREFERENCES.clickThrough,
+      smartAutoDismiss:
+        typeof parsed.smartAutoDismiss === "boolean"
+          ? parsed.smartAutoDismiss
+          : DEFAULT_OVERLAY_PREFERENCES.smartAutoDismiss,
       customPosition: isDesktopPoint(parsed.customPosition)
         ? parsed.customPosition
         : null,

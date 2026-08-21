@@ -1,10 +1,11 @@
 /*
- * The native overlay window is transparent. Keep the glass shell flush with
- * the WebView viewport so the old 5px inset cannot render as a rectangular
- * transparent frame around the rounded surface.
+ * Windows clips the native overlay with SetWindowRgn. Keep the surface flush
+ * with that region and opaque so WebView2 cannot reveal its ghost titlebar
+ * during native dragging or focus changes.
  */
 html[data-ait-view="overlay"] .ait-overlay-root {
   padding: 0 !important;
+  background: #17171a !important;
 }
 
 /*
@@ -65,13 +66,11 @@ html[data-ait-view="overlay"] *::-webkit-scrollbar-button {
 html[data-ait-view="overlay"] .ait-overlay-shell {
   border-color: rgba(255, 255, 255, 0.09) !important;
   background:
-    linear-gradient(155deg, rgba(37, 37, 40, 0.88), rgba(23, 23, 26, 0.92) 56%, rgba(17, 17, 19, 0.95)) !important;
+    linear-gradient(155deg, #252528, #17171a 56%, #111113) !important;
   box-shadow:
     0 20px 52px rgba(0, 0, 0, 0.28),
     0 4px 14px rgba(0, 0, 0, 0.16),
     inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
-  backdrop-filter: blur(30px) saturate(112%);
-  -webkit-backdrop-filter: blur(30px) saturate(112%);
   transform-origin: 50% 16%;
   transition:
     transform 180ms var(--ait-ease-spring),

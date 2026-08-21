@@ -28,16 +28,30 @@ describe("Batch 5 desktop entry isolation", () => {
   it("builds main and overlay HTML as separate Vite inputs and routes Tauri overlay to its own document", () => {
     const viteConfig = read("../../vite.config.ts")
     const tauriConfig = JSON.parse(read("../../src-tauri/tauri.conf.json")) as {
-      app: { windows: Array<{ label: string; url?: string }> }
+      app: {
+        windows: Array<{
+          label: string
+          url?: string
+          decorations?: boolean
+          transparent?: boolean
+          shadow?: boolean
+          backgroundColor?: string
+        }>
+      }
     }
     const overlayHtml = read("../../overlay.html")
+    const overlayWindow = tauriConfig.app.windows.find((window) => window.label === "overlay")
 
     expect(viteConfig).toContain('main: fileURLToPath(new URL("./index.html"')
     expect(viteConfig).toContain('overlay: fileURLToPath(new URL("./overlay.html"')
     expect(overlayHtml).toContain('/src/overlay-main.tsx')
-    expect(tauriConfig.app.windows.find((window) => window.label === "overlay")?.url).toBe(
-      "overlay.html",
-    )
+    expect(overlayWindow?.url).toBe("overlay.html")
+    expect(overlayWindow).toMatchObject({
+      decorations: false,
+      transparent: false,
+      shadow: false,
+      backgroundColor: "#17171a",
+    })
   })
 
   it("lazy-loads non-default main workspaces instead of importing them into translation startup", () => {

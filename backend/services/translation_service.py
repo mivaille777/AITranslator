@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from threading import RLock
 
+from app.infrastructure.settings import SettingsManager
 from app.models.translation import TranslationResult
 from app.translation.manager import TranslationManager
 
@@ -16,7 +17,7 @@ class TranslationService:
     """
 
     def __init__(self, manager: TranslationManager | None = None) -> None:
-        self._manager = manager or TranslationManager()
+        self._manager = manager or TranslationManager(config_manager=SettingsManager())
         self._lock = RLock()
 
     @property
@@ -47,19 +48,31 @@ class TranslationService:
             raise ValueError(f"unsupported translation provider: {provider}")
 
         with self._lock:
-            if self._manager.provider_name == selected:
-                return self._manager.provider_name
-
             config = self._manager.config_manager
-            data = getattr(config, "_data", None)
-            if not isinstance(data, dict):
-                raise RuntimeError("translation configuration is not mutable at runtime")
-            section = data.setdefault("translation", {})
-            if not isinstance(section, dict):
-                section = {}
-                data["translation"] = section
-            section["provider"] = selected
-            self._manager.configure_provider(force=True)
+            setter = getattr(config, "set", None)
+            try:
+                if callable(setter):
+                    # SettingsManager persists this to the user-owned TOML file.
+                    setter("translation", "provider", selected)
+                else:
+                    # Keep injected legacy/test ConfigManager instances usable.
+                    data = getattr(config, "_data", None)
+                    if not isinstance(data, dict):
+                        raise RuntimeError(
+                            "translation configuration is not mutable at runtime"
+                        )
+                    section = data.setdefault("translation", {})
+                    if not isinstance(section, dict):
+                        section = {}
+                        data["translation"] = section
+                    section["provider"] = selected
+            except RuntimeError:
+                raise
+            except Exception as exc:
+                raise RuntimeError("unable to persist translation provider") from exc
+
+            if self._manager.provider_name != selected:
+                self._manager.configure_provider(force=True)
             return self._manager.provider_name
 
     def translate(

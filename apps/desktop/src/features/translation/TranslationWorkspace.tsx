@@ -2,12 +2,8 @@ import type { FormEvent } from "react"
 
 import { LanguageSelect } from "../../shared/components/LanguageSelect"
 import { sourceLanguages, targetLanguages } from "./languages"
+import TranslationProviderSelector from "./TranslationProviderSelector"
 import type { TranslationWorkspaceController } from "./useTranslationWorkspace"
-
-const providerOptions = [
-  { value: "google_web" as const, label: "Google" },
-  { value: "youdao_web" as const, label: "Youdao" },
-]
 
 export default function TranslationWorkspace({
   workspace,
@@ -74,35 +70,14 @@ export default function TranslationWorkspace({
             </div>
           )}
 
-          <div className="mt-4 flex items-center justify-between gap-4 rounded-[16px] border border-slate-200/70 bg-slate-50/70 px-3.5 py-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                Translation provider
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                {workspace.providerSwitching ? "Switching provider…" : "Used by manual and automatic reading translations."}
-              </p>
-            </div>
-            <div className="relative grid shrink-0 grid-cols-2 rounded-[13px] bg-slate-200/70 p-1">
-              {providerOptions.map((provider) => {
-                const active = workspace.translationProvider === provider.value
-                return (
-                  <button
-                    key={provider.value}
-                    type="button"
-                    disabled={providerDisabled}
-                    className={`ait-control-motion relative z-10 rounded-[10px] px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
-                      active
-                        ? "bg-white text-slate-950 shadow-sm"
-                        : "text-slate-500 hover:text-slate-800"
-                    }`}
-                    onClick={() => workspace.setTranslationProvider(provider.value)}
-                  >
-                    {provider.label}
-                  </button>
-                )
-              })}
-            </div>
+          <div className="mt-4">
+            <TranslationProviderSelector
+              value={workspace.translationProvider}
+              switching={workspace.providerSwitching}
+              disabled={providerDisabled}
+              description="Quick switch for manual and reading translations. The choice is also saved as your default."
+              onChange={workspace.setTranslationProvider}
+            />
           </div>
 
           <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-end gap-2">

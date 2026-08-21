@@ -1,11 +1,11 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 
-import OverlayPreferencesPanel from "./components/OverlayPreferencesPanel"
 import CompanionHandoffNavigator from "./features/companion/CompanionHandoffNavigator"
 import CompanionWorkspace from "./features/companion/CompanionWorkspace"
 import BrowserReadingContextPanel from "./features/reading/BrowserReadingContextPanel"
 import ReadingWorkspace from "./features/reading/ReadingWorkspace"
 import ResearchRoute from "./features/research/ResearchRoute"
+import SettingsWorkspace from "./features/settings/SettingsWorkspace"
 import TranslationWorkspace from "./features/translation/TranslationWorkspace"
 import { useTranslationWorkspace } from "./features/translation/useTranslationWorkspace"
 import WorkspaceShell from "./features/workspace/WorkspaceShell"
@@ -49,7 +49,7 @@ function App() {
             <Route path="/reading" element={<ReadingWorkspace workspace={workspace} />} />
             <Route path="/chat" element={<CompanionWorkspace />} />
             <Route path="/research" element={<ResearchRoute backendState={workspace.backendState} />} />
-            <Route path="/settings" element={<OverlayPreferencesPanel />} />
+            <Route path="/settings" element={<SettingsWorkspace workspace={workspace} />} />
             <Route path="*" element={<Navigate to="/translation" replace />} />
           </Routes>
         </WorkspaceRouteBoundary>

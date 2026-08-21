@@ -11,6 +11,7 @@ import {
 } from "@tauri-apps/api/window"
 
 import type {
+  CompanionNavigationSignal,
   DesktopAdapter,
   DesktopPoint,
   DesktopSize,
@@ -19,6 +20,7 @@ import type {
 import { computeOverlayPosition } from "../overlay-positioning"
 
 const OVERLAY_STATE_CHANGED_EVENT = "aitrans-overlay-state-changed"
+const COMPANION_NAVIGATION_EVENT = "aitrans-companion-navigation"
 const OVERLAY_INTERACTIVE_DATASET_KEY = "aitOverlayInteractive"
 
 let overlayResizeGeneration = 0
@@ -230,6 +232,17 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     async onStateChanged(callback) {
       return listen<{ contextId?: string }>(OVERLAY_STATE_CHANGED_EVENT, (event) => {
         callback(event.payload?.contextId ?? "")
+      })
+    },
+    async notifyCompanionNavigation(signal) {
+      await emitTo("main", COMPANION_NAVIGATION_EVENT, signal)
+    },
+    async onCompanionNavigation(callback) {
+      return listen<CompanionNavigationSignal>(COMPANION_NAVIGATION_EVENT, (event) => {
+        const conversationId = String(event.payload?.conversationId ?? "").trim()
+        const handoffId = String(event.payload?.handoffId ?? "").trim()
+        if (!conversationId) return
+        callback({ conversationId, handoffId })
       })
     },
   },

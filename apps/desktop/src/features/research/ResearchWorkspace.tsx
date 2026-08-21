@@ -110,6 +110,7 @@ export default function ResearchWorkspace() {
           onSelectSource={selectSource}
           onSelectSourceKind={(kind) => {
             setSourceKind(kind)
+            setSourceId("")
             setSelectedNoteId("")
           }}
         />
@@ -302,11 +303,13 @@ function ResearchNoteEditor({
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [annotation, setAnnotation] = useState(note.user_note)
+  const [savedAnnotation, setSavedAnnotation] = useState(note.user_note)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const updateMutation = useMutation({
     mutationFn: () => updateResearchNote(note.note_id, annotation),
     onSuccess: (updated) => {
+      setSavedAnnotation(updated.user_note)
       queryClient.setQueryData(queryKeys.research.detail(note.note_id), updated)
       void queryClient.invalidateQueries({ queryKey: ["research"] })
     },
@@ -342,7 +345,7 @@ function ResearchNoteEditor({
     onSuccess: () => navigate("/chat"),
   })
 
-  const dirty = annotation !== note.user_note
+  const dirty = annotation !== savedAnnotation
 
   return (
     <div className="flex h-full min-h-[690px] flex-col">

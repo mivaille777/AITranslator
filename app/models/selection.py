@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,4 +69,70 @@ class SelectedText:
         return self.text
 
 
-__all__ = ["SelectedText", "SelectionContext"]
+@dataclass(frozen=True, slots=True)
+class DocumentIdentity:
+    """Best-effort identity for the document behind a text selection.
+
+    ``resource_path`` is local-only metadata.  It is intentionally kept
+    separate from ``resource_url`` so downstream prompt builders can include a
+    remote URL without accidentally sending a private local filesystem path to
+    an LLM provider.
+    """
+
+    source_kind: str = ""
+    resource_url: str = ""
+    resource_title: str = ""
+    resource_path: str = ""
+    application: str = ""
+    page_number: int | None = None
+
+    @property
+    def has_identity(self) -> bool:
+        return bool(
+            self.source_kind
+            or self.resource_url
+            or self.resource_title
+            or self.resource_path
+            or self.application
+            or self.page_number is not None
+        )
+
+    @property
+    def local_locator(self) -> str:
+        """Return the local file locator without exposing it as a web URL."""
+
+        return self.resource_path
+
+
+@dataclass(frozen=True, slots=True)
+class ReadingSelection:
+    """Selected text plus bounded, source-neutral document context.
+
+    Providers may return this richer model when reliable metadata exists.  The
+    legacy :class:`SelectedText` contract remains valid and can always be
+    reconstructed through ``selected_text``.
+    """
+
+    text: str
+    provider: str = "clipboard"
+    document: DocumentIdentity = field(default_factory=DocumentIdentity)
+    section_heading: str = ""
+    context_before: str = ""
+    context_after: str = ""
+
+    @property
+    def selected_text(self) -> SelectedText:
+        return SelectedText(text=self.text, provider=self.provider)
+
+    @property
+    def nearby_context(self) -> str:
+        parts = (self.context_before, self.text, self.context_after)
+        return " ".join(part for part in parts if part).strip()
+
+
+__all__ = [
+    "DocumentIdentity",
+    "ReadingSelection",
+    "SelectedText",
+    "SelectionContext",
+]

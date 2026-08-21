@@ -4,12 +4,22 @@ import { LanguageSelect } from "../../shared/components/LanguageSelect"
 import { sourceLanguages, targetLanguages } from "./languages"
 import type { TranslationWorkspaceController } from "./useTranslationWorkspace"
 
+const providerOptions = [
+  { value: "google_web" as const, label: "Google" },
+  { value: "youdao_web" as const, label: "Youdao" },
+]
+
 export default function TranslationWorkspace({
   workspace,
 }: {
   workspace: TranslationWorkspaceController
 }) {
   const selection = workspace.readingSelection
+  const providerDisabled =
+    workspace.backendState !== "connected" ||
+    workspace.providerSwitching ||
+    workspace.manualTranslating ||
+    workspace.autoTranslating
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -64,6 +74,37 @@ export default function TranslationWorkspace({
             </div>
           )}
 
+          <div className="mt-4 flex items-center justify-between gap-4 rounded-[16px] border border-slate-200/70 bg-slate-50/70 px-3.5 py-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                Translation provider
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {workspace.providerSwitching ? "Switching provider…" : "Used by manual and automatic reading translations."}
+              </p>
+            </div>
+            <div className="relative grid shrink-0 grid-cols-2 rounded-[13px] bg-slate-200/70 p-1">
+              {providerOptions.map((provider) => {
+                const active = workspace.translationProvider === provider.value
+                return (
+                  <button
+                    key={provider.value}
+                    type="button"
+                    disabled={providerDisabled}
+                    className={`ait-control-motion relative z-10 rounded-[10px] px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                      active
+                        ? "bg-white text-slate-950 shadow-sm"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                    onClick={() => workspace.setTranslationProvider(provider.value)}
+                  >
+                    {provider.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
           <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-end gap-2">
             <LanguageSelect
               label="Source language"
@@ -96,7 +137,11 @@ export default function TranslationWorkspace({
           <button
             className="ait-control-motion mt-5 w-full rounded-[15px] bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             type="submit"
-            disabled={workspace.backendState !== "connected" || workspace.manualTranslating}
+            disabled={
+              workspace.backendState !== "connected" ||
+              workspace.manualTranslating ||
+              workspace.providerSwitching
+            }
           >
             {workspace.manualTranslating ? "Translating…" : "Translate"}
           </button>
@@ -111,11 +156,9 @@ export default function TranslationWorkspace({
                 The translated text stays attached to the active reading context.
               </p>
             </div>
-            {workspace.translation && (
-              <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                {workspace.translation.provider}
-              </span>
-            )}
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+              {workspace.translation?.provider ?? workspace.providerName}
+            </span>
           </div>
 
           <div className="mt-5 min-h-64 rounded-[18px] border border-slate-200/70 bg-white/90 p-4 shadow-sm">

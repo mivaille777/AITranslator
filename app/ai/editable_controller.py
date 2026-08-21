@@ -65,6 +65,33 @@ class EditableStreamingResizableAIAppController(StreamingResizableAIAppControlle
         self._manual_translation_inflight_request_id = None
         self._manual_translation_inflight_text = ""
 
+    def _finalize_manual_translation_request(self, request_id: int) -> None:
+        """Atomically close one manual request and submit its latest pending text.
+
+        Qt queues ``succeeded``/``failed`` and ``finished`` as separate events.
+        The visible result can therefore be committed before ``finished`` is
+        delivered.  Finalizing from the terminal result callback keeps the
+        controller's inflight state consistent with the UI; the ``finished``
+        callback remains an idempotent fallback for unusual worker paths.
+        """
+
+        if self._manual_translation_inflight_request_id != request_id:
+            return
+
+        self._manual_translation_inflight_request_id = None
+        self._manual_translation_inflight_text = ""
+        self._manual_translation_request_id = None
+        pending = self._manual_translation_pending_text
+        self._manual_translation_pending_text = None
+
+        if (
+            pending
+            and not self._shutdown
+            and not self._is_ai_chat_open()
+            and self._translation_enabled
+        ):
+            self._start_manual_translation(pending)
+
     def _open_ai_chat(self) -> None:
         # A live translation submitted just before the user opens Chat must not
         # finish later and force the Overlay back to translation mode.
@@ -195,27 +222,31 @@ class EditableStreamingResizableAIAppController(StreamingResizableAIAppControlle
             and self._request_versions.is_latest(result.request_id)
         )
         super()._on_translation_task_succeeded(result)
-        if not isinstance(result, TranslationResult) or not was_latest:
+        if not isinstance(result, TranslationResult):
             return
 
-        configured_source, _configured_target = self._configured_language_pair()
-        detected = str(result.source_language or "").strip()
-        if configured_source == "auto" and detected and detected.lower() != "auto":
-            setter = getattr(self.overlay_manager, "set_detected_source_language", None)
-            if callable(setter):
-                self._safe_call(
-                    "overlay_detected_language_update_failed",
-                    setter,
-                    detected,
+        if was_latest:
+            configured_source, _configured_target = self._configured_language_pair()
+            detected = str(result.source_language or "").strip()
+            if configured_source == "auto" and detected and detected.lower() != "auto":
+                setter = getattr(self.overlay_manager, "set_detected_source_language", None)
+                if callable(setter):
+                    self._safe_call(
+                        "overlay_detected_language_update_failed",
+                        setter,
+                        detected,
+                    )
+
+            if is_manual:
+                self._manual_last_success_text = result.source_text
+                self._manual_last_success_language_pair = self._configured_language_pair()
+                self._set_translation_status(
+                    "已更新",
+                    auto_hide_ms=TRANSLATION_STATUS_FEEDBACK_MILLISECONDS,
                 )
 
         if is_manual:
-            self._manual_last_success_text = result.source_text
-            self._manual_last_success_language_pair = self._configured_language_pair()
-            self._set_translation_status(
-                "已更新",
-                auto_hide_ms=TRANSLATION_STATUS_FEEDBACK_MILLISECONDS,
-            )
+            self._finalize_manual_translation_request(result.request_id)
 
     def _on_translation_task_failed(self, failure: object) -> None:
         is_manual = bool(
@@ -227,50 +258,33 @@ class EditableStreamingResizableAIAppController(StreamingResizableAIAppControlle
             return
 
         # If newer editor text already exists, this request is intentionally
-        # stale and its failure is irrelevant.  The pending latest value will
-        # be submitted from _on_translation_task_finished().
+        # stale and its failure is irrelevant. Finalization below immediately
+        # submits the pending latest value without waiting for a second Qt event.
         if not self._request_versions.is_latest(failure.request_id):
             self.logger.debug(
                 "manual_translation_failure_discarded request_id=%s latest_request_id=%s",
                 failure.request_id,
                 self.latest_request_id,
             )
-            return
+        else:
+            self.logger.info(
+                "manual_translation_failed error_type=%s",
+                type(failure.error).__name__,
+            )
+            # Keep the editor and last successful translation visible. A transient
+            # provider failure must not replace the whole workspace with an error
+            # card or auto-hide the Overlay.
+            self._set_translation_status(
+                "暂时失败 · 继续输入可重试",
+                auto_hide_ms=MANUAL_TRANSLATION_FAILURE_FEEDBACK_MILLISECONDS,
+            )
 
-        self.logger.info(
-            "manual_translation_failed error_type=%s",
-            type(failure.error).__name__,
-        )
-        # Keep the editor and last successful translation visible.  A transient
-        # provider failure must not replace the whole workspace with an error
-        # card or auto-hide the Overlay.
-        self._set_translation_status(
-            "暂时失败 · 继续输入可重试",
-            auto_hide_ms=MANUAL_TRANSLATION_FAILURE_FEEDBACK_MILLISECONDS,
-        )
+        self._finalize_manual_translation_request(failure.request_id)
 
     def _on_translation_task_finished(self, task: object) -> None:
-        was_manual = bool(
-            isinstance(task, TranslationTask)
-            and self._manual_translation_inflight_request_id == task.request_id
-        )
         super()._on_translation_task_finished(task)
-        if not was_manual:
-            return
-
-        self._manual_translation_inflight_request_id = None
-        self._manual_translation_inflight_text = ""
-        self._manual_translation_request_id = None
-        pending = self._manual_translation_pending_text
-        self._manual_translation_pending_text = None
-
-        if (
-            pending
-            and not self._shutdown
-            and not self._is_ai_chat_open()
-            and self._translation_enabled
-        ):
-            self._start_manual_translation(pending)
+        if isinstance(task, TranslationTask):
+            self._finalize_manual_translation_request(task.request_id)
 
 
 __all__ = [

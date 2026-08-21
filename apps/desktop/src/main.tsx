@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client"
 import { HashRouter } from "react-router-dom"
 
 import App from "./App"
-import OverlayQuickActionDock from "./components/OverlayQuickActionDock"
 import OverlayView from "./components/OverlayView"
 import AppErrorBoundary from "./shared/errors/AppErrorBoundary"
 import { createAppQueryClient } from "./shared/query/query-client"
@@ -18,12 +17,7 @@ if (view === "overlay") {
 }
 
 const rootView = view === "overlay"
-  ? (
-      <>
-        <OverlayView />
-        <OverlayQuickActionDock />
-      </>
-    )
+  ? <OverlayView />
   : (
       <HashRouter>
         <App />

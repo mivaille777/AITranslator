@@ -33,6 +33,12 @@ interface WorkspaceMessage extends CompanionChatMessage {
   serverMessageId?: string
 }
 
+interface StreamEventContext {
+  handoffId: string
+  requestId: number
+  localAssistantId: string
+}
+
 function historyFrom(messages: WorkspaceMessage[]): CompanionChatMessage[] {
   return messages
     .filter((message) => message.status === "complete" && message.content.trim())
@@ -117,10 +123,7 @@ export default function CompanionWorkspace() {
 
   function handleStreamEvent(
     event: CompanionChatStreamEvent,
-    *,
-    handoffId: string,
-    requestId: number,
-    localAssistantId: string,
+    { handoffId, requestId, localAssistantId }: StreamEventContext,
   ) {
     if (handoffIdRef.current !== handoffId) return
     if (activeRequestRef.current !== requestId || event.request_id !== requestId) return

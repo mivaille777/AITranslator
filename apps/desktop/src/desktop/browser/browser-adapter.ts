@@ -1,5 +1,7 @@
 import type { DesktopAdapter } from "../adapter"
 
+let browserWindowMaximized = false
+
 export const browserDesktopAdapter: DesktopAdapter = {
   runtime: "browser",
   window: {
@@ -11,6 +13,19 @@ export const browserDesktopAdapter: DesktopAdapter = {
     },
     async focus() {
       window.focus()
+    },
+    async minimize() {
+      // Browser development mode cannot minimize the host browser window.
+    },
+    async toggleMaximize() {
+      browserWindowMaximized = !browserWindowMaximized
+      return browserWindowMaximized
+    },
+    async isMaximized() {
+      return browserWindowMaximized
+    },
+    async close() {
+      // Browser development mode cannot close the host browser window.
     },
   },
   overlay: {

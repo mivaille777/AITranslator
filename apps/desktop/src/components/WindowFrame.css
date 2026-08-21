@@ -7,7 +7,13 @@
   box-shadow:
     0 30px 90px rgba(15,23,42,.18),
     0 8px 24px rgba(15,23,42,.08);
+  transition: border-radius .22s ease, box-shadow .22s ease;
   animation: ait-window-enter 320ms cubic-bezier(.16,1,.3,1) both;
+}
+
+.window-frame.is-maximized {
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .window-titlebar {
@@ -64,6 +70,14 @@
   background:#22c55e;
 }
 
+.window-status.is-error {
+  color:#b91c1c;
+}
+
+.window-status.is-error span {
+  background:#ef4444;
+}
+
 .window-controls {
   display:flex;
   align-items:center;
@@ -87,6 +101,17 @@
   background:#eef2f7;
   color:#0f172a;
   transform:scale(1.08);
+}
+
+.window-controls button:focus-visible {
+  outline:2px solid rgba(59,130,246,.7);
+  outline-offset:2px;
+}
+
+.window-controls button:disabled {
+  cursor:wait;
+  opacity:.5;
+  transform:none;
 }
 
 .window-controls .close:hover {

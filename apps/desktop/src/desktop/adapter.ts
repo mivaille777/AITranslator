@@ -35,6 +35,15 @@ export interface WindowAdapter {
   focus(): Promise<void>
 }
 
+export interface WindowControlsAdapter {
+  minimize(): Promise<void>
+  toggleMaximize(): Promise<boolean>
+  isMaximized(): Promise<boolean>
+  close(): Promise<void>
+}
+
+export type DesktopWindowAdapter = WindowAdapter & WindowControlsAdapter
+
 export interface OverlayWindowAdapter extends WindowAdapter {
   place(
     mode: OverlayPositionMode,
@@ -62,6 +71,6 @@ export interface OverlayWindowAdapter extends WindowAdapter {
 
 export interface DesktopAdapter {
   readonly runtime: DesktopRuntime
-  readonly window: WindowAdapter
+  readonly window: DesktopWindowAdapter
   readonly overlay: OverlayWindowAdapter
 }

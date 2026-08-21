@@ -18,6 +18,49 @@ fn cancel_overlay_motion() {
     next_overlay_move_generation();
 }
 
+fn resolve_window(
+    app: &tauri::AppHandle,
+    window_label: &str,
+) -> Result<tauri::WebviewWindow, String> {
+    app.get_webview_window(window_label)
+        .ok_or_else(|| format!("window '{window_label}' is unavailable"))
+}
+
+#[tauri::command]
+fn window_minimize(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
+    resolve_window(&app, &window_label)?
+        .minimize()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn window_toggle_maximize(app: tauri::AppHandle, window_label: String) -> Result<bool, String> {
+    let window = resolve_window(&app, &window_label)?;
+    let is_maximized = window.is_maximized().map_err(|error| error.to_string())?;
+
+    if is_maximized {
+        window.unmaximize().map_err(|error| error.to_string())?;
+    } else {
+        window.maximize().map_err(|error| error.to_string())?;
+    }
+
+    Ok(!is_maximized)
+}
+
+#[tauri::command]
+fn window_is_maximized(app: tauri::AppHandle, window_label: String) -> Result<bool, String> {
+    resolve_window(&app, &window_label)?
+        .is_maximized()
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn window_close(app: tauri::AppHandle, window_label: String) -> Result<(), String> {
+    resolve_window(&app, &window_label)?
+        .close()
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn animate_overlay_position(
     app: tauri::AppHandle,
@@ -28,7 +71,9 @@ fn animate_overlay_position(
     let overlay = app
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window is unavailable".to_string())?;
-    let start = overlay.outer_position().map_err(|error| error.to_string())?;
+    let start = overlay
+        .outer_position()
+        .map_err(|error| error.to_string())?;
     let generation = next_overlay_move_generation();
     let delta_x = x - start.x;
     let delta_y = y - start.y;
@@ -80,7 +125,11 @@ fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             animate_overlay_position,
-            cancel_overlay_motion
+            cancel_overlay_motion,
+            window_minimize,
+            window_toggle_maximize,
+            window_is_maximized,
+            window_close
         ])
         .run(tauri::generate_context!())
         .expect("error while running AITranslator desktop shell");

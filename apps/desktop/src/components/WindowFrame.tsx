@@ -1,14 +1,72 @@
-import type { ReactNode } from "react"
-import { Minus, Square, X } from "lucide-react"
-import { getCurrentWindow } from "@tauri-apps/api/window"
+import { useEffect, useState, type ReactNode } from "react"
+import { Copy, Minus, Square, X } from "lucide-react"
+
+import { desktop } from "../desktop"
 
 import "./WindowFrame.css"
 
+type WindowAction = "minimize" | "maximize" | "close"
+
 export default function WindowFrame({ children }: { children: ReactNode }) {
-  const window = getCurrentWindow()
+  const [isMaximized, setIsMaximized] = useState(false)
+  const [activeAction, setActiveAction] = useState<WindowAction | null>(null)
+  const [controlError, setControlError] = useState("")
+
+  useEffect(() => {
+    let mounted = true
+
+    void desktop.window
+      .isMaximized()
+      .then((maximized) => {
+        if (mounted) setIsMaximized(maximized)
+      })
+      .catch(() => {
+        // The browser adapter and a reloading Tauri shell may not expose native state.
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  async function runWindowAction(
+    action: WindowAction,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    if (activeAction) return
+
+    setActiveAction(action)
+    setControlError("")
+    try {
+      await operation()
+    } catch (error) {
+      console.error(`AITranslator window action failed: ${action}`, error)
+      setControlError("Window control unavailable")
+    } finally {
+      setActiveAction(null)
+    }
+  }
+
+  function handleMinimize() {
+    void runWindowAction("minimize", () => desktop.window.minimize())
+  }
+
+  function handleToggleMaximize() {
+    void runWindowAction("maximize", async () => {
+      const maximized = await desktop.window.toggleMaximize()
+      setIsMaximized(maximized)
+    })
+  }
+
+  function handleClose() {
+    void runWindowAction("close", () => desktop.window.close())
+  }
+
+  const maximizeLabel = isMaximized ? "Restore" : "Maximize"
+  const MaximizeIcon = isMaximized ? Copy : Square
 
   return (
-    <div className="window-frame">
+    <div className={`window-frame ${isMaximized ? "is-maximized" : ""}`}>
       <header className="window-titlebar" data-tauri-drag-region>
         <div className="window-brand" data-tauri-drag-region>
           <span className="window-logo">A</span>
@@ -20,18 +78,41 @@ export default function WindowFrame({ children }: { children: ReactNode }) {
 
         <div className="window-drag-space" data-tauri-drag-region />
 
-        <div className="window-status" data-tauri-drag-region>
-          <span /> Ready
+        <div className={`window-status ${controlError ? "is-error" : ""}`} data-tauri-drag-region role="status" aria-live="polite">
+          <span /> {controlError || "Ready"}
         </div>
 
         <div className="window-controls">
-          <button title="Minimize" aria-label="Minimize" onClick={() => window.minimize()}>
+          <button
+            type="button"
+            title="Minimize"
+            aria-label="Minimize"
+            disabled={activeAction !== null}
+            aria-busy={activeAction === "minimize"}
+            onClick={handleMinimize}
+          >
             <Minus size={12} strokeWidth={2.2} />
           </button>
-          <button title="Maximize" aria-label="Maximize" onClick={() => window.toggleMaximize()}>
-            <Square size={11} strokeWidth={2.2} />
+          <button
+            type="button"
+            title={maximizeLabel}
+            aria-label={maximizeLabel}
+            aria-pressed={isMaximized}
+            disabled={activeAction !== null}
+            aria-busy={activeAction === "maximize"}
+            onClick={handleToggleMaximize}
+          >
+            <MaximizeIcon size={11} strokeWidth={2.2} />
           </button>
-          <button title="Close" className="close" aria-label="Close" onClick={() => window.close()}>
+          <button
+            type="button"
+            title="Close"
+            className="close"
+            aria-label="Close"
+            disabled={activeAction !== null}
+            aria-busy={activeAction === "close"}
+            onClick={handleClose}
+          >
             <X size={13} strokeWidth={2.2} />
           </button>
         </div>

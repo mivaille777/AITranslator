@@ -189,6 +189,12 @@ async function emitCompanionConversationChange(
   )
 }
 
+async function invokeWindowControl<T>(command: string): Promise<T> {
+  return invoke<T>(command, {
+    windowLabel: getCurrentWindow().label,
+  })
+}
+
 export const tauriDesktopAdapter: DesktopAdapter = {
   runtime: "tauri",
   window: {
@@ -204,6 +210,18 @@ export const tauriDesktopAdapter: DesktopAdapter = {
       const main = await getMainWindow()
       await main?.show()
       await main?.setFocus()
+    },
+    async minimize() {
+      await invokeWindowControl<void>("window_minimize")
+    },
+    async toggleMaximize() {
+      return invokeWindowControl<boolean>("window_toggle_maximize")
+    },
+    async isMaximized() {
+      return invokeWindowControl<boolean>("window_is_maximized")
+    },
+    async close() {
+      await invokeWindowControl<void>("window_close")
     },
   },
   overlay: {

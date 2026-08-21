@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core"
 import {
   LogicalSize,
   PhysicalPosition,
@@ -17,7 +18,6 @@ import type {
 import { computeOverlayPosition } from "../overlay-positioning"
 
 let overlayResizeGeneration = 0
-let overlayPlacementGeneration = 0
 
 async function getMainWindow(): Promise<TauriWindow | null> {
   const current = getCurrentWindow()
@@ -39,6 +39,15 @@ function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
+async function cancelOverlayMotion(): Promise<void> {
+  try {
+    await invoke("cancel_overlay_motion")
+  } catch {
+    // The browser adapter never reaches this path; keep native motion cancellation
+    // best-effort so resize/hide still works if a dev shell is momentarily reloading.
+  }
+}
+
 async function keepOverlayInsideWorkArea(overlay: TauriWindow): Promise<void> {
   const position = await overlay.outerPosition()
   const size = await overlay.outerSize()
@@ -57,38 +66,6 @@ async function keepOverlayInsideWorkArea(overlay: TauriWindow): Promise<void> {
 
   if (nextX !== position.x || nextY !== position.y) {
     await overlay.setPosition(new PhysicalPosition(nextX, nextY))
-  }
-}
-
-async function animateOverlayPosition(
-  overlay: TauriWindow,
-  target: DesktopPoint,
-): Promise<void> {
-  const generation = ++overlayPlacementGeneration
-  const current = await overlay.outerPosition()
-  const deltaX = target.x - current.x
-  const deltaY = target.y - current.y
-  const distance = Math.hypot(deltaX, deltaY)
-
-  if (distance < 8 || distance > 900 || !(await overlay.isVisible())) {
-    await overlay.setPosition(new PhysicalPosition(target.x, target.y))
-    return
-  }
-
-  const steps = 7
-  for (let step = 1; step <= steps; step += 1) {
-    if (generation !== overlayPlacementGeneration) return
-
-    const t = step / steps
-    const eased = 1 - Math.pow(1 - t, 3)
-    await overlay.setPosition(
-      new PhysicalPosition(
-        Math.round(current.x + deltaX * eased),
-        Math.round(current.y + deltaY * eased),
-      ),
-    )
-
-    if (step < steps) await wait(14)
   }
 }
 
@@ -126,10 +103,16 @@ async function placeOverlay(
     customPosition,
   })
 
-  if (mode === "mouse_follow") {
-    await animateOverlayPosition(overlay, position)
+  if (mode === "mouse_follow" && (await overlay.isVisible())) {
+    // One IPC call submits the latest target. Interpolation and cancellation happen
+    // inside Rust so repeated selections do not pay an IPC round-trip per frame.
+    await invoke("animate_overlay_position", {
+      x: position.x,
+      y: position.y,
+      durationMs: 96,
+    })
   } else {
-    overlayPlacementGeneration += 1
+    await cancelOverlayMotion()
     await overlay.setPosition(new PhysicalPosition(position.x, position.y))
   }
   return position
@@ -139,6 +122,7 @@ async function resizeOverlay(target: DesktopSize): Promise<void> {
   const overlay = await getOverlayWindow()
   if (!overlay) return
 
+  await cancelOverlayMotion()
   const generation = ++overlayResizeGeneration
   const scaleFactor = await overlay.scaleFactor()
   const current = await overlay.outerSize()
@@ -198,7 +182,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     },
     async hide() {
       overlayResizeGeneration += 1
-      overlayPlacementGeneration += 1
+      await cancelOverlayMotion()
       const overlay = await getOverlayWindow()
       await overlay?.hide()
     },
@@ -209,7 +193,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     place: placeOverlay,
     resize: resizeOverlay,
     async startDragging() {
-      overlayPlacementGeneration += 1
+      await cancelOverlayMotion()
       const overlay = await getOverlayWindow()
       await overlay?.startDragging()
     },

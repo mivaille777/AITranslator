@@ -1,4 +1,5 @@
 import {
+  LogicalSize,
   PhysicalPosition,
   Window as TauriWindow,
   cursorPosition,
@@ -10,9 +11,12 @@ import {
 import type {
   DesktopAdapter,
   DesktopPoint,
+  DesktopSize,
   OverlayPositionMode,
 } from "../adapter"
 import { computeOverlayPosition } from "../overlay-positioning"
+
+let overlayResizeGeneration = 0
 
 async function getMainWindow(): Promise<TauriWindow | null> {
   const current = getCurrentWindow()
@@ -64,6 +68,40 @@ async function placeOverlay(
   return position
 }
 
+async function resizeOverlay(target: DesktopSize): Promise<void> {
+  const overlay = await getOverlayWindow()
+  if (!overlay) return
+
+  const generation = ++overlayResizeGeneration
+  const scaleFactor = await overlay.scaleFactor()
+  const current = await overlay.outerSize()
+  const startWidth = current.width / scaleFactor
+  const startHeight = current.height / scaleFactor
+  const deltaWidth = target.width - startWidth
+  const deltaHeight = target.height - startHeight
+
+  if (Math.abs(deltaWidth) < 1 && Math.abs(deltaHeight) < 1) return
+
+  const steps = 8
+  const stepDelay = 18
+  for (let step = 1; step <= steps; step += 1) {
+    if (generation !== overlayResizeGeneration) return
+
+    const t = step / steps
+    const eased = 1 - Math.pow(1 - t, 4)
+    await overlay.setSize(
+      new LogicalSize(
+        Math.round(startWidth + deltaWidth * eased),
+        Math.round(startHeight + deltaHeight * eased),
+      ),
+    )
+
+    if (step < steps) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, stepDelay))
+    }
+  }
+}
+
 export const tauriDesktopAdapter: DesktopAdapter = {
   runtime: "tauri",
   window: {
@@ -87,6 +125,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
       await overlay?.show()
     },
     async hide() {
+      overlayResizeGeneration += 1
       const overlay = await getOverlayWindow()
       await overlay?.hide()
     },
@@ -95,6 +134,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
       await overlay?.setFocus()
     },
     place: placeOverlay,
+    resize: resizeOverlay,
     async startDragging() {
       const overlay = await getOverlayWindow()
       await overlay?.startDragging()

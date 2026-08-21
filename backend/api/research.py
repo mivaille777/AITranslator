@@ -13,10 +13,13 @@ from backend.models.research import (
     ResearchNoteDeleteResponse,
     ResearchNoteDetailResponse,
     ResearchNoteUpdateRequest,
+    ResearchSourceProfileResponse,
+    ResearchSourceSectionResponse,
     ResearchSourceSummaryResponse,
     ResearchWorkspaceResponse,
 )
 from backend.services.research_note_service import ResearchNoteService, research_source_id
+from backend.services.research_source_profile import ResearchSourceProfile, ResearchSourceSummary
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 ResearchNoteServiceDependency = Annotated[
@@ -48,6 +51,42 @@ def _detail(note) -> ResearchNoteDetailResponse:
     )
 
 
+def _source_summary(item: ResearchSourceSummary) -> ResearchSourceSummaryResponse:
+    return ResearchSourceSummaryResponse(
+        source_id=item.source_id,
+        display_title=item.display_title,
+        resource_url=item.resource_url,
+        resource_locator=item.resource_locator,
+        source_kind=item.source_kind,
+        source_family=item.source_family,
+        identity_quality=item.identity_quality,
+        note_count=item.note_count,
+        section_count=item.section_count,
+        linked_conversation_count=item.linked_conversation_count,
+        annotation_count=item.annotation_count,
+        ai_evidence_count=item.ai_evidence_count,
+        updated_at=item.updated_at,
+    )
+
+
+def _source_profile(item: ResearchSourceProfile) -> ResearchSourceProfileResponse:
+    return ResearchSourceProfileResponse(
+        **_source_summary(item).model_dump(),
+        sections=[
+            ResearchSourceSectionResponse(
+                section_id=section.section_id,
+                heading=section.heading,
+                note_count=section.note_count,
+                linked_conversation_count=section.linked_conversation_count,
+                annotation_count=section.annotation_count,
+                ai_evidence_count=section.ai_evidence_count,
+                updated_at=section.updated_at,
+            )
+            for section in item.sections
+        ],
+    )
+
+
 @router.get("/workspace", response_model=ResearchWorkspaceResponse)
 def research_workspace(
     service: ResearchNoteServiceDependency,
@@ -57,20 +96,24 @@ def research_workspace(
     sources = service.list_sources(limit=limit)
     return ResearchWorkspaceResponse(
         total=service.count(),
-        sources=[
-            ResearchSourceSummaryResponse(
-                source_id=item.source_id,
-                display_title=item.display_title,
-                resource_url=item.resource_url,
-                source_kind=item.source_kind,
-                note_count=item.note_count,
-                linked_conversation_count=item.linked_conversation_count,
-                updated_at=item.updated_at,
-            )
-            for item in sources
-        ],
+        sources=[_source_summary(item) for item in sources],
         notes=[_detail(note) for note in notes],
     )
+
+
+@router.get("/sources/{source_id}", response_model=ResearchSourceProfileResponse)
+def get_research_source(
+    source_id: str,
+    service: ResearchNoteServiceDependency,
+    limit: int = Query(default=100, ge=1, le=100),
+) -> ResearchSourceProfileResponse:
+    source = service.get_source(source_id, limit=limit)
+    if source is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Research source not found.",
+        )
+    return _source_profile(source)
 
 
 @router.get("/notes", response_model=ResearchNoteListResponse)

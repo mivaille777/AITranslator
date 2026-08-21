@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.ai.errors import AIConfigurationError, AIError
-from backend.api.dependencies import get_agent_tool_registry, get_product_agent_service
+from backend.agent_core.runtime import AgentRuntime
+from backend.agent_core.state import AgentState
+from backend.api.agent_dependencies import get_agent_runtime
+from backend.api.dependencies import get_agent_tool_registry
 from backend.models.agent_tools import (
+    AgentPlan,
     AgentRunRequest,
     AgentRunResponse,
     AgentToolCatalogResponse,
@@ -16,16 +20,15 @@ from backend.models.agent_tools import (
     AgentToolExecuteResponse,
 )
 from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolRegistry
-from backend.services.product_agent_service import ProductAgentService
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 AgentToolRegistryDependency = Annotated[
     AgentToolRegistry,
     Depends(get_agent_tool_registry),
 ]
-ProductAgentServiceDependency = Annotated[
-    ProductAgentService,
-    Depends(get_product_agent_service),
+AgentRuntimeDependency = Annotated[
+    AgentRuntime,
+    Depends(get_agent_runtime),
 ]
 
 
@@ -38,6 +41,44 @@ def _tool_response(result: AgentToolExecutionResult) -> AgentToolExecuteResponse
         model=result.model,
         request_id=result.request_id,
         data=result.data or {},
+    )
+
+
+def _state_tool_response(result: dict[str, Any]) -> AgentToolExecuteResponse:
+    payload = dict(result)
+    payload["data"] = dict(payload.get("data") or {})
+    return AgentToolExecuteResponse.model_validate(payload)
+
+
+def _state_from_run_request(payload: AgentRunRequest) -> AgentState:
+    context = payload.model_dump(
+        exclude={
+            "session_id",
+            "user_message",
+            "source_text",
+        }
+    )
+    return AgentState(
+        session_id=payload.session_id,
+        user_input=payload.user_message,
+        selected_text=payload.source_text,
+        browser_context=context,
+    )
+
+
+def _run_response(state: AgentState) -> AgentRunResponse:
+    response = state.response
+    tool_result = (
+        _state_tool_response(state.tool_results[-1]) if state.tool_results else None
+    )
+    return AgentRunResponse(
+        status=str(response.get("status", "completed") or "completed"),
+        plan=AgentPlan.model_validate(state.planned_action),
+        output_text=str(response.get("output_text", "") or ""),
+        provider=str(response.get("provider", "") or ""),
+        model=str(response.get("model", "") or ""),
+        request_id=max(0, int(response.get("request_id", 0) or 0)),
+        tool_result=tool_result,
     )
 
 
@@ -77,10 +118,10 @@ def execute_agent_tool(
 @router.post("/run", response_model=AgentRunResponse)
 def run_product_agent(
     payload: AgentRunRequest,
-    service: ProductAgentServiceDependency,
+    runtime: AgentRuntimeDependency,
 ) -> AgentRunResponse:
     try:
-        result = service.run(**payload.model_dump())
+        state = runtime.execute(_state_from_run_request(payload))
     except AIConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -94,12 +135,4 @@ def run_product_agent(
             detail=str(exc),
         ) from exc
 
-    return AgentRunResponse(
-        status=result.status,
-        plan=result.plan,
-        output_text=result.output_text,
-        provider=result.provider,
-        model=result.model,
-        request_id=result.request_id,
-        tool_result=_tool_response(result.tool_result) if result.tool_result else None,
-    )
+    return _run_response(state)

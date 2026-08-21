@@ -140,7 +140,7 @@ def list_research_notes(
                 source_kind=note.source_kind,
                 ai_content=note.ai_content,
                 ai_action=note.ai_action,
-                conversation_id=note.conversation_id,
+                conversation_id=getattr(note, "conversation_id", ""),
             )
             for note in notes
         ],

@@ -26,16 +26,16 @@ chat_selection_capture_enabled = true
 enabled = true
 endpoint = "https://translate.googleapis.com/translate_a/single"
 timeout_ms = 8000
-# One bounded retry absorbs stale keep-alive sockets and short 429/5xx bursts.
+# One bounded retry absorbs stale sessions and short 429/5xx bursts.
 max_retries = 1
 # Keep automatic/manual live translation from creating back-to-back web hits.
 min_interval_ms = 120
 
 [youdao_web]
 enabled = true
-endpoint = "https://fanyi.youdao.com/translate"
+endpoint = "https://dict.youdao.com/webtranslate"
 timeout_ms = 8000
-# Keep retries bounded; web-compatible endpoints may rate-limit automation.
+# Current WebFanyi keys are fetched lazily from /webtranslate/key.
 max_retries = 1
 min_interval_ms = 200
 

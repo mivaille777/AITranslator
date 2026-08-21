@@ -48,6 +48,7 @@ def test_companion_handoff_api_round_trips_frozen_reading_context() -> None:
     app.dependency_overrides[get_companion_handoff_service] = lambda: service
 
     payload = _context_payload()
+    payload["conversation_id"] = "conversation-overlay-7"
     payload["ai_content"] = "Existing explanation"
     payload["ai_action"] = "reading_explain"
 
@@ -61,9 +62,20 @@ def test_companion_handoff_api_round_trips_frozen_reading_context() -> None:
 
     assert created.status_code == 200
     assert created.json()["section_heading"] == "3. Methodology"
+    assert created.json()["conversation_id"] == "conversation-overlay-7"
     assert created.json()["ai_content"] == "Existing explanation"
     assert current.json()["handoff"]["source_text"].startswith("The LLM")
+    assert current.json()["handoff"]["conversation_id"] == "conversation-overlay-7"
+    assert service.snapshot() is None
     assert dismissed.json()["handoff"] is None
+
+
+def test_companion_handoff_defaults_to_context_only_when_no_conversation_exists() -> None:
+    service = CompanionHandoffService()
+
+    state = service.create(**_context_payload())
+
+    assert state.conversation_id == ""
 
 
 class StubCompanionChatService:

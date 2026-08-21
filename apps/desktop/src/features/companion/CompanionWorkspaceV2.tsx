@@ -8,10 +8,7 @@ import {
   getCompanionHandoff,
 } from "../../api/companion"
 import { saveResearchNote } from "../../api/quick-actions"
-import type {
-  CompanionHandoff,
-  ResearchNoteSaveRequest,
-} from "../../api/types"
+import type { ResearchNoteSaveRequest } from "../../api/types"
 import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import { Badge } from "../../shared/ui/Badge"
 import { Button } from "../../shared/ui/Button"

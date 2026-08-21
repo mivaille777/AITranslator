@@ -5,8 +5,10 @@ import { HashRouter } from "react-router-dom"
 
 import App from "./App"
 import OverlayView from "./components/OverlayView"
+import { desktop } from "./desktop"
 import AppErrorBoundary from "./shared/errors/AppErrorBoundary"
 import { createAppQueryClient } from "./shared/query/query-client"
+import { queryKeys } from "./shared/query/query-keys"
 import "./index.css"
 import "./overlay.css"
 
@@ -15,6 +17,9 @@ const queryClient = createAppQueryClient()
 const view = new URLSearchParams(window.location.search).get("view")
 if (view === "overlay") {
   document.documentElement.dataset.aitView = "overlay"
+  void desktop.overlay.onStateChanged(() => {
+    void queryClient.refetchQueries({ queryKey: queryKeys.overlay.state, type: "active" })
+  })
 }
 
 const rootView = view === "overlay"

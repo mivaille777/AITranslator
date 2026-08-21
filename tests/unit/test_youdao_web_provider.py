@@ -59,11 +59,11 @@ def test_youdao_defaults_are_bounded_and_https() -> None:
     assert parsed.hostname == "fanyi.youdao.com"
 
 
-def test_youdao_provider_builds_form_and_parses_segments() -> None:
+def test_youdao_provider_builds_zotero_style_get_query_and_parses_segments() -> None:
     calls: list[tuple[str, dict[str, str], dict[str, str], float]] = []
 
-    def requester(url, headers, form, timeout):
-        calls.append((url, dict(headers), dict(form), timeout))
+    def requester(url, headers, query, timeout):
+        calls.append((url, dict(headers), dict(query), timeout))
         return YoudaoWebResponse(
             200,
             json.dumps(
@@ -99,13 +99,13 @@ def test_youdao_provider_builds_form_and_parses_segments() -> None:
         request_id=7,
     )
     assert len(calls) == 1
-    url, headers, form, timeout = calls[0]
+    url, headers, query, timeout = calls[0]
     assert url == "https://example.test/translate"
-    assert form["i"] == "Hello world"
-    assert form["type"] == "EN2ZH_CN"
-    assert form["doctype"] == "json"
-    assert form["client"] == "fanyideskweb"
-    assert headers["Origin"] == "https://fanyi.youdao.com"
+    assert query == {
+        "doctype": "json",
+        "type": "EN2ZH_CN",
+        "i": "Hello world",
+    }
     assert headers["Referer"] == "https://fanyi.youdao.com/"
     assert "Hello world" not in headers["User-Agent"]
     assert timeout == 3
@@ -222,6 +222,18 @@ def test_youdao_can_be_disabled_without_network_access() -> None:
 
     with pytest.raises(WebTranslationError, match="disabled"):
         provider.translate(_request())
+
+
+def test_youdao_http_endpoint_is_only_used_when_explicitly_configured() -> None:
+    provider = YoudaoWebTranslationProvider(
+        endpoint="http://fanyi.youdao.com/translate",
+        min_interval_seconds=0,
+        requester=lambda *_args: YoudaoWebResponse(200, _success_body()),
+    )
+    try:
+        assert provider.endpoint == "http://fanyi.youdao.com/translate"
+    finally:
+        provider.close()
 
 
 def test_translation_manager_selects_youdao_from_settings(tmp_path) -> None:

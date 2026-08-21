@@ -12,6 +12,7 @@ import type {
 import { desktop } from "../desktop"
 import { readOverlayPreferences } from "../desktop/overlay-preferences"
 import { previousCompanionUserMessage } from "../features/companion/companion-runtime"
+import { companionRecoveryLabel } from "../features/companion/companion-recovery"
 import { useCompanionConversationRuntime } from "../features/companion/useCompanionConversationRuntime"
 import {
   overlayChatIsNearTail,
@@ -131,6 +132,10 @@ export default function OverlayCompactChat({
     : runtime.ownerSurface === "overlay"
       ? "overlay"
       : "another window"
+  const recoveryLabel = companionRecoveryLabel(
+    runtime.recoveryState,
+    Boolean(runtime.conversationId || persistedConversationId),
+  )
 
   function exitChat() {
     runtime.closeActiveStream()
@@ -173,6 +178,8 @@ export default function OverlayCompactChat({
           ? "Continue in main ↗"
           : "Open main chat ↗"
 
+  const recovering = runtime.recoveryState === "recovering"
+
   return (
     <div className="border-b border-white/10 bg-black/10">
       <div className="flex items-center justify-between gap-3 px-3 py-2.5">
@@ -208,7 +215,8 @@ export default function OverlayCompactChat({
             runtime.contextUpdating ||
             runtime.activeRequestId !== null ||
             runtime.openingConversation ||
-            runtime.conversationBusyElsewhere
+            runtime.conversationBusyElsewhere ||
+            recovering
           }
           className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] font-medium ${
             runtime.contextMode === "reading" ? "text-cyan-200" : "text-slate-400"
@@ -226,6 +234,30 @@ export default function OverlayCompactChat({
       {runtime.conversationBusyElsewhere && (
         <div className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] text-amber-100/85">
           Replying in {peerSurface}… This view will refresh when the response finishes.
+        </div>
+      )}
+
+      {runtime.recoveryState !== "idle" && recoveryLabel && (
+        <div className={`mx-3 mb-2 flex items-center justify-between gap-2 rounded-[12px] border px-3 py-2 text-[10px] leading-4 ${
+          runtime.recoveryState === "recovering"
+            ? "border-cyan-300/15 bg-cyan-300/[0.06] text-cyan-100/85"
+            : "border-amber-300/15 bg-amber-300/[0.07] text-amber-100/85"
+        }`}>
+          <div className="min-w-0">
+            <p>{recoveryLabel}</p>
+            {runtime.recoveryDetail && runtime.recoveryDetail !== recoveryLabel && (
+              <p className="mt-0.5 truncate opacity-65">{runtime.recoveryDetail}</p>
+            )}
+          </div>
+          {runtime.recoveryState === "offline" && (
+            <button
+              type="button"
+              className="shrink-0 rounded-full border border-current/15 px-2 py-0.5 font-medium hover:bg-white/[0.06]"
+              onClick={() => void runtime.retryRecovery()}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 
@@ -306,7 +338,7 @@ export default function OverlayCompactChat({
         )}
       </div>
 
-      {runtime.errorMessage && (
+      {runtime.errorMessage && runtime.recoveryState === "idle" && (
         <div className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-[12px] border border-rose-300/15 bg-rose-300/[0.08] px-3 py-2 text-[10px] leading-4 text-rose-200">
           <span>{runtime.errorMessage}</span>
           {retryUser && !runtime.conversationBusyElsewhere && (
@@ -321,7 +353,7 @@ export default function OverlayCompactChat({
         </div>
       )}
 
-      {!runtime.chatAvailable && runtime.chatStatusLoaded && (
+      {!runtime.chatAvailable && runtime.chatStatusLoaded && runtime.recoveryState === "idle" && (
         <p className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] leading-4 text-amber-100/80">
           AI Chat unavailable · {runtime.chatStatusDetail}
         </p>
@@ -334,9 +366,9 @@ export default function OverlayCompactChat({
             autoFocus
             rows={1}
             value={runtime.draft}
-            disabled={runtime.openingConversation || runtime.conversationBusyElsewhere}
-            placeholder={runtime.openingConversation
-              ? "Restoring conversation…"
+            disabled={runtime.openingConversation || runtime.conversationBusyElsewhere || recovering}
+            placeholder={runtime.openingConversation || recovering
+              ? "Recovering conversation…"
               : runtime.conversationBusyElsewhere
                 ? `Replying in ${peerSurface}…`
                 : runtime.activeRequestId === null
@@ -380,7 +412,8 @@ export default function OverlayCompactChat({
                 !runtime.chatAvailable ||
                 !runtime.draft.trim() ||
                 runtime.openingConversation ||
-                runtime.conversationBusyElsewhere
+                runtime.conversationBusyElsewhere ||
+                recovering
               }
               className="ait-overlay-action-button flex h-9 w-9 items-center justify-center rounded-full text-sm disabled:opacity-35"
               onClick={() => runtime.sendMessage()}
@@ -399,7 +432,8 @@ export default function OverlayCompactChat({
             disabled={
               handoffMutation.isPending ||
               runtime.activeRequestId !== null ||
-              runtime.openingConversation
+              runtime.openingConversation ||
+              recovering
             }
             className="text-[9px] font-medium text-slate-500 hover:text-slate-300 disabled:opacity-40"
             onClick={openMainChat}

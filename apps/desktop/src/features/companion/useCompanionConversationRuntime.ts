@@ -33,6 +33,7 @@ import {
   type CompanionContextSnapshot,
   type CompanionRuntimeMessage,
 } from "./companion-runtime"
+import type { CompanionRecoveryState } from "./companion-recovery"
 import { companionExternalChangeDecision } from "./companion-sync"
 
 type StreamEventContext = {
@@ -83,11 +84,14 @@ export interface CompanionConversationRuntime {
   contextUpdating: boolean
   conversationBusyElsewhere: boolean
   ownerSurface: CompanionClientSurface
+  recoveryState: CompanionRecoveryState
+  recoveryDetail: string
   reset: (options?: CompanionRuntimeResetOptions) => void
   openConversation: (conversationId: string) => Promise<ConversationDetail | null>
   sendMessage: (message?: string, baseMessages?: CompanionRuntimeMessage[]) => boolean
   cancelStream: () => void
   closeActiveStream: () => void
+  retryRecovery: () => Promise<boolean>
   attachReadingContext: (context: CompanionContextSnapshot) => Promise<void>
   attachSavedContext: () => Promise<void>
   detachReadingContext: () => Promise<void>
@@ -114,6 +118,8 @@ export function useCompanionConversationRuntime(
   )
   const [openingConversation, setOpeningConversation] = useState(false)
   const [contextUpdating, setContextUpdating] = useState(false)
+  const [recoveryState, setRecoveryState] = useState<CompanionRecoveryState>("idle")
+  const [recoveryDetail, setRecoveryDetail] = useState("")
 
   const contextRef = useRef(context)
   const contextModeRef = useRef(contextMode)
@@ -131,6 +137,8 @@ export function useCompanionConversationRuntime(
   const streamHandleRef = useRef<CompanionChatStreamHandle | null>(null)
   const openingConversationRef = useRef(false)
   const pendingExternalChangeRef = useRef<CompanionConversationChangeSignal | null>(null)
+  const lastRecoveryConversationRef = useRef("")
+  const lastFailedDraftRef = useRef("")
   const onConversationAcceptedRef = useRef(options.onConversationAccepted)
 
   useEffect(() => {
@@ -158,8 +166,14 @@ export function useCompanionConversationRuntime(
       ownershipQuery.data.owner_id !== clientIdRef.current,
   )
 
+  const clearRecovery = useCallback(() => {
+    setRecoveryState("idle")
+    setRecoveryDetail("")
+  }, [])
+
   const applyConversationId = useCallback((next: string) => {
     conversationIdRef.current = next
+    if (next) lastRecoveryConversationRef.current = next
     setConversationId(next)
   }, [])
 
@@ -191,6 +205,9 @@ export function useCompanionConversationRuntime(
   const reset = useCallback((next: CompanionRuntimeResetOptions = {}) => {
     closeActiveStream()
     pendingExternalChangeRef.current = null
+    lastRecoveryConversationRef.current = ""
+    lastFailedDraftRef.current = ""
+    clearRecovery()
     applyConversationId("")
     applyContext(next.context ?? EMPTY_COMPANION_CONTEXT)
     applyContextMode(next.contextMode ?? "general")
@@ -199,7 +216,13 @@ export function useCompanionConversationRuntime(
     setMessages([])
     setDraft(next.draft ?? "")
     setErrorMessage("")
-  }, [applyContext, applyContextMode, applyConversationId, closeActiveStream])
+  }, [
+    applyContext,
+    applyContextMode,
+    applyConversationId,
+    clearRecovery,
+    closeActiveStream,
+  ])
 
   const applyConversation = useCallback((conversation: ConversationDetail) => {
     applyConversationId(conversation.conversation_id)
@@ -209,11 +232,13 @@ export function useCompanionConversationRuntime(
     scopeRef.current = `stored:${conversation.conversation_id}`
     setMessages(restoreCompanionMessages(conversation.messages))
     setDraft("")
+    lastFailedDraftRef.current = ""
+    clearRecovery()
     queryClient.setQueryData(
       queryKeys.conversations.detail(conversation.conversation_id),
       conversation,
     )
-  }, [applyContext, applyContextMode, applyConversationId, queryClient])
+  }, [applyContext, applyContextMode, applyConversationId, clearRecovery, queryClient])
 
   const refreshConversationFromExternalChange = useCallback(async (
     nextConversationId: string,
@@ -240,8 +265,7 @@ export function useCompanionConversationRuntime(
       applyConversation(conversation)
       void queryClient.invalidateQueries({ queryKey: ["conversations"] })
     } catch {
-      // Background synchronization is best-effort. Explicit open/recovery paths
-      // still surface actionable errors to the user.
+      // Explicit recovery paths surface failures. Background peer sync remains best-effort.
     }
   }, [applyConversation, queryClient])
 
@@ -254,6 +278,8 @@ export function useCompanionConversationRuntime(
     applyConversationId("")
     setMessages([])
     setDraft("")
+    setRecoveryState("offline")
+    setRecoveryDetail("The conversation was deleted in another window.")
     setErrorMessage("This conversation was deleted in another window.")
     void queryClient.invalidateQueries({ queryKey: ["conversations"] })
   }, [applyConversationId, closeActiveStream, queryClient])
@@ -337,6 +363,8 @@ export function useCompanionConversationRuntime(
     closeActiveStream()
     openingConversationRef.current = true
     setOpeningConversation(true)
+    setRecoveryState("recovering")
+    setRecoveryDetail("Restoring persisted conversation…")
     setErrorMessage("")
     try {
       const conversation = await queryClient.fetchQuery({
@@ -347,9 +375,10 @@ export function useCompanionConversationRuntime(
       applyConversation(conversation)
       return conversation
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to open conversation.",
-      )
+      const detail = error instanceof Error ? error.message : "Unable to open conversation."
+      setRecoveryState("offline")
+      setRecoveryDetail(detail)
+      setErrorMessage(detail)
       return null
     } finally {
       openingConversationRef.current = false
@@ -360,17 +389,45 @@ export function useCompanionConversationRuntime(
   const recoverConversation = useCallback(async (
     nextConversationId: string,
     expectedScope: string,
-  ) => {
-    if (!nextConversationId || scopeRef.current !== expectedScope) return
+  ): Promise<boolean> => {
+    if (!nextConversationId || scopeRef.current !== expectedScope) return false
+    lastRecoveryConversationRef.current = nextConversationId
+    setRecoveryState("recovering")
+    setRecoveryDetail("Recovering persisted conversation…")
     try {
       const recovered = await getConversation(nextConversationId)
-      if (scopeRef.current !== expectedScope) return
+      if (scopeRef.current !== expectedScope) return false
       applyConversation(recovered)
       void queryClient.invalidateQueries({ queryKey: ["conversations"] })
-    } catch {
-      // Preserve the transport error already displayed to the user.
+      return true
+    } catch (error) {
+      if (scopeRef.current !== expectedScope) return false
+      const detail = error instanceof Error ? error.message : "Unable to recover conversation."
+      setRecoveryState("offline")
+      setRecoveryDetail(detail)
+      setErrorMessage(detail)
+      return false
     }
   }, [applyConversation, queryClient])
+
+  const retryRecovery = useCallback(async (): Promise<boolean> => {
+    const persistedConversationId = conversationIdRef.current || lastRecoveryConversationRef.current
+    if (persistedConversationId) {
+      return recoverConversation(persistedConversationId, scopeRef.current)
+    }
+
+    setRecoveryState("recovering")
+    setRecoveryDetail("Reconnecting to AI Chat…")
+    const result = await chatStatusQuery.refetch()
+    if (result.data?.available) {
+      clearRecovery()
+      setErrorMessage("")
+      return true
+    }
+    setRecoveryState("offline")
+    setRecoveryDetail(result.data?.detail || "AI Chat backend is unavailable.")
+    return false
+  }, [chatStatusQuery, clearRecovery, recoverConversation])
 
   const finishRequest = useCallback((requestId: number, nextConversationId = "") => {
     if (activeRequestRef.current !== requestId) return
@@ -397,6 +454,7 @@ export function useCompanionConversationRuntime(
     if (event.type === "accepted") {
       const isNewConversation = conversationIdRef.current !== event.conversation_id
       applyConversationId(event.conversation_id)
+      clearRecovery()
       setMessages((current) =>
         current.map((message) => {
           if (message.id === localUserId && event.user_message_id) {
@@ -449,6 +507,8 @@ export function useCompanionConversationRuntime(
             : message,
         ),
       )
+      lastFailedDraftRef.current = ""
+      clearRecovery()
       finishRequest(requestId, event.conversation_id)
       notifyConversationUpdated(event.conversation_id)
       return
@@ -467,6 +527,7 @@ export function useCompanionConversationRuntime(
             : message,
         ),
       )
+      clearRecovery()
       finishRequest(requestId, event.conversation_id)
       notifyConversationUpdated(event.conversation_id)
       return
@@ -476,6 +537,8 @@ export function useCompanionConversationRuntime(
       setMessages((current) =>
         current.filter((message) => message.id !== localUserId && message.id !== localAssistantId),
       )
+      setDraft(lastFailedDraftRef.current)
+      clearRecovery()
       setErrorMessage(event.message || "This conversation is already replying in another window.")
       finishRequest(requestId, event.conversation_id)
       return
@@ -496,7 +559,7 @@ export function useCompanionConversationRuntime(
     setErrorMessage(event.message || "AI Chat streaming failed.")
     finishRequest(requestId, event.conversation_id)
     notifyConversationUpdated(event.conversation_id)
-  }, [applyConversationId, finishRequest, notifyConversationUpdated, queryClient])
+  }, [applyConversationId, clearRecovery, finishRequest, notifyConversationUpdated, queryClient])
 
   const sendMessage = useCallback((
     message = draft,
@@ -521,6 +584,8 @@ export function useCompanionConversationRuntime(
     const requestId = requestCounterRef.current + 1
     requestCounterRef.current = requestId
     activeRequestRef.current = requestId
+    lastFailedDraftRef.current = normalized
+    clearRecovery()
     setActiveRequestId(requestId)
     setErrorMessage("")
     setDraft("")
@@ -580,19 +645,32 @@ export function useCompanionConversationRuntime(
               : runtimeMessage,
           ),
         )
-        setErrorMessage(`${error.message} Recovering persisted stream state…`)
         const persistedConversationId = conversationIdRef.current
+        setRecoveryState(persistedConversationId ? "recovering" : "offline")
+        setRecoveryDetail(
+          persistedConversationId
+            ? "Recovering persisted stream state…"
+            : "The stream disconnected before a conversation was persisted. Your draft was restored.",
+        )
+        setErrorMessage(
+          persistedConversationId
+            ? `${error.message} Recovering persisted stream state…`
+            : error.message,
+        )
         finishRequest(requestId, persistedConversationId)
         if (persistedConversationId) {
           window.setTimeout(
             () => void recoverConversation(persistedConversationId, scopeId),
             250,
           )
+        } else {
+          setDraft(lastFailedDraftRef.current)
         }
       },
     })
     return true
   }, [
+    clearRecovery,
     conversationBusyElsewhere,
     draft,
     finishRequest,
@@ -733,11 +811,14 @@ export function useCompanionConversationRuntime(
     contextUpdating,
     conversationBusyElsewhere,
     ownerSurface,
+    recoveryState,
+    recoveryDetail,
     reset,
     openConversation,
     sendMessage,
     cancelStream: () => streamHandleRef.current?.cancel(),
     closeActiveStream,
+    retryRecovery,
     attachReadingContext,
     attachSavedContext,
     detachReadingContext,

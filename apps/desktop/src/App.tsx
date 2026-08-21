@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 
 import CompanionHandoffNavigator from "./features/companion/CompanionHandoffNavigator"
+import AgentWorkspace from "./features/companion/AgentWorkspace"
 import BrowserReadingContextPanel from "./features/reading/BrowserReadingContextPanel"
 import TranslationWorkspace from "./features/translation/TranslationWorkspace"
 import { useTranslationWorkspace } from "./features/translation/useTranslationWorkspace"
@@ -67,6 +68,7 @@ function App() {
               />
               <Route path="/reading" element={<ReadingWorkspace workspace={workspace} />} />
               <Route path="/chat" element={<CompanionWorkspaceV2 />} />
+              <Route path="/agent" element={<AgentWorkspace />} />
               <Route path="/research" element={<ResearchRoute backendState={workspace.backendState} />} />
               <Route path="/settings" element={<SettingsWorkspace workspace={workspace} />} />
               <Route path="*" element={<Navigate to="/translation" replace />} />

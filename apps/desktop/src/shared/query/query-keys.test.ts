@@ -7,6 +7,11 @@ describe("query key registry", () => {
     expect(queryKeys.companion.handoff).toEqual(["companion", "handoff"])
   })
 
+  it("separates conversation list/detail caches", () => {
+    expect(queryKeys.conversations.list(30)).toEqual(["conversations", "list", 30])
+    expect(queryKeys.conversations.detail("abc")).toEqual(["conversations", "detail", "abc"])
+  })
+
   it("separates Research Note caches by requested limit", () => {
     expect(queryKeys.research.notes(5)).toEqual(["research", "notes", 5])
     expect(queryKeys.research.notes(20)).toEqual(["research", "notes", 20])

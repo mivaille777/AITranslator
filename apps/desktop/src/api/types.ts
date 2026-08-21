@@ -214,6 +214,7 @@ export interface CompanionChatMessage {
 }
 
 export interface CompanionChatRequest extends ReadingContextFields {
+  conversation_id?: string
   session_id: string
   user_message: string
   source_text: string
@@ -225,6 +226,7 @@ export interface CompanionChatRequest extends ReadingContextFields {
 }
 
 export interface CompanionChatResponse {
+  conversation_id: string
   session_id: string
   user_message: string
   output_text: string
@@ -245,6 +247,7 @@ export interface CompanionChatStreamAccepted {
   request_id: number
   conversation_id: string
   message_id: string
+  user_message_id?: string
 }
 
 export interface CompanionChatStreamDelta {
@@ -288,3 +291,49 @@ export type CompanionChatStreamEvent =
   | CompanionChatStreamDone
   | CompanionChatStreamError
   | CompanionChatStreamCancelled
+
+export type ConversationMessageStatus = "complete" | "streaming" | "cancelled" | "error"
+
+export interface ConversationMessage {
+  message_id: string
+  conversation_id: string
+  request_id: number
+  role: CompanionChatRole
+  content: string
+  status: ConversationMessageStatus
+  provider: string
+  model: string
+  error_code: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversationSummary {
+  conversation_id: string
+  session_id: string
+  title: string
+  created_at: string
+  updated_at: string
+  provider: string
+  model: string
+  resource_title: string
+  section_heading: string
+  source_kind: string
+}
+
+export interface ConversationDetail extends ConversationSummary, ReadingContextFields {
+  source_text: string
+  translated_text: string
+  source_language: string
+  target_language: string
+  messages: ConversationMessage[]
+}
+
+export interface ConversationListResponse {
+  conversations: ConversationSummary[]
+}
+
+export interface ConversationDeleteResponse {
+  deleted: boolean
+  conversation_id: string
+}

@@ -5,6 +5,7 @@ from threading import Lock
 from backend.services.browser_context_service import BrowserContextService
 from backend.services.companion_chat_service import CompanionChatService
 from backend.services.companion_handoff_service import CompanionHandoffService
+from backend.services.conversation_store_service import ConversationStoreService
 from backend.services.overlay_state_service import OverlayStateService
 from backend.services.quick_action_service import QuickActionService
 from backend.services.research_note_service import ResearchNoteService
@@ -24,6 +25,8 @@ _companion_handoff_service: CompanionHandoffService | None = None
 _companion_handoff_service_lock = Lock()
 _companion_chat_service: CompanionChatService | None = None
 _companion_chat_service_lock = Lock()
+_conversation_store_service: ConversationStoreService | None = None
+_conversation_store_service_lock = Lock()
 
 
 def get_translation_service() -> TranslationService:
@@ -137,3 +140,20 @@ def close_companion_chat_service() -> None:
         _companion_chat_service = None
     if service is not None:
         service.close()
+
+
+def get_conversation_store_service() -> ConversationStoreService:
+    global _conversation_store_service
+    if _conversation_store_service is not None:
+        return _conversation_store_service
+
+    with _conversation_store_service_lock:
+        if _conversation_store_service is None:
+            _conversation_store_service = ConversationStoreService()
+        return _conversation_store_service
+
+
+def close_conversation_store_service() -> None:
+    global _conversation_store_service
+    with _conversation_store_service_lock:
+        _conversation_store_service = None

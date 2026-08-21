@@ -54,3 +54,14 @@ export function apiPost<TResponse, TBody>(path: string, body: TBody): Promise<TR
     body: JSON.stringify(body),
   })
 }
+
+export function apiPatch<TResponse, TBody>(path: string, body: TBody): Promise<TResponse> {
+  return apiRequest<TResponse>(path, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  })
+}
+
+export function apiDelete<TResponse>(path: string): Promise<TResponse> {
+  return apiRequest<TResponse>(path, { method: "DELETE" })
+}

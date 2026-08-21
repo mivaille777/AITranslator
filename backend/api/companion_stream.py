@@ -2,28 +2,38 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from threading import Event
+from threading import Event, Lock
+from time import monotonic
 from typing import Annotated, Any
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from app.ai.errors import AIConfigurationError, AIError
-from backend.api.dependencies import get_companion_chat_service
+from backend.api.dependencies import (
+    get_companion_chat_service,
+    get_conversation_store_service,
+)
 from backend.models.companion import (
     CompanionChatStreamCancel,
     CompanionChatStreamStart,
 )
 from backend.services.companion_chat_service import CompanionChatService
+from backend.services.conversation_store_service import ConversationStoreService
 
 router = APIRouter(tags=["companion-stream"])
 CompanionChatServiceDependency = Annotated[
     CompanionChatService,
     Depends(get_companion_chat_service),
 ]
+ConversationStoreDependency = Annotated[
+    ConversationStoreService,
+    Depends(get_conversation_store_service),
+]
 
 _TERMINAL_EVENT_TYPES = frozenset({"done", "error", "cancelled"})
+_STREAM_FLUSH_INTERVAL_SECONDS = 0.25
+_STREAM_FLUSH_CHARACTER_STEP = 256
 
 
 def _stream_kwargs(payload: Any) -> dict[str, Any]:
@@ -61,7 +71,7 @@ def _incoming_identity(incoming: object) -> tuple[int, str]:
     request_id = request.get("request_id", 0)
     if isinstance(request_id, bool) or not isinstance(request_id, int) or request_id < 0:
         request_id = 0
-    conversation_id = str(request.get("session_id", ""))[:128]
+    conversation_id = str(request.get("conversation_id", ""))[:128]
     return request_id, conversation_id
 
 
@@ -82,12 +92,52 @@ def _consume_background_task(task: asyncio.Task[None]) -> None:
 async def stream_companion_chat(
     websocket: WebSocket,
     service: CompanionChatServiceDependency,
+    store: ConversationStoreDependency,
 ) -> None:
     await websocket.accept()
     cancel_event = Event()
     producer_task: asyncio.Task[None] | None = None
     sender_task: asyncio.Task[str] | None = None
     receiver_task: asyncio.Task[str] | None = None
+    assistant_message_id = ""
+    conversation_id = ""
+    request_id = 0
+    terminal_lock = Lock()
+    terminal_committed = False
+    latest_text_lock = Lock()
+    latest_text = ""
+
+    def current_text() -> str:
+        with latest_text_lock:
+            return latest_text
+
+    def update_latest(value: str) -> None:
+        nonlocal latest_text
+        with latest_text_lock:
+            latest_text = value
+
+    def commit_terminal(
+        terminal_status: str,
+        *,
+        content: str | None = None,
+        provider: str = "",
+        model: str = "",
+        error_code: str = "",
+    ) -> bool:
+        nonlocal terminal_committed
+        with terminal_lock:
+            if terminal_committed or not assistant_message_id:
+                return False
+            store.finalize_message(
+                assistant_message_id,
+                status=terminal_status,
+                content=current_text() if content is None else content,
+                provider=provider,
+                model=model,
+                error_code=error_code,
+            )
+            terminal_committed = True
+            return True
 
     try:
         try:
@@ -98,12 +148,12 @@ async def stream_companion_chat(
         try:
             start = CompanionChatStreamStart.model_validate(incoming)
         except ValidationError as exc:
-            request_id, conversation_id = _incoming_identity(incoming)
+            invalid_request_id, invalid_conversation_id = _incoming_identity(incoming)
             await websocket.send_json(
                 {
                     "type": "error",
-                    "request_id": request_id,
-                    "conversation_id": conversation_id,
+                    "request_id": invalid_request_id,
+                    "conversation_id": invalid_conversation_id,
                     "message_id": "",
                     "code": "invalid_request",
                     "message": _validation_message(exc),
@@ -113,8 +163,38 @@ async def stream_companion_chat(
 
         payload = start.request
         request_id = payload.request_id
-        conversation_id = payload.session_id
-        message_id = uuid4().hex
+        try:
+            exchange = store.begin_exchange(
+                conversation_id=payload.conversation_id,
+                session_id=payload.session_id,
+                user_message=payload.user_message,
+                request_id=request_id,
+                source_text=payload.source_text,
+                translated_text=payload.translated_text,
+                source_language=payload.source_language,
+                target_language=payload.target_language,
+                resource_url=payload.resource_url,
+                resource_title=payload.resource_title,
+                section_heading=payload.section_heading,
+                context_before=payload.context_before,
+                context_after=payload.context_after,
+                source_kind=payload.source_kind,
+            )
+        except (OSError, ValueError) as exc:
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "request_id": request_id,
+                    "conversation_id": payload.conversation_id,
+                    "message_id": "",
+                    "code": "conversation_store",
+                    "message": str(exc) or "Unable to persist AI Chat request.",
+                }
+            )
+            return
+
+        conversation_id = exchange.conversation_id
+        assistant_message_id = exchange.assistant_message_id
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
@@ -123,7 +203,8 @@ async def stream_companion_chat(
                 "type": "accepted",
                 "request_id": request_id,
                 "conversation_id": conversation_id,
-                "message_id": message_id,
+                "message_id": assistant_message_id,
+                "user_message_id": exchange.user_message_id,
             }
         )
 
@@ -132,30 +213,51 @@ async def stream_companion_chat(
 
         def produce() -> None:
             accumulated: list[str] = []
+            persisted_length = 0
+            last_flush = monotonic()
             try:
                 for delta in service.stream(**_stream_kwargs(payload)):
                     if cancel_event.is_set():
                         return
                     accumulated.append(delta)
+                    text = "".join(accumulated)
+                    update_latest(text)
+                    now = monotonic()
+                    if (
+                        len(text) - persisted_length >= _STREAM_FLUSH_CHARACTER_STEP
+                        or now - last_flush >= _STREAM_FLUSH_INTERVAL_SECONDS
+                    ):
+                        store.update_stream(assistant_message_id, text)
+                        persisted_length = len(text)
+                        last_flush = now
                     emit(
                         {
                             "type": "delta",
                             "request_id": request_id,
                             "conversation_id": conversation_id,
-                            "message_id": message_id,
+                            "message_id": assistant_message_id,
                             "delta": delta,
-                            "accumulated_text": "".join(accumulated),
+                            "accumulated_text": text,
                         }
                     )
+
                 if cancel_event.is_set():
                     return
+                text = "".join(accumulated)
+                update_latest(text)
+                commit_terminal(
+                    "complete",
+                    content=text,
+                    provider=service.provider_name,
+                    model=service.model,
+                )
                 emit(
                     {
                         "type": "done",
                         "request_id": request_id,
                         "conversation_id": conversation_id,
-                        "message_id": message_id,
-                        "output_text": "".join(accumulated),
+                        "message_id": assistant_message_id,
+                        "output_text": text,
                         "provider": service.provider_name,
                         "model": service.model,
                     }
@@ -163,13 +265,20 @@ async def stream_companion_chat(
             except Exception as exc:
                 if cancel_event.is_set():
                     return
+                code = _error_code(exc)
+                commit_terminal(
+                    "error",
+                    provider=service.provider_name,
+                    model=service.model,
+                    error_code=code,
+                )
                 emit(
                     {
                         "type": "error",
                         "request_id": request_id,
                         "conversation_id": conversation_id,
-                        "message_id": message_id,
-                        "code": _error_code(exc),
+                        "message_id": assistant_message_id,
+                        "code": code,
                         "message": str(exc) or "AI chat streaming failed.",
                     }
                 )
@@ -199,6 +308,7 @@ async def stream_companion_chat(
                     continue
 
                 cancel_event.set()
+                commit_terminal("cancelled", error_code="user_cancelled")
                 while True:
                     try:
                         queue.get_nowait()
@@ -209,7 +319,7 @@ async def stream_companion_chat(
                         "type": "cancelled",
                         "request_id": request_id,
                         "conversation_id": conversation_id,
-                        "message_id": message_id,
+                        "message_id": assistant_message_id,
                     }
                 )
                 return "cancel"
@@ -234,9 +344,10 @@ async def stream_companion_chat(
             receiver_task.cancel()
     finally:
         cancel_event.set()
+        commit_terminal("cancelled", error_code="transport_closed")
         for task in (sender_task, receiver_task):
             if task is not None and not task.done():
                 task.cancel()
         # ``asyncio.to_thread`` cannot forcibly stop the provider thread. The
-        # cooperative Event makes it stop on the next provider delta, at which
-        # point the underlying response stream is closed by the chat core.
+        # cooperative Event makes it stop on the next provider delta, while the
+        # message is already durably terminal in SQLite.

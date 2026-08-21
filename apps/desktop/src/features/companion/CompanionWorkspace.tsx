@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import ReactMarkdown from "react-markdown"
 import { Link } from "react-router-dom"
 
@@ -12,18 +12,23 @@ import {
   streamCompanionChat,
   type CompanionChatStreamHandle,
 } from "../../api/companion-stream"
+import { getConversation } from "../../api/conversations"
 import type {
   CompanionChatMessage,
   CompanionChatRequest,
   CompanionChatStreamEvent,
   CompanionHandoff,
+  ConversationDetail,
+  ConversationMessage,
 } from "../../api/types"
 import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import { Badge } from "../../shared/ui/Badge"
 import { Button, buttonClassName } from "../../shared/ui/Button"
 import { EmptyState } from "../../shared/ui/EmptyState"
+import ConversationHistoryPanel from "./ConversationHistoryPanel"
 
 type MessageStatus = "complete" | "streaming" | "cancelled" | "error"
+type ContextMode = "none" | "handoff" | "stored"
 
 interface WorkspaceMessage extends CompanionChatMessage {
   id: string
@@ -31,13 +36,16 @@ interface WorkspaceMessage extends CompanionChatMessage {
   provider?: string
   model?: string
   serverMessageId?: string
+  errorCode?: string
 }
 
 interface StreamEventContext {
-  handoffId: string
+  scopeId: string
   requestId: number
   localAssistantId: string
 }
+
+type ActiveContext = CompanionHandoff | ConversationDetail
 
 function historyFrom(messages: WorkspaceMessage[]): CompanionChatMessage[] {
   return messages
@@ -46,12 +54,30 @@ function historyFrom(messages: WorkspaceMessage[]): CompanionChatMessage[] {
     .map(({ role, content }) => ({ role, content }))
 }
 
+function restoredMessages(messages: ConversationMessage[]): WorkspaceMessage[] {
+  return messages.map((message) => ({
+    id: message.message_id,
+    role: message.role,
+    content: message.content,
+    status: message.status,
+    provider: message.provider,
+    model: message.model,
+    serverMessageId: message.message_id,
+    errorCode: message.error_code,
+  }))
+}
+
 export default function CompanionWorkspace() {
+  const queryClient = useQueryClient()
   const [messages, setMessages] = useState<WorkspaceMessage[]>([])
   const [draft, setDraft] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null)
+  const [activeConversationId, setActiveConversationId] = useState("")
+  const [restoredConversation, setRestoredConversation] = useState<ConversationDetail | null>(null)
+  const [openingConversation, setOpeningConversation] = useState(false)
   const handoffIdRef = useRef("")
+  const contextModeRef = useRef<ContextMode>("none")
   const requestCounterRef = useRef(0)
   const activeRequestRef = useRef<number | null>(null)
   const streamHandleRef = useRef<CompanionChatStreamHandle | null>(null)
@@ -72,22 +98,45 @@ export default function CompanionWorkspace() {
 
   const handoff = handoffQuery.data?.handoff ?? null
   const chatAvailable = chatStatusQuery.data?.available ?? false
+  const activeContext: ActiveContext | null = restoredConversation ?? handoff
+
+  const closeActiveStream = useCallback(() => {
+    streamHandleRef.current?.cancel()
+    streamHandleRef.current?.close()
+    streamHandleRef.current = null
+    activeRequestRef.current = null
+    setActiveRequestId(null)
+  }, [])
+
+  const resetToHandoff = useCallback((nextHandoff: CompanionHandoff) => {
+    closeActiveStream()
+    contextModeRef.current = "handoff"
+    setRestoredConversation(null)
+    setActiveConversationId("")
+    setMessages([])
+    setDraft(nextHandoff.suggested_prompt ?? "")
+    setErrorMessage("")
+  }, [closeActiveStream])
 
   useEffect(() => {
     const nextId = handoff?.handoff_id ?? ""
     if (nextId === handoffIdRef.current) return
 
-    streamHandleRef.current?.close()
-    streamHandleRef.current = null
-    activeRequestRef.current = null
     handoffIdRef.current = nextId
     queueMicrotask(() => {
-      setMessages([])
-      setDraft(handoff?.suggested_prompt ?? "")
-      setErrorMessage("")
-      setActiveRequestId(null)
+      if (handoff) {
+        resetToHandoff(handoff)
+      } else if (contextModeRef.current === "handoff") {
+        closeActiveStream()
+        contextModeRef.current = "none"
+        setRestoredConversation(null)
+        setActiveConversationId("")
+        setMessages([])
+        setDraft("")
+        setErrorMessage("")
+      }
     })
-  }, [handoff])
+  }, [closeActiveStream, handoff, resetToHandoff])
 
   useEffect(
     () => () => {
@@ -98,37 +147,81 @@ export default function CompanionWorkspace() {
 
   const dismissMutation = useMutation({
     mutationFn: (handoffId: string) => dismissCompanionHandoff(handoffId),
-    onMutate: () => {
-      streamHandleRef.current?.cancel()
-    },
+    onMutate: closeActiveStream,
     onSuccess: () => {
-      streamHandleRef.current?.close()
-      streamHandleRef.current = null
-      activeRequestRef.current = null
-      handoffIdRef.current = ""
+      contextModeRef.current = "none"
+      setRestoredConversation(null)
+      setActiveConversationId("")
       setMessages([])
       setDraft("")
       setErrorMessage("")
-      setActiveRequestId(null)
       void handoffQuery.refetch()
     },
   })
+
+  async function openConversation(conversationId: string) {
+    if (!conversationId || openingConversation) return
+    closeActiveStream()
+    setOpeningConversation(true)
+    setErrorMessage("")
+    try {
+      const conversation = await queryClient.fetchQuery({
+        queryKey: queryKeys.conversations.detail(conversationId),
+        queryFn: () => getConversation(conversationId),
+        staleTime: 0,
+      })
+      contextModeRef.current = "stored"
+      setRestoredConversation(conversation)
+      setActiveConversationId(conversation.conversation_id)
+      setMessages(restoredMessages(conversation.messages))
+      setDraft("")
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to open conversation.")
+    } finally {
+      setOpeningConversation(false)
+    }
+  }
+
+  function useCurrentReading() {
+    if (!handoff) return
+    resetToHandoff(handoff)
+  }
+
+  function handleDeletedActive() {
+    if (handoff) {
+      resetToHandoff(handoff)
+      return
+    }
+    contextModeRef.current = "none"
+    setRestoredConversation(null)
+    setActiveConversationId("")
+    setMessages([])
+    setDraft("")
+    setErrorMessage("")
+  }
 
   function finishRequest(requestId: number) {
     if (activeRequestRef.current !== requestId) return
     activeRequestRef.current = null
     streamHandleRef.current = null
     setActiveRequestId(null)
+    void queryClient.invalidateQueries({ queryKey: ["conversations"] })
   }
 
   function handleStreamEvent(
     event: CompanionChatStreamEvent,
-    { handoffId, requestId, localAssistantId }: StreamEventContext,
+    context: StreamEventContext,
   ) {
-    if (handoffIdRef.current !== handoffId) return
+    const { scopeId, requestId, localAssistantId } = context
+    const currentScope =
+      contextModeRef.current === "stored"
+        ? `stored:${activeConversationId}`
+        : `handoff:${handoffIdRef.current}`
+    if (currentScope !== scopeId) return
     if (activeRequestRef.current !== requestId || event.request_id !== requestId) return
 
     if (event.type === "accepted") {
+      setActiveConversationId(event.conversation_id)
       setMessages((current) =>
         current.map((message) =>
           message.id === localAssistantId
@@ -136,6 +229,7 @@ export default function CompanionWorkspace() {
             : message,
         ),
       )
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] })
       return
     }
 
@@ -182,6 +276,7 @@ export default function CompanionWorkspace() {
                 ...message,
                 serverMessageId: event.message_id,
                 status: "cancelled",
+                errorCode: "user_cancelled",
               }
             : message,
         ),
@@ -197,6 +292,7 @@ export default function CompanionWorkspace() {
               ...message,
               serverMessageId: event.message_id,
               status: "error",
+              errorCode: event.code,
             }
           : message,
       ),
@@ -207,7 +303,7 @@ export default function CompanionWorkspace() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (!handoff || activeRequestRef.current !== null) return
+    if (!activeContext || activeRequestRef.current !== null) return
 
     const userMessage = draft.trim()
     if (!userMessage) return
@@ -219,8 +315,8 @@ export default function CompanionWorkspace() {
     setErrorMessage("")
     setDraft("")
 
-    const userId = `user-${requestId}`
-    const assistantId = `assistant-${requestId}`
+    const userId = `user-local-${requestId}`
+    const assistantId = `assistant-local-${requestId}`
     const history = historyFrom(messages)
     setMessages((current) => [
       ...current,
@@ -228,37 +324,49 @@ export default function CompanionWorkspace() {
       { id: assistantId, role: "assistant", content: "", status: "streaming" },
     ])
 
+    const isStored = contextModeRef.current === "stored" && restoredConversation !== null
+    const sessionId = isStored
+      ? restoredConversation.session_id
+      : `companion-${handoff?.handoff_id ?? "reading"}`
     const payload: CompanionChatRequest = {
-      session_id: `companion-${handoff.handoff_id}`,
+      conversation_id: activeConversationId,
+      session_id: sessionId,
       user_message: userMessage,
-      source_text: handoff.source_text,
-      translated_text: handoff.translated_text,
-      source_language: handoff.source_language,
-      target_language: handoff.target_language,
-      resource_url: handoff.resource_url,
-      resource_title: handoff.resource_title,
-      section_heading: handoff.section_heading,
-      context_before: handoff.context_before,
-      context_after: handoff.context_after,
-      source_kind: handoff.source_kind,
+      source_text: activeContext.source_text,
+      translated_text: activeContext.translated_text,
+      source_language: activeContext.source_language,
+      target_language: activeContext.target_language,
+      resource_url: activeContext.resource_url,
+      resource_title: activeContext.resource_title,
+      section_heading: activeContext.section_heading,
+      context_before: activeContext.context_before,
+      context_after: activeContext.context_after,
+      source_kind: activeContext.source_kind,
       history,
       request_id: requestId,
     }
 
-    const handoffId = handoff.handoff_id
+    const scopeId = isStored
+      ? `stored:${restoredConversation.conversation_id}`
+      : `handoff:${handoff?.handoff_id ?? ""}`
     streamHandleRef.current = streamCompanionChat(payload, {
       onEvent: (streamEvent) =>
         handleStreamEvent(streamEvent, {
-          handoffId,
+          scopeId,
           requestId,
           localAssistantId: assistantId,
         }),
       onTransportError: (error) => {
-        if (handoffIdRef.current !== handoffId) return
-        if (activeRequestRef.current !== requestId) return
+        const currentScope =
+          contextModeRef.current === "stored"
+            ? `stored:${activeConversationId}`
+            : `handoff:${handoffIdRef.current}`
+        if (currentScope !== scopeId || activeRequestRef.current !== requestId) return
         setMessages((current) =>
           current.map((message) =>
-            message.id === assistantId ? { ...message, status: "error" } : message,
+            message.id === assistantId
+              ? { ...message, status: "error", errorCode: "transport" }
+              : message,
           ),
         )
         setErrorMessage(error.message)
@@ -271,113 +379,148 @@ export default function CompanionWorkspace() {
     streamHandleRef.current?.cancel()
   }
 
-  if (!handoff) {
-    return (
-      <EmptyState
-        title="No active AI Chat context"
-        description="Select text in the browser and choose AI Chat from the overlay, or reopen a saved Research Note. The selected text, translation, section, URL, and nearby context will be frozen into the conversation handoff."
-        actions={(
-          <>
-            <Link to="/reading" className={buttonClassName()}>
-              Reading Context
-            </Link>
-            <Link to="/research" className={buttonClassName({ variant: "primary" })}>
-              Research Notes
-            </Link>
-          </>
-        )}
-      />
-    )
-  }
+  const contextTitle = activeContext
+    ? activeContext.resource_title || activeContext.section_heading || "Current selection"
+    : "No active context"
 
   return (
-    <section className="grid min-h-[650px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:grid-cols-[360px_minmax(0,1fr)]">
+    <section className="grid min-h-[680px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:grid-cols-[250px_330px_minmax(0,1fr)]">
+      <ConversationHistoryPanel
+        activeConversationId={activeConversationId}
+        hasCurrentReading={Boolean(handoff)}
+        onOpen={(conversationId) => void openConversation(conversationId)}
+        onUseCurrentReading={useCurrentReading}
+        onDeletedActive={handleDeletedActive}
+      />
+
       <aside className="border-b border-slate-200 bg-slate-50/70 p-5 xl:border-b-0 xl:border-r">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Frozen context</p>
-            <h2 className="mt-2 truncate text-sm font-semibold text-slate-900">
-              {handoff.resource_title || handoff.section_heading || "Current selection"}
-            </h2>
-            {handoff.section_heading && <p className="mt-1 truncate text-xs text-slate-500">{handoff.section_heading}</p>}
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              {contextModeRef.current === "stored" ? "Stored context" : "Frozen context"}
+            </p>
+            <h2 className="mt-2 truncate text-sm font-semibold text-slate-900">{contextTitle}</h2>
+            {activeContext?.section_heading && (
+              <p className="mt-1 truncate text-xs text-slate-500">{activeContext.section_heading}</p>
+            )}
           </div>
-          <Button
-            size="xs"
-            disabled={dismissMutation.isPending}
-            onClick={() => dismissMutation.mutate(handoff.handoff_id)}
-          >
-            Clear
-          </Button>
+          {contextModeRef.current === "handoff" && handoff && (
+            <Button
+              size="xs"
+              disabled={dismissMutation.isPending}
+              onClick={() => dismissMutation.mutate(handoff.handoff_id)}
+            >
+              Clear
+            </Button>
+          )}
         </div>
 
-        <ContextPreview handoff={handoff} />
-
-        {handoff.ai_content && (
-          <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/70 p-3">
-            <div className="flex items-center gap-2">
-              <Badge tone="info">Quick Action</Badge>
-              {handoff.ai_action && <span className="text-[10px] text-cyan-700/70">{handoff.ai_action}</span>}
-            </div>
-            <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">{handoff.ai_content}</p>
-          </div>
-        )}
-
-        {handoff.resource_url && (
-          <p className="mt-4 break-all font-mono text-[10px] leading-4 text-slate-400">{handoff.resource_url}</p>
+        {activeContext ? (
+          <>
+            <ContextPreview context={activeContext} />
+            {"ai_content" in activeContext && activeContext.ai_content && (
+              <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/70 p-3">
+                <div className="flex items-center gap-2">
+                  <Badge tone="info">Quick Action</Badge>
+                  {activeContext.ai_action && (
+                    <span className="text-[10px] text-cyan-700/70">{activeContext.ai_action}</span>
+                  )}
+                </div>
+                <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                  {activeContext.ai_content}
+                </p>
+              </div>
+            )}
+            {activeContext.resource_url && (
+              <p className="mt-4 break-all font-mono text-[10px] leading-4 text-slate-400">
+                {activeContext.resource_url}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="mt-4 text-xs leading-5 text-slate-500">
+            Open a saved conversation or create a new AI Chat handoff from the reading overlay.
+          </p>
         )}
       </aside>
 
       <div className="flex min-h-0 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-6">
-          {messages.length === 0 && (
+          {!activeContext && (
+            <EmptyState
+              title="No active AI Chat context"
+              description="Open a saved conversation from the history panel, select text in the browser and choose AI Chat from the overlay, or reopen a Research Note."
+              actions={(
+                <>
+                  <Link to="/reading" className={buttonClassName()}>
+                    Reading Context
+                  </Link>
+                  <Link to="/research" className={buttonClassName({ variant: "primary" })}>
+                    Research Notes
+                  </Link>
+                </>
+              )}
+            />
+          )}
+
+          {activeContext && messages.length === 0 && (
             <div className="rounded-2xl bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-500">
-              当前划词、译文、网页标题、章节和前后文已经冻结为这次对话上下文。回复现在通过本地 FastAPI WebSocket 增量渲染；持久化会在后续 Conversation Store 阶段接入。
+              {contextModeRef.current === "stored"
+                ? "This conversation was restored from local SQLite. Continue asking questions and new streamed messages will be committed to the same conversation."
+                : "当前划词、译文、网页标题、章节和前后文已经冻结为这次对话上下文。第一次发送后会创建持久化 conversation，回复通过本地 FastAPI WebSocket 增量写入 SQLite。"}
             </div>
           )}
 
-          <div className="mt-4 space-y-3">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={
-                  message.role === "user"
-                    ? "ml-auto max-w-[78%] rounded-2xl bg-slate-950 px-4 py-3 text-sm leading-6 text-white"
-                    : "max-w-[88%] rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"
-                }
-              >
-                {message.role === "assistant" ? (
-                  <>
-                    {message.content ? (
-                      <div className="max-w-none"><ReactMarkdown>{message.content}</ReactMarkdown></div>
-                    ) : message.status === "streaming" ? (
-                      <div className="flex items-center gap-2 text-slate-400">
-                        <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-700" />
-                        Waiting for the first token…
-                      </div>
-                    ) : (
-                      <p className="text-slate-400">
-                        {message.status === "cancelled" ? "Generation stopped." : "No response content."}
-                      </p>
-                    )}
-                    <div className="mt-2 flex items-center gap-2">
-                      {message.status === "streaming" && <Badge tone="info">Streaming</Badge>}
-                      {message.status === "cancelled" && <Badge tone="warning">Stopped</Badge>}
-                      {message.status === "error" && <Badge tone="danger">Failed</Badge>}
-                      {message.status === "complete" && message.provider && (
-                        <Badge tone="success">
-                          {message.provider}{message.model ? ` · ${message.model}` : ""}
-                        </Badge>
+          {activeContext && (
+            <div className="mt-4 space-y-3">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={
+                    message.role === "user"
+                      ? "ml-auto max-w-[78%] rounded-2xl bg-slate-950 px-4 py-3 text-sm leading-6 text-white"
+                      : "max-w-[88%] rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"
+                  }
+                >
+                  {message.role === "assistant" ? (
+                    <>
+                      {message.content ? (
+                        <div className="max-w-none"><ReactMarkdown>{message.content}</ReactMarkdown></div>
+                      ) : message.status === "streaming" ? (
+                        <div className="flex items-center gap-2 text-slate-400">
+                          <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-700" />
+                          Waiting for the first token…
+                        </div>
+                      ) : (
+                        <p className="text-slate-400">
+                          {message.status === "cancelled" ? "Generation stopped." : "No response content."}
+                        </p>
                       )}
-                    </div>
-                  </>
-                ) : (
-                  <p className="whitespace-pre-wrap">{message.content}</p>
-                )}
-              </div>
-            ))}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {message.status === "streaming" && <Badge tone="info">Streaming</Badge>}
+                        {message.status === "cancelled" && <Badge tone="warning">Stopped</Badge>}
+                        {message.status === "error" && <Badge tone="danger">Failed</Badge>}
+                        {message.status === "complete" && message.provider && (
+                          <Badge tone="success">
+                            {message.provider}{message.model ? ` · ${message.model}` : ""}
+                          </Badge>
+                        )}
+                        {message.errorCode && message.status !== "complete" && (
+                          <span className="text-[10px] text-slate-400">{message.errorCode}</span>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="whitespace-pre-wrap">{message.content}</p>
+                  )}
+                </div>
+              ))}
 
-            {errorMessage && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorMessage}</p>}
-          </div>
+              {errorMessage && (
+                <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorMessage}</p>
+              )}
+            </div>
+          )}
         </div>
 
         <form className="border-t border-slate-100 p-4" onSubmit={handleSubmit}>
@@ -388,9 +531,16 @@ export default function CompanionWorkspace() {
           )}
           <div className="flex items-end gap-2">
             <textarea
-              className="max-h-36 min-h-12 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-slate-400 focus:bg-white"
-              placeholder={activeRequestId === null ? "继续问这段内容…" : "当前回复仍在生成，可先编辑下一条消息…"}
+              className="max-h-36 min-h-12 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              placeholder={
+                activeContext
+                  ? activeRequestId === null
+                    ? "继续问这段内容…"
+                    : "当前回复仍在生成，可先编辑下一条消息…"
+                  : "先打开一个 conversation 或当前阅读上下文…"
+              }
               value={draft}
+              disabled={!activeContext || openingConversation}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -408,14 +558,14 @@ export default function CompanionWorkspace() {
                 type="submit"
                 variant="primary"
                 size="md"
-                disabled={!chatAvailable || !draft.trim()}
+                disabled={!activeContext || !chatAvailable || !draft.trim() || openingConversation}
               >
                 发送
               </Button>
             )}
           </div>
           <p className="mt-2 text-[10px] text-slate-400">
-            Enter 发送 · Shift+Enter 换行 · WebSocket Streaming · 当前历史仍只保存在此 WebView 内
+            Enter 发送 · Shift+Enter 换行 · WebSocket Streaming · SQLite Conversation Store
           </p>
         </form>
       </div>
@@ -423,17 +573,17 @@ export default function CompanionWorkspace() {
   )
 }
 
-function ContextPreview({ handoff }: { handoff: CompanionHandoff }) {
+function ContextPreview({ context }: { context: ActiveContext }) {
   return (
     <div className="mt-4 space-y-3">
       <div className="rounded-xl border border-slate-200 bg-white p-3">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Selection</p>
-        <p className="mt-2 line-clamp-8 text-xs leading-5 text-slate-700">{handoff.source_text}</p>
+        <p className="mt-2 line-clamp-8 text-xs leading-5 text-slate-700">{context.source_text}</p>
       </div>
-      {handoff.translated_text && (
+      {context.translated_text && (
         <div className="rounded-xl border border-slate-200 bg-white p-3">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Translation</p>
-          <p className="mt-2 line-clamp-7 text-xs leading-5 text-slate-600">{handoff.translated_text}</p>
+          <p className="mt-2 line-clamp-7 text-xs leading-5 text-slate-600">{context.translated_text}</p>
         </div>
       )}
     </div>

@@ -39,6 +39,7 @@ class CompanionChatMessage(BaseModel):
 
 
 class CompanionChatRequest(ReadingContextPayload):
+    conversation_id: str = Field(default="", max_length=128)
     session_id: str = Field(min_length=1, max_length=128)
     user_message: str = Field(min_length=1, max_length=20_000)
     history: list[CompanionChatMessage] = Field(default_factory=list, max_length=32)
@@ -46,6 +47,7 @@ class CompanionChatRequest(ReadingContextPayload):
 
 
 class CompanionChatResponse(BaseModel):
+    conversation_id: str = ""
     session_id: str
     user_message: str
     output_text: str

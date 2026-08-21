@@ -50,5 +50,11 @@ export const browserDesktopAdapter: DesktopAdapter = {
     async onStateChanged() {
       return () => undefined
     },
+    async notifyCompanionNavigation() {
+      // The backend handoff remains the browser-development fallback.
+    },
+    async onCompanionNavigation() {
+      return () => undefined
+    },
   },
 }

@@ -15,7 +15,11 @@ param(
     [switch]$NoStart,
 
     # Development-only shortcut. Formal acceptance should not use this switch.
-    [switch]$SkipFullPythonTests
+    [switch]$SkipFullPythonTests,
+
+    # Keep intentional local source changes and skip fetch/pull. The default
+    # remains strict so automatic synchronization cannot overwrite work.
+    [switch]$AllowLocalChanges
 )
 
 $ErrorActionPreference = "Stop"
@@ -186,45 +190,53 @@ if ($CurrentBranch -ne $ExpectedBranch) {
     throw "Wrong Git branch '$CurrentBranch'. Expected '$ExpectedBranch'. Refusing to touch another branch."
 }
 
-# Protect real source/config changes, but do not block normal verification on
-# known untracked runtime artifacts such as the local SQLite DB or Cargo.lock.
-$DirtyFiles = @(git status --porcelain --untracked-files=all)
-Assert-LastExitCode "Unable to read Git working tree status."
-$DirtyClassification = Get-GitDirtyClassification $DirtyFiles
-
-if ($DirtyClassification.Generated.Count -gt 0) {
-    Write-Host "Generated/runtime artifacts detected (allowed):" -ForegroundColor DarkYellow
-    $DirtyClassification.Generated | ForEach-Object {
-        Write-Host "  $_" -ForegroundColor DarkYellow
-    }
+if ($AllowLocalChanges) {
+    Write-Host "AllowLocalChanges supplied: preserving the current working tree and skipping git fetch/pull." -ForegroundColor Yellow
+    $CurrentCommit = (git rev-parse --short HEAD).Trim()
+    Assert-LastExitCode "Unable to read Git HEAD."
+    Write-Host "Current HEAD      : $CurrentCommit" -ForegroundColor Green
 }
+else {
+    # Protect real source/config changes, but do not block normal verification on
+    # known untracked runtime artifacts such as the local SQLite DB or Cargo.lock.
+    $DirtyFiles = @(git status --porcelain --untracked-files=all)
+    Assert-LastExitCode "Unable to read Git working tree status."
+    $DirtyClassification = Get-GitDirtyClassification $DirtyFiles
 
-if ($DirtyClassification.Blocking.Count -gt 0) {
-    Write-Host "Source-controlled or unknown local changes detected:" -ForegroundColor Red
-    $DirtyClassification.Blocking | ForEach-Object {
-        Write-Host "  $_" -ForegroundColor Red
+    if ($DirtyClassification.Generated.Count -gt 0) {
+        Write-Host "Generated/runtime artifacts detected (allowed):" -ForegroundColor DarkYellow
+        $DirtyClassification.Generated | ForEach-Object {
+            Write-Host "  $_" -ForegroundColor DarkYellow
+        }
     }
-    Write-Host ""
-    Write-Host "Inspect tracked changes before deciding whether to keep or restore them:" -ForegroundColor Yellow
-    Write-Host "  git diff -- apps/desktop/package-lock.json apps/desktop/src-tauri/Cargo.toml" -ForegroundColor Cyan
-    Write-Host "  git status --short" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "If those tracked changes are NOT intentional, restore only after reviewing the diff:" -ForegroundColor Yellow
-    Write-Host "  git restore -- apps/desktop/package-lock.json apps/desktop/src-tauri/Cargo.toml" -ForegroundColor Cyan
-    throw "Tracked/unknown working-tree changes require review before automatic git pull."
+
+    if ($DirtyClassification.Blocking.Count -gt 0) {
+        Write-Host "Source-controlled or unknown local changes detected:" -ForegroundColor Red
+        $DirtyClassification.Blocking | ForEach-Object {
+            Write-Host "  $_" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host "Inspect tracked changes before deciding whether to keep or restore them:" -ForegroundColor Yellow
+        Write-Host "  git diff -- apps/desktop/package-lock.json apps/desktop/src-tauri/Cargo.toml" -ForegroundColor Cyan
+        Write-Host "  git status --short" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "If those tracked changes are NOT intentional, restore only after reviewing the diff:" -ForegroundColor Yellow
+        Write-Host "  git restore -- apps/desktop/package-lock.json apps/desktop/src-tauri/Cargo.toml" -ForegroundColor Cyan
+        throw "Tracked/unknown working-tree changes require review before automatic git pull."
+    }
+
+    Write-Host "Branch            : $CurrentBranch" -ForegroundColor Green
+
+    git fetch origin $ExpectedBranch
+    Assert-LastExitCode "git fetch failed."
+
+    git pull --ff-only origin $ExpectedBranch
+    Assert-LastExitCode "git pull --ff-only failed."
+
+    $CurrentCommit = (git rev-parse --short HEAD).Trim()
+    Assert-LastExitCode "Unable to read Git HEAD."
+    Write-Host "Current HEAD      : $CurrentCommit" -ForegroundColor Green
 }
-
-Write-Host "Branch            : $CurrentBranch" -ForegroundColor Green
-
-git fetch origin $ExpectedBranch
-Assert-LastExitCode "git fetch failed."
-
-git pull --ff-only origin $ExpectedBranch
-Assert-LastExitCode "git pull --ff-only failed."
-
-$CurrentCommit = (git rev-parse --short HEAD).Trim()
-Assert-LastExitCode "Unable to read Git HEAD."
-Write-Host "Current HEAD      : $CurrentCommit" -ForegroundColor Green
 
 # ------------------------------------------------------------
 # 3. Batch-specific tests

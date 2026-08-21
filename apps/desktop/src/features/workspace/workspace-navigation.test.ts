@@ -10,6 +10,7 @@ describe("workspace navigation", () => {
       "/translation",
       "/reading",
       "/chat",
+      "/agent",
       "/research",
       "/settings",
     ])

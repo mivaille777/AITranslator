@@ -42,6 +42,16 @@ DEFAULT_API_HOST = "127.0.0.1"
 DEFAULT_API_PORT = 8766
 
 
+def get_dev_origins() -> list[str]:
+    """Return the built-in origins plus an optional local frontend origin."""
+
+    origins = list(DEV_ORIGINS)
+    configured_origin = os.getenv("AITRANS_FRONTEND_ORIGIN", "").strip().rstrip("/")
+    if configured_origin and configured_origin not in origins:
+        origins.append(configured_origin)
+    return origins
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     get_browser_context_service().start()
@@ -68,7 +78,10 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=DEV_ORIGINS,
+        allow_origins=get_dev_origins(),
+        # Web development may use a non-default Vite port. The backend is
+        # loopback-only, so allow localhost/127.0.0.1 dev origins by regex.
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],

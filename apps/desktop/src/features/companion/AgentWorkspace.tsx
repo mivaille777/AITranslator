@@ -4,7 +4,7 @@ import { AgentTrace } from "./components/AgentTrace"
 import { AgentMessage } from "./components/AgentMessage"
 import { AgentInputComposer } from "./components/AgentInputComposer"
 
-export function AgentWorkspace(){
+export function AgentWorkspace() {
   return (
     <div className="agent-workspace">
       <AgentHeader />
@@ -15,3 +15,5 @@ export function AgentWorkspace(){
     </div>
   )
 }
+
+export default AgentWorkspace

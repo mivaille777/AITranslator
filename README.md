@@ -330,6 +330,40 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## Run
 
+推荐使用统一启动入口，它会自动检查 `aitrans` Conda 环境、后端健康状态和前端依赖，然后启动 FastAPI + Tauri：
+
+```powershell
+.\scripts\start.ps1
+```
+
+浏览器开发模式：
+
+```powershell
+.\scripts\start.ps1 -Mode Web -OpenBrowser
+```
+
+只启动 FastAPI：
+
+```powershell
+.\scripts\start.ps1 -Mode Backend
+```
+
+如果使用包含 Git 同步和完整验证的旧入口，并且当前改动已经确认需要保留：
+
+```powershell
+.\scripts\verify_and_start.ps1 -AllowLocalChanges
+```
+
+该参数会跳过 `git fetch/pull`，不会恢复或覆盖本地改动；默认不传入时仍会阻止 dirty working tree 自动同步。
+
+后端接口、前端工作区和启动链路的设计说明见：
+
+```text
+docs/STARTUP_AND_ARCHITECTURE.md
+```
+
+如果只运行旧版 PySide6 原生入口，仍可使用：
+
 ```powershell
 python -m app.main
 ```

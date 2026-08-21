@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import {
   BookOpenText,
+  Bot,
   Languages,
   MessageSquareText,
   NotebookText,
@@ -19,6 +20,7 @@ const icons = {
   "/translation": Languages,
   "/reading": BookOpenText,
   "/chat": MessageSquareText,
+  "/agent": Bot,
   "/research": NotebookText,
   "/settings": Settings2,
 } as const

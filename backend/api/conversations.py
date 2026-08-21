@@ -11,6 +11,7 @@ from backend.models.conversations import (
     ConversationListResponse,
     ConversationMessageResponse,
     ConversationRenameRequest,
+    ConversationRewindRequest,
     ConversationSummaryResponse,
 )
 from backend.services.conversation_store_service import (
@@ -107,6 +108,33 @@ def rename_conversation(
         ) from exc
     if conversation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+    return _detail_response(conversation)
+
+
+@router.post("/{conversation_id}/rewind", response_model=ConversationDetailResponse)
+def rewind_conversation(
+    conversation_id: str,
+    payload: ConversationRewindRequest,
+    service: ConversationStoreDependency,
+) -> ConversationDetailResponse:
+    rewind = getattr(service, "rewind_from_user_message", None)
+    if not callable(rewind):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Conversation branch rewriting is unavailable.",
+        )
+    try:
+        conversation = rewind(conversation_id, payload.user_message_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation or user message not found.",
+        )
     return _detail_response(conversation)
 
 

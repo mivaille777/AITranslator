@@ -134,6 +134,37 @@ summary:focus-visible {
   animation: ait-skeleton-shimmer 1.35s ease-in-out infinite;
 }
 
+.ait-chat-shell {
+  isolation: isolate;
+}
+
+.ait-segment-indicator {
+  pointer-events: none;
+  transition: transform 280ms var(--ait-ease-spring);
+  will-change: transform;
+}
+
+.ait-context-panel-enter {
+  animation: ait-context-panel-enter 240ms var(--ait-ease-standard) both;
+}
+
+.ait-chat-message-enter {
+  transform-origin: bottom center;
+  animation: ait-chat-message-enter 260ms var(--ait-ease-spring) both;
+}
+
+.ait-conversation-item {
+  transition:
+    transform var(--ait-motion-standard) var(--ait-ease-spring),
+    background-color var(--ait-motion-standard) var(--ait-ease-standard),
+    border-color var(--ait-motion-standard) var(--ait-ease-standard),
+    box-shadow var(--ait-motion-standard) var(--ait-ease-standard);
+}
+
+.ait-conversation-item:active {
+  transform: scale(0.985);
+}
+
 @keyframes ait-workspace-enter {
   from {
     opacity: 0;
@@ -159,6 +190,28 @@ summary:focus-visible {
 @keyframes ait-skeleton-shimmer {
   100% {
     transform: translateX(100%);
+  }
+}
+
+@keyframes ait-context-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ait-chat-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

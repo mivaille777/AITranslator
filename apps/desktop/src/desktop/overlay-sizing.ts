@@ -4,7 +4,7 @@ export interface OverlayWindowSize {
 }
 
 export type OverlayVisualPhase = "hidden" | "loading" | "ready" | "error"
-export type OverlayActionPresentation = "compact" | "expanded" | "result"
+export type OverlayActionPresentation = "compact" | "expanded" | "result" | "chat"
 
 export interface OverlaySizingInput {
   phase: OverlayVisualPhase
@@ -26,6 +26,7 @@ const ACTION_RESERVE: Record<OverlayActionPresentation, number> = {
   compact: 62,
   expanded: 108,
   result: 224,
+  chat: 410,
 }
 
 function wrappedLineCount(text: string, charsPerLine: number, maxLines: number): number {

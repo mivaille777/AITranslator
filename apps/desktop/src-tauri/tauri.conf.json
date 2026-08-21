@@ -32,7 +32,6 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "noRedirectionBitmap": true,
         "theme": "Dark",
         "alwaysOnTop": true,
         "skipTaskbar": true,

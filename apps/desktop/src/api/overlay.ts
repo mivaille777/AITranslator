@@ -7,6 +7,7 @@ import type {
   OverlayStateResponse,
   ReadingContextFields,
 } from "./types"
+import { desktop } from "../desktop"
 
 const emptyReadingContext: ReadingContextFields = {
   resource_url: "",
@@ -38,31 +39,47 @@ function withReadingContext<T extends { context_id: string }>(payload: T): T & R
   }
 }
 
+async function notifyOverlayStateChanged(): Promise<void> {
+  try {
+    await desktop.overlay.notifyStateChanged()
+  } catch {
+    // Event delivery is an optimization; polling remains the recovery path.
+  }
+}
+
 export function getOverlayState(): Promise<OverlayStateResponse> {
   return apiGet<OverlayStateResponse>("/api/overlay")
 }
 
-export function showOverlayLoading(payload: OverlayLoadingRequest): Promise<OverlayStateResponse> {
-  return apiPost<OverlayStateResponse, OverlayLoadingRequest & ReadingContextFields>(
+export async function showOverlayLoading(payload: OverlayLoadingRequest): Promise<OverlayStateResponse> {
+  const response = await apiPost<OverlayStateResponse, OverlayLoadingRequest & ReadingContextFields>(
     "/api/overlay/loading",
     withReadingContext(payload),
   )
+  await notifyOverlayStateChanged()
+  return response
 }
 
-export function presentOverlay(payload: OverlayPresentRequest): Promise<OverlayStateResponse> {
-  return apiPost<OverlayStateResponse, OverlayPresentRequest & ReadingContextFields>(
+export async function presentOverlay(payload: OverlayPresentRequest): Promise<OverlayStateResponse> {
+  const response = await apiPost<OverlayStateResponse, OverlayPresentRequest & ReadingContextFields>(
     "/api/overlay/present",
     withReadingContext(payload),
   )
+  await notifyOverlayStateChanged()
+  return response
 }
 
-export function showOverlayError(payload: OverlayErrorRequest): Promise<OverlayStateResponse> {
-  return apiPost<OverlayStateResponse, OverlayErrorRequest & ReadingContextFields>(
+export async function showOverlayError(payload: OverlayErrorRequest): Promise<OverlayStateResponse> {
+  const response = await apiPost<OverlayStateResponse, OverlayErrorRequest & ReadingContextFields>(
     "/api/overlay/error",
     withReadingContext(payload),
   )
+  await notifyOverlayStateChanged()
+  return response
 }
 
-export function dismissOverlay(): Promise<OverlayStateResponse> {
-  return apiPost<OverlayStateResponse, Record<string, never>>("/api/overlay/dismiss", {})
+export async function dismissOverlay(): Promise<OverlayStateResponse> {
+  const response = await apiPost<OverlayStateResponse, Record<string, never>>("/api/overlay/dismiss", {})
+  await notifyOverlayStateChanged()
+  return response
 }

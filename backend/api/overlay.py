@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.api.dependencies import get_overlay_state_service
 from backend.models.overlay import (
+    OverlayCompanionBindingRequest,
     OverlayErrorRequest,
     OverlayLoadingRequest,
     OverlayPresentRequest,
@@ -36,6 +37,7 @@ def _response(state: OverlayState) -> OverlayStateResponse:
         context_before=state.context_before,
         context_after=state.context_after,
         source_kind=state.source_kind,
+        companion_conversation_id=state.companion_conversation_id,
     )
 
 
@@ -104,6 +106,24 @@ def overlay_error(
             **_reading_kwargs(payload),
         )
     )
+
+
+@router.post("/companion", response_model=OverlayStateResponse)
+def overlay_bind_companion(
+    payload: OverlayCompanionBindingRequest,
+    service: OverlayStateServiceDependency,
+) -> OverlayStateResponse:
+    try:
+        state = service.bind_companion_conversation(
+            context_id=payload.context_id,
+            conversation_id=payload.conversation_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return _response(state)
 
 
 @router.post("/dismiss", response_model=OverlayStateResponse)

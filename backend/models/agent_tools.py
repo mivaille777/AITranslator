@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from backend.models.quick_actions import ReadingContextPayload
 
 AgentToolEffect = Literal["read", "compute", "write"]
+AgentRunStatus = Literal["completed", "confirmation_required"]
+AgentPlanAction = Literal["answer", "tool"]
 
 
 class AgentToolDefinition(BaseModel):
@@ -41,3 +43,38 @@ class AgentToolExecuteResponse(BaseModel):
     model: str = ""
     request_id: int = 0
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentPlan(BaseModel):
+    action: AgentPlanAction
+    tool_name: str = Field(default="", max_length=128)
+    user_visible_reason: str = Field(default="", max_length=500)
+    arguments: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_tool_action(self) -> "AgentPlan":
+        if self.action == "tool" and not self.tool_name.strip():
+            raise ValueError("Agent tool plan requires tool_name.")
+        if self.action == "answer":
+            self.tool_name = ""
+            self.arguments = {}
+        return self
+
+
+class AgentRunRequest(ReadingContextPayload):
+    session_id: str = Field(default="agent-session", min_length=1, max_length=128)
+    user_message: str = Field(min_length=1, max_length=20_000)
+    style: str = Field(default="academic", min_length=1, max_length=64)
+    conversation_id: str = Field(default="", max_length=128)
+    confirmed_write_tools: list[str] = Field(default_factory=list, max_length=16)
+    request_id: int = Field(default=0, ge=0)
+
+
+class AgentRunResponse(BaseModel):
+    status: AgentRunStatus
+    plan: AgentPlan
+    output_text: str = ""
+    provider: str = ""
+    model: str = ""
+    request_id: int = 0
+    tool_result: AgentToolExecuteResponse | None = None

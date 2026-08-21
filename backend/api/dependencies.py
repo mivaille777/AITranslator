@@ -10,6 +10,7 @@ from backend.services.companion_ownership_service import CompanionConversationOw
 from backend.services.conversation_lifecycle_service import ConversationLifecycleService
 from backend.services.conversation_store_service import ConversationStoreService
 from backend.services.overlay_state_service import OverlayStateService
+from backend.services.product_agent_service import ProductAgentService
 from backend.services.quick_action_service import QuickActionService
 from backend.services.reading_selection_resolver import ReadingSelectionResolver
 from backend.services.research_note_service import ResearchNoteService
@@ -37,6 +38,8 @@ _companion_ownership_service: CompanionConversationOwnershipService | None = Non
 _companion_ownership_service_lock = Lock()
 _agent_tool_registry: AgentToolRegistry | None = None
 _agent_tool_registry_lock = Lock()
+_product_agent_service: ProductAgentService | None = None
+_product_agent_service_lock = Lock()
 
 
 def get_translation_service() -> TranslationService:
@@ -236,3 +239,26 @@ def close_agent_tool_registry() -> None:
     global _agent_tool_registry
     with _agent_tool_registry_lock:
         _agent_tool_registry = None
+
+
+def get_product_agent_service() -> ProductAgentService:
+    global _product_agent_service
+    if _product_agent_service is not None:
+        return _product_agent_service
+
+    with _product_agent_service_lock:
+        if _product_agent_service is None:
+            _product_agent_service = ProductAgentService(
+                registry=get_agent_tool_registry(),
+                chat_service=get_companion_chat_service(),
+            )
+        return _product_agent_service
+
+
+def close_product_agent_service() -> None:
+    global _product_agent_service
+    with _product_agent_service_lock:
+        service = _product_agent_service
+        _product_agent_service = None
+    if service is not None:
+        service.close()

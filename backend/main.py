@@ -17,6 +17,7 @@ from backend.api.dependencies import (
     close_companion_chat_service,
     close_companion_ownership_service,
     close_conversation_store_service,
+    close_product_agent_service,
     close_quick_action_service,
     close_reading_selection_resolver,
     close_translation_service,
@@ -47,6 +48,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        close_product_agent_service()
         close_agent_tool_registry()
         close_reading_selection_resolver()
         close_browser_context_service()
@@ -60,7 +62,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.13.0",
+        version="0.14.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
         lifespan=lifespan,
     )

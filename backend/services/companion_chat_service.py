@@ -135,6 +135,8 @@ class CompanionChatService:
         history: tuple[tuple[str, str], ...] = (),
         request_id: int = 0,
         context_mode: str = "reading",
+        tool_name: str = "",
+        tool_context: str = "",
     ) -> ChatRequest:
         _ = (source_language, target_language)
 
@@ -169,6 +171,8 @@ class CompanionChatService:
             context=context,
             history=tuple(messages),
             request_id=request_id,
+            tool_name=str(tool_name or "").strip(),
+            tool_context=str(tool_context or ""),
         )
 
     def send(self, **kwargs: Any) -> CompanionChatResult:

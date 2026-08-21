@@ -13,7 +13,8 @@ if (-not (Test-Path $Verifier)) {
 
 $Parameters = @{
     NewTest = @(
-        "tests/test_backend_agent_tools.py"
+        "tests/test_backend_agent_tools.py",
+        "tests/test_backend_product_agent.py"
     )
 }
 
@@ -28,8 +29,8 @@ Write-Host ""
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host " AITranslator Batch 6 Agent verification" -ForegroundColor Cyan
 Write-Host "==============================================" -ForegroundColor Cyan
-Write-Host "Checks the Agent tool contract, deterministic capability registry," -ForegroundColor DarkGray
-Write-Host "side-effect boundaries, full project tests, frontend build, and Tauri." -ForegroundColor DarkGray
+Write-Host "Checks Agent tools, Planner/Executor boundaries, write confirmation," -ForegroundColor DarkGray
+Write-Host "full project tests, frontend production build, and Tauri." -ForegroundColor DarkGray
 Write-Host ""
 
 & $Verifier @Parameters

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import {
@@ -108,16 +108,16 @@ export default function OverlayQuickActions({
   const activeFeedback = feedback?.contextId === state.context_id ? feedback.message : ""
   const aiAvailable = statusQuery.data?.available ?? false
 
-  function setPresentation(presentation: OverlayActionPresentation) {
+  const setPresentation = useCallback((presentation: OverlayActionPresentation) => {
     onPresentationChange?.(presentation)
-  }
+  }, [onPresentationChange])
 
-  function collapseTransientPanels() {
+  const collapseTransientPanels = useCallback(() => {
     setMoreOpen(false)
     setResultOpen(false)
     setChatOpen(false)
     setPresentation("compact")
-  }
+  }, [setPresentation])
 
   const actionMutation = useMutation({
     mutationFn: ({ payload }: ActionVariables) => runQuickAction(payload),
@@ -166,8 +166,13 @@ export default function OverlayQuickActions({
     },
   })
 
-  function runAction(action: QuickActionKey) {
-    actionMutation.mutate({
+  const mutateAction = actionMutation.mutate
+  const mutateNote = noteMutation.mutate
+  const busy = actionMutation.isPending || noteMutation.isPending
+  const activeAction = activeResult?.action ?? null
+
+  const runAction = useCallback((action: QuickActionKey) => {
+    mutateAction({
       contextId: state.context_id,
       payload: {
         ...baseContext(state),
@@ -175,10 +180,10 @@ export default function OverlayQuickActions({
         style: "academic",
       },
     })
-  }
+  }, [mutateAction, state])
 
-  function saveNote() {
-    noteMutation.mutate({
+  const saveNote = useCallback(() => {
+    mutateNote({
       contextId: state.context_id,
       payload: {
         ...baseContext(state),
@@ -186,34 +191,34 @@ export default function OverlayQuickActions({
         ai_action: activeResult?.action ?? "",
       },
     })
-  }
+  }, [activeResult, mutateNote, state])
 
-  function openChat() {
+  const openChat = useCallback(() => {
     setFeedback(null)
     setResultOpen(false)
     setMoreOpen(false)
     setChatOpen(true)
     setPresentation("chat")
-  }
+  }, [setPresentation])
 
-  function closeChat() {
+  const closeChat = useCallback(() => {
     setChatOpen(false)
     setPresentation("compact")
-  }
+  }, [setPresentation])
 
-  function toggleMore() {
+  const toggleMore = useCallback(() => {
     if (resultOpen) setResultOpen(false)
     const next = !moreOpen
     setMoreOpen(next)
     setPresentation(next ? "expanded" : "compact")
-  }
+  }, [moreOpen, resultOpen, setPresentation])
 
-  function closeResult() {
+  const closeResult = useCallback(() => {
     setResultOpen(false)
     setPresentation(moreOpen ? "expanded" : "compact")
-  }
+  }, [moreOpen, setPresentation])
 
-  async function copyActiveView() {
+  const copyActiveView = useCallback(async () => {
     const text =
       resultView === "ai"
         ? activeResult?.output_text ?? ""
@@ -228,10 +233,7 @@ export default function OverlayQuickActions({
     } catch {
       setCopied(false)
     }
-  }
-
-  const busy = actionMutation.isPending || noteMutation.isPending
-  const activeAction = activeResult?.action ?? null
+  }, [activeResult, onCompletedInteraction, resultView, state.translated_text])
 
   useEffect(() => subscribeOverlayCommands((command) => {
     if (command === "escape") {
@@ -260,7 +262,20 @@ export default function OverlayQuickActions({
     const index = Number(command.slice(-1)) - 1
     const action = primaryActions[index]
     if (action) runAction(action.key)
-  }), [activeResult, aiAvailable, busy, chatOpen, moreOpen, resultOpen, resultView])
+  }), [
+    activeResult,
+    aiAvailable,
+    busy,
+    chatOpen,
+    closeChat,
+    closeResult,
+    copyActiveView,
+    moreOpen,
+    resultOpen,
+    runAction,
+    setPresentation,
+    toggleMore,
+  ])
 
   if (state.phase !== "ready") return null
 

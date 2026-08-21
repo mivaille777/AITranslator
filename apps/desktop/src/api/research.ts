@@ -2,11 +2,21 @@ import { apiDelete, apiGet, apiPatch } from "./client"
 import type {
   ResearchNoteDeleteResponse,
   ResearchNoteDetail,
+  ResearchSourceProfile,
   ResearchWorkspaceResponse,
 } from "./types"
 
 export function getResearchWorkspace(limit = 100): Promise<ResearchWorkspaceResponse> {
   return apiGet<ResearchWorkspaceResponse>(`/api/research/workspace?limit=${limit}`)
+}
+
+export function getResearchSource(
+  sourceId: string,
+  limit = 100,
+): Promise<ResearchSourceProfile> {
+  return apiGet<ResearchSourceProfile>(
+    `/api/research/sources/${encodeURIComponent(sourceId)}?limit=${limit}`,
+  )
 }
 
 export function getResearchNote(noteId: string): Promise<ResearchNoteDetail> {

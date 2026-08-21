@@ -22,21 +22,22 @@ describe("computeOverlayWindowSize", () => {
     expect(longError.height).toBeLessThanOrEqual(272)
   })
 
-  it("grows ready state with translated content but caps the window", () => {
+  it("grows ready state with translated content and caps expanded results", () => {
     const shortReady = computeOverlayWindowSize({
       phase: "ready",
       translatedText: "Short translation.",
       sourceText: "Source text.",
     })
-    const longReady = computeOverlayWindowSize({
+    const longResult = computeOverlayWindowSize({
       phase: "ready",
       translatedText: "Long translated content ".repeat(120),
       sourceText: "Long source content ".repeat(20),
+      actionPresentation: "result",
     })
 
     expect(shortReady.height).toBeGreaterThanOrEqual(286)
-    expect(longReady.height).toBeGreaterThan(shortReady.height)
-    expect(longReady.height).toBe(600)
+    expect(longResult.height).toBeGreaterThan(shortReady.height)
+    expect(longResult.height).toBe(600)
   })
 
   it("allocates more native height as contextual actions morph", () => {

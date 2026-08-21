@@ -12,9 +12,10 @@ describe("query key registry", () => {
     expect(queryKeys.conversations.detail("abc")).toEqual(["conversations", "detail", "abc"])
   })
 
-  it("separates Research Note caches by requested limit", () => {
+  it("separates Research Note and Source caches", () => {
     expect(queryKeys.research.notes(5)).toEqual(["research", "notes", 5])
     expect(queryKeys.research.notes(20)).toEqual(["research", "notes", 20])
+    expect(queryKeys.research.source("source-a")).toEqual(["research", "source", "source-a"])
   })
 
   it("keeps browser selection polling faster than page metadata polling", () => {

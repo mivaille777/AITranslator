@@ -22,6 +22,7 @@ DEFAULT_USER_CONFIG_PATH = user_config_path()
 # excluded and are stored by app.ai.secrets in Windows Credential Manager.
 ALLOWED_USER_KEYS: dict[str, set[str]] = {
     "translation": {
+        "provider",
         "source_language",
         "target_language",
     },
@@ -57,6 +58,13 @@ ALLOWED_USER_KEYS: dict[str, set[str]] = {
         "history_enabled",
     },
     "google_web": {
+        "enabled",
+        "endpoint",
+        "timeout_ms",
+        "max_retries",
+        "min_interval_ms",
+    },
+    "youdao_web": {
         "enabled",
         "endpoint",
         "timeout_ms",

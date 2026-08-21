@@ -1,0 +1,57 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { describe, expect, it } from "vitest"
+
+function read(relativePath: string): string {
+  return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8")
+}
+
+describe("Batch 5 desktop entry isolation", () => {
+  it("keeps the main entry free of OverlayView and overlay-only CSS", () => {
+    const source = read("../main.tsx")
+
+    expect(source).toContain('import App from "./App"')
+    expect(source).not.toContain("OverlayView")
+    expect(source).not.toContain("overlay.css")
+    expect(source).not.toContain('get("view")')
+  })
+
+  it("boots OverlayView from a dedicated entry without importing the main app router", () => {
+    const source = read("../overlay-main.tsx")
+
+    expect(source).toContain('import OverlayView from "./components/OverlayView"')
+    expect(source).toContain('import "./overlay.css"')
+    expect(source).not.toContain('import App from "./App"')
+    expect(source).not.toContain("HashRouter")
+  })
+
+  it("builds main and overlay HTML as separate Vite inputs and routes Tauri overlay to its own document", () => {
+    const viteConfig = read("../../vite.config.ts")
+    const tauriConfig = JSON.parse(read("../../src-tauri/tauri.conf.json")) as {
+      app: { windows: Array<{ label: string; url?: string }> }
+    }
+    const overlayHtml = read("../../overlay.html")
+
+    expect(viteConfig).toContain('main: fileURLToPath(new URL("./index.html"')
+    expect(viteConfig).toContain('overlay: fileURLToPath(new URL("./overlay.html"')
+    expect(overlayHtml).toContain('/src/overlay-main.tsx')
+    expect(tauriConfig.app.windows.find((window) => window.label === "overlay")?.url).toBe(
+      "overlay.html",
+    )
+  })
+
+  it("lazy-loads non-default main workspaces instead of importing them into translation startup", () => {
+    const source = read("../App.tsx")
+
+    for (const modulePath of [
+      "./features/reading/ReadingWorkspace",
+      "./features/companion/CompanionWorkspaceV2",
+      "./features/research/ResearchRoute",
+      "./features/settings/SettingsWorkspace",
+    ]) {
+      expect(source).toContain(`lazy(() => import("${modulePath}"))`)
+      expect(source).not.toContain(`from "${modulePath}"`)
+    }
+    expect(source).toContain("<Suspense")
+  })
+})

@@ -23,7 +23,7 @@
       {
         "label": "overlay",
         "title": "AITranslator Overlay",
-        "url": "index.html?view=overlay",
+        "url": "overlay.html",
         "width": 420,
         "height": 190,
         "minWidth": 320,

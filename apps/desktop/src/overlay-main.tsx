@@ -1,24 +1,28 @@
 import { StrictMode } from "react"
 import { QueryClientProvider } from "@tanstack/react-query"
 import { createRoot } from "react-dom/client"
-import { HashRouter } from "react-router-dom"
 
-import App from "./App"
+import OverlayView from "./components/OverlayView"
+import { desktop } from "./desktop"
 import AppErrorBoundary from "./shared/errors/AppErrorBoundary"
 import { createAppQueryClient } from "./shared/query/query-client"
+import { queryKeys } from "./shared/query/query-keys"
 import "./index.css"
+import "./overlay.css"
 
-document.documentElement.dataset.aitView = "main"
+document.documentElement.dataset.aitView = "overlay"
 
 const queryClient = createAppQueryClient()
+
+void desktop.overlay.onStateChanged(() => {
+  void queryClient.refetchQueries({ queryKey: queryKeys.overlay.state, type: "active" })
+})
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AppErrorBoundary>
-        <HashRouter>
-          <App />
-        </HashRouter>
+        <OverlayView />
       </AppErrorBoundary>
     </QueryClientProvider>
   </StrictMode>,

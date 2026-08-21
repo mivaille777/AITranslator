@@ -106,6 +106,13 @@ def test_overlay_companion_binding_survives_same_context_reopen_only() -> None:
         assert reopened.status_code == 200
         assert reopened.json()["companion_conversation_id"] == "conversation-42"
 
+        cleared = client.post(
+            "/api/overlay/companion",
+            json={"context_id": "selection-stable", "conversation_id": ""},
+        )
+        assert cleared.status_code == 200
+        assert cleared.json()["companion_conversation_id"] == ""
+
         next_context = client.post(
             "/api/overlay/loading",
             json={

@@ -46,6 +46,9 @@ export default function CompanionWorkspaceV2() {
   const runtime = useCompanionConversationRuntime({
     onConversationAccepted: setConversationRoute,
   })
+  const runtimeConversationId = runtime.conversationId
+  const openRuntimeConversation = runtime.openConversation
+  const resetRuntime = runtime.reset
 
   const handoffQuery = useQuery({
     queryKey: queryKeys.companion.handoff,
@@ -56,9 +59,9 @@ export default function CompanionWorkspaceV2() {
   const handoff = handoffQuery.data?.handoff ?? null
 
   useEffect(() => {
-    if (!routedConversationId || runtime.conversationId === routedConversationId) return
-    queueMicrotask(() => void runtime.openConversation(routedConversationId))
-  }, [routedConversationId, runtime.conversationId, runtime.openConversation])
+    if (!routedConversationId || runtimeConversationId === routedConversationId) return
+    queueMicrotask(() => void openRuntimeConversation(routedConversationId))
+  }, [openRuntimeConversation, routedConversationId, runtimeConversationId])
 
   useEffect(() => {
     const nextId = handoff?.handoff_id ?? ""
@@ -75,7 +78,7 @@ export default function CompanionWorkspaceV2() {
     handoffIdRef.current = nextId
     usingHandoffRef.current = true
     queueMicrotask(() => {
-      runtime.reset({
+      resetRuntime({
         context: companionContextSnapshot(handoff),
         contextMode: "reading",
         draft: handoff.suggested_prompt ?? "",
@@ -86,7 +89,7 @@ export default function CompanionWorkspaceV2() {
       setEditingText("")
       setConversationRoute("")
     })
-  }, [handoff, routedConversationId, runtime.reset, setConversationRoute])
+  }, [handoff, resetRuntime, routedConversationId, setConversationRoute])
 
   const dismissMutation = useMutation({
     mutationFn: (handoffId: string) => dismissCompanionHandoff(handoffId),
@@ -109,7 +112,7 @@ export default function CompanionWorkspaceV2() {
     },
   })
 
-  function useCurrentReading() {
+  function selectCurrentReading() {
     if (!handoff) return
     usingHandoffRef.current = true
     runtime.reset({
@@ -137,7 +140,7 @@ export default function CompanionWorkspaceV2() {
 
   function handleDeletedActive() {
     if (handoff) {
-      useCurrentReading()
+      selectCurrentReading()
       return
     }
     startNewGeneralConversation()
@@ -234,7 +237,7 @@ export default function CompanionWorkspaceV2() {
           setConversationRoute(conversationId)
           void runtime.openConversation(conversationId)
         }}
-        onUseCurrentReading={useCurrentReading}
+        onUseCurrentReading={selectCurrentReading}
         onNewGeneralConversation={startNewGeneralConversation}
         onDeletedActive={handleDeletedActive}
       />

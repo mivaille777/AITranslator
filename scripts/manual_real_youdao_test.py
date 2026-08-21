@@ -3,9 +3,11 @@
 Run from repository root:
     python scripts/manual_real_youdao_test.py
     python scripts/manual_real_youdao_test.py "Hello world" --source en --target zh-CN
+    python scripts/manual_real_youdao_test.py --endpoint http://fanyi.youdao.com/translate
 
 This script intentionally tests the provider directly so an old TranslationCache
-entry cannot hide a real network/provider problem.
+entry cannot hide a real network/provider problem. The HTTP endpoint is only an
+explicit compatibility probe because source text would travel without TLS.
 """
 
 from __future__ import annotations
@@ -22,7 +24,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.models.translation import TranslationRequest
-from app.translation.youdao_web_provider import YoudaoWebTranslationProvider
+from app.translation.youdao_web_provider import (
+    DEFAULT_YOUDAO_WEB_ENDPOINT,
+    YoudaoWebTranslationProvider,
+)
 
 
 def main() -> int:
@@ -30,9 +35,13 @@ def main() -> int:
     parser.add_argument("text", nargs="?", default="Hello world")
     parser.add_argument("--source", default="en")
     parser.add_argument("--target", default="zh-CN")
+    parser.add_argument("--endpoint", default=DEFAULT_YOUDAO_WEB_ENDPOINT)
     args = parser.parse_args()
 
-    provider = YoudaoWebTranslationProvider()
+    if str(args.endpoint).lower().startswith("http://"):
+        print("warning = HTTP compatibility mode sends source text without TLS")
+
+    provider = YoudaoWebTranslationProvider(endpoint=args.endpoint)
     try:
         print(f"provider = {provider.name}")
         print(f"endpoint = {provider.endpoint}")

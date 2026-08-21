@@ -15,6 +15,7 @@ def test_overlay_api_tracks_loading_translation_and_dismissal() -> None:
         assert initial.status_code == 200
         assert initial.json()["visible"] is False
         assert initial.json()["phase"] == "hidden"
+        assert initial.json()["companion_conversation_id"] == ""
 
         loading = client.post(
             "/api/overlay/loading",
@@ -73,3 +74,76 @@ def test_overlay_service_ignores_stale_translation_results() -> None:
     assert state.context_id == "new-selection"
     assert state.phase == "loading"
     assert state.translated_text == ""
+
+
+def test_overlay_companion_binding_survives_same_context_reopen_only() -> None:
+    service = OverlayStateService()
+    app.dependency_overrides[get_overlay_state_service] = lambda: service
+    try:
+        client = TestClient(app)
+        loading_payload = {
+            "context_id": "selection-stable",
+            "source_text": "same selection",
+            "source_language": "auto",
+            "target_language": "zh-CN",
+        }
+
+        assert client.post("/api/overlay/loading", json=loading_payload).status_code == 200
+        bound = client.post(
+            "/api/overlay/companion",
+            json={
+                "context_id": "selection-stable",
+                "conversation_id": "conversation-42",
+            },
+        )
+        assert bound.status_code == 200
+        assert bound.json()["companion_conversation_id"] == "conversation-42"
+
+        dismissed = client.post("/api/overlay/dismiss", json={})
+        assert dismissed.json()["companion_conversation_id"] == "conversation-42"
+
+        reopened = client.post("/api/overlay/loading", json=loading_payload)
+        assert reopened.status_code == 200
+        assert reopened.json()["companion_conversation_id"] == "conversation-42"
+
+        next_context = client.post(
+            "/api/overlay/loading",
+            json={
+                **loading_payload,
+                "context_id": "selection-new",
+                "source_text": "new selection",
+            },
+        )
+        assert next_context.status_code == 200
+        assert next_context.json()["companion_conversation_id"] == ""
+    finally:
+        app.dependency_overrides.pop(get_overlay_state_service, None)
+
+
+def test_overlay_rejects_stale_companion_binding() -> None:
+    service = OverlayStateService()
+    app.dependency_overrides[get_overlay_state_service] = lambda: service
+    try:
+        client = TestClient(app)
+        client.post(
+            "/api/overlay/loading",
+            json={
+                "context_id": "selection-current",
+                "source_text": "current",
+                "source_language": "auto",
+                "target_language": "zh-CN",
+            },
+        )
+
+        stale = client.post(
+            "/api/overlay/companion",
+            json={
+                "context_id": "selection-old",
+                "conversation_id": "conversation-old",
+            },
+        )
+
+        assert stale.status_code == 409
+        assert service.snapshot().companion_conversation_id == ""
+    finally:
+        app.dependency_overrides.pop(get_overlay_state_service, None)

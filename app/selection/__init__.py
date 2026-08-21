@@ -9,7 +9,6 @@ from app.selection.manager import SelectionManager
 from app.selection.reading_context import (
     browser_snapshot_to_reading_selection,
     reading_selection_from_selected_text,
-    reading_selection_to_context,
 )
 from app.selection.uia_provider import UIASelectionProvider
 from app.selection.word_provider import WordSelectionProvider
@@ -27,5 +26,4 @@ __all__ = [
     "WordSelectionProvider",
     "browser_snapshot_to_reading_selection",
     "reading_selection_from_selected_text",
-    "reading_selection_to_context",
 ]

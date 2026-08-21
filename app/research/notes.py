@@ -334,6 +334,45 @@ class ResearchNoteStore:
             return ()
         return tuple(self._row_to_note(row) for row in rows)
 
+    def get(self, note_id: object) -> ResearchNote | None:
+        identifier = _clean(note_id, limit=128)
+        if not identifier:
+            return None
+        try:
+            with closing(self._connect()) as connection:
+                self._ensure_schema(connection)
+                row = connection.execute(
+                    f"SELECT {self._select_columns()} FROM research_notes WHERE note_id = ?",
+                    (identifier,),
+                ).fetchone()
+        except (OSError, sqlite3.Error):
+            return None
+        return self._row_to_note(row) if row is not None else None
+
+    def update_user_note(self, note_id: object, user_note: object) -> ResearchNote | None:
+        identifier = _clean(note_id, limit=128)
+        if not identifier:
+            return None
+        annotation = _clean(user_note, limit=20_000)
+        now = _now_iso()
+        try:
+            with closing(self._connect()) as connection:
+                with connection:
+                    self._ensure_schema(connection)
+                    cursor = connection.execute(
+                        "UPDATE research_notes SET user_note = ?, updated_at = ? WHERE note_id = ?",
+                        (annotation, now, identifier),
+                    )
+                    if cursor.rowcount < 1:
+                        return None
+                    row = connection.execute(
+                        f"SELECT {self._select_columns()} FROM research_notes WHERE note_id = ?",
+                        (identifier,),
+                    ).fetchone()
+        except (OSError, sqlite3.Error) as exc:
+            raise RuntimeError("Unable to update research note.") from exc
+        return self._row_to_note(row) if row is not None else None
+
     def count(self) -> int:
         try:
             with closing(self._connect()) as connection:

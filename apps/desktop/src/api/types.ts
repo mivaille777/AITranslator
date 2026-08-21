@@ -185,6 +185,33 @@ export interface ResearchNoteListResponse {
   notes: ResearchNoteListItem[]
 }
 
+export interface ResearchSourceSummary {
+  source_id: string
+  display_title: string
+  resource_url: string
+  source_kind: string
+  note_count: number
+  linked_conversation_count: number
+  updated_at: string
+}
+
+export interface ResearchNoteDetail extends ResearchNoteListItem {
+  source_id: string
+  created_at: string
+  user_note: string
+}
+
+export interface ResearchWorkspaceResponse {
+  total: number
+  sources: ResearchSourceSummary[]
+  notes: ResearchNoteDetail[]
+}
+
+export interface ResearchNoteDeleteResponse {
+  deleted: boolean
+  note_id: string
+}
+
 export interface CompanionHandoffRequest extends ReadingContextFields {
   source_text: string
   translated_text: string

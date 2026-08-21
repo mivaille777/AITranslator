@@ -24,6 +24,8 @@ export const queryKeys = {
   },
   research: {
     notes: (limit: number) => ["research", "notes", limit] as const,
+    workspace: (limit: number) => ["research", "workspace", limit] as const,
+    detail: (noteId: string) => ["research", "detail", noteId] as const,
   },
 } as const
 
@@ -38,4 +40,5 @@ export const queryPolling = {
   companionChatStatus: 30_000,
   conversationList: 5_000,
   researchNotes: 5_000,
+  researchWorkspace: 5_000,
 } as const

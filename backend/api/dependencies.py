@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from threading import Lock
 
+from backend.services.agent_tool_registry import AgentToolRegistry
 from backend.services.browser_context_service import BrowserContextService
 from backend.services.companion_chat_service import CompanionChatService
 from backend.services.companion_handoff_service import CompanionHandoffService
@@ -34,6 +35,8 @@ _conversation_store_service: ConversationStoreService | None = None
 _conversation_store_service_lock = Lock()
 _companion_ownership_service: CompanionConversationOwnershipService | None = None
 _companion_ownership_service_lock = Lock()
+_agent_tool_registry: AgentToolRegistry | None = None
+_agent_tool_registry_lock = Lock()
 
 
 def get_translation_service() -> TranslationService:
@@ -212,3 +215,24 @@ def close_companion_ownership_service() -> None:
         _companion_ownership_service = None
     if service is not None:
         service.clear()
+
+
+def get_agent_tool_registry() -> AgentToolRegistry:
+    global _agent_tool_registry
+    if _agent_tool_registry is not None:
+        return _agent_tool_registry
+
+    with _agent_tool_registry_lock:
+        if _agent_tool_registry is None:
+            _agent_tool_registry = AgentToolRegistry(
+                translation_service=get_translation_service(),
+                quick_action_service=get_quick_action_service(),
+                research_note_service=get_research_note_service(),
+            )
+        return _agent_tool_registry
+
+
+def close_agent_tool_registry() -> None:
+    global _agent_tool_registry
+    with _agent_tool_registry_lock:
+        _agent_tool_registry = None

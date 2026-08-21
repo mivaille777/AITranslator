@@ -6,11 +6,13 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.agent import router as agent_router
 from backend.api.browser_context import router as browser_context_router
 from backend.api.companion import router as companion_router
 from backend.api.companion_stream import router as companion_stream_router
 from backend.api.conversations import router as conversations_router
 from backend.api.dependencies import (
+    close_agent_tool_registry,
     close_browser_context_service,
     close_companion_chat_service,
     close_companion_ownership_service,
@@ -45,6 +47,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        close_agent_tool_registry()
         close_reading_selection_resolver()
         close_browser_context_service()
         close_companion_chat_service()
@@ -57,7 +60,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.12.0",
+        version="0.13.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
         lifespan=lifespan,
     )
@@ -75,6 +78,7 @@ def create_app() -> FastAPI:
     app.include_router(overlay_router)
     app.include_router(quick_actions_router)
     app.include_router(research_router)
+    app.include_router(agent_router)
     app.include_router(companion_router)
     app.include_router(companion_stream_router)
     app.include_router(conversations_router)

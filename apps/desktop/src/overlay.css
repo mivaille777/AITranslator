@@ -1,0 +1,177 @@
+html[data-ait-view="overlay"] main {
+  padding: 5px !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell {
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  background:
+    linear-gradient(155deg, rgba(37, 37, 40, 0.88), rgba(23, 23, 26, 0.92) 56%, rgba(17, 17, 19, 0.95)) !important;
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.28),
+    0 4px 14px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+  backdrop-filter: blur(30px) saturate(112%);
+  -webkit-backdrop-filter: blur(30px) saturate(112%);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface {
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.065) !important;
+  background: rgba(255, 255, 255, 0.022);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.022);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-bar {
+  min-height: 50px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-bar > div:first-child {
+  scrollbar-width: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-bar > div:first-child::-webkit-scrollbar {
+  display: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button {
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(242, 242, 247, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition:
+    transform 150ms var(--ait-ease-control),
+    color 200ms var(--ait-ease-standard),
+    background-color 200ms var(--ait-ease-standard),
+    border-color 200ms var(--ait-ease-standard),
+    box-shadow 220ms var(--ait-ease-standard);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.135);
+  background: rgba(255, 255, 255, 0.085);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button:active:not(:disabled) {
+  transform: scale(0.965);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button.is-active {
+  border-color: rgba(140, 200, 255, 0.2);
+  background: rgba(100, 181, 246, 0.12);
+  color: rgba(225, 243, 255, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(100, 181, 246, 0.025);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-morph,
+html[data-ait-view="overlay"] .ait-overlay-more-morph {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(4px) scale(0.995);
+  transition:
+    grid-template-rows 300ms var(--ait-ease-spring),
+    opacity 180ms var(--ait-ease-standard),
+    transform 280ms var(--ait-ease-spring);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-morph-inner,
+html[data-ait-view="overlay"] .ait-overlay-more-morph-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-result-open .ait-overlay-result-morph,
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-more-open .ait-overlay-more-morph {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs {
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  background: rgba(0, 0, 0, 0.14);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs button {
+  color: rgba(235, 235, 245, 0.48);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs button:hover {
+  color: rgba(245, 245, 247, 0.78);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs button.bg-white\/10 {
+  background: rgba(255, 255, 255, 0.09) !important;
+  color: rgba(255, 255, 255, 0.94) !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-content {
+  scrollbar-gutter: stable;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-quiet-button {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(235, 235, 245, 0.48);
+  transition:
+    background-color 180ms var(--ait-ease-standard),
+    color 180ms var(--ait-ease-standard),
+    transform 140ms var(--ait-ease-control);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-quiet-button:hover {
+  background: rgba(255, 255, 255, 0.075);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-quiet-button:active {
+  transform: scale(0.96);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-toast {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(44, 44, 48, 0.94);
+  color: rgba(235, 235, 245, 0.68);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: ait-overlay-toast-enter 220ms var(--ait-ease-spring) both;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-context-menu {
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  background: rgba(38, 38, 41, 0.94) !important;
+  box-shadow:
+    0 22px 60px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+  backdrop-filter: blur(28px) saturate(110%);
+  -webkit-backdrop-filter: blur(28px) saturate(110%);
+}
+
+@keyframes ait-overlay-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-ait-view="overlay"] .ait-overlay-result-morph,
+  html[data-ait-view="overlay"] .ait-overlay-more-morph {
+    transform: none;
+  }
+}

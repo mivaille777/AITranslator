@@ -25,6 +25,7 @@ class OverlayStateResponse(OverlayReadingContext):
     target_language: str = "zh-CN"
     provider: str = ""
     message: str = ""
+    companion_conversation_id: str = ""
 
 
 class OverlayLoadingRequest(OverlayReadingContext):
@@ -45,3 +46,8 @@ class OverlayErrorRequest(OverlayReadingContext):
     source_language: str = "auto"
     target_language: str = "zh-CN"
     message: str = Field(default="Translation failed", max_length=500)
+
+
+class OverlayCompanionBindingRequest(BaseModel):
+    context_id: str = Field(min_length=1, max_length=128)
+    conversation_id: str = Field(min_length=1, max_length=128)

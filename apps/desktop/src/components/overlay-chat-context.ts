@@ -5,6 +5,16 @@ import type {
 } from "../api/types"
 import type { CompanionContextSnapshot } from "../features/companion/companion-runtime"
 
+type OverlayStateWithCompanion = OverlayStateResponse & {
+  companion_conversation_id?: string
+}
+
+export function overlayCompanionConversationId(state: OverlayStateResponse): string {
+  return String(
+    (state as OverlayStateWithCompanion).companion_conversation_id ?? "",
+  ).trim()
+}
+
 export function contextFromOverlay(
   state: OverlayStateResponse,
   aiResult: QuickActionResponse | null,

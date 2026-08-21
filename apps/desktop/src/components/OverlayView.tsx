@@ -11,6 +11,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { dismissOverlay, getOverlayState } from "../api/overlay"
 import { desktop } from "../desktop"
 import type { DesktopPoint, OverlayPositionMode } from "../desktop"
+import { dispatchOverlayCommand } from "../desktop/overlay-commands"
 import {
   readOverlayPreferences,
   subscribeOverlayPreferences,
@@ -22,7 +23,9 @@ import {
   type OverlayActionPresentation,
 } from "../desktop/overlay-sizing"
 import { queryKeys, queryPolling } from "../shared/query/query-keys"
-import OverlayQuickActions from "./OverlayQuickActions"
+import OverlayQuickActions, {
+  type OverlayCompletedInteraction,
+} from "./OverlayQuickActions"
 
 type MenuPosition = { x: number; y: number }
 type ActionPresentationState = {
@@ -40,6 +43,7 @@ const positionLabels: Record<OverlayPositionMode, string> = {
 
 export default function OverlayView() {
   const [copied, setCopied] = useState(false)
+  const [dragVisualActive, setDragVisualActive] = useState(false)
   const [preferences, setPreferences] = useState(readOverlayPreferences)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
   const [actionPresentationState, setActionPresentationState] = useState<ActionPresentationState>({
@@ -50,6 +54,7 @@ export default function OverlayView() {
   const pendingMoveRef = useRef<DesktopPoint | null>(null)
   const moveIdleTimerRef = useRef<number | null>(null)
   const dragArmTimerRef = useRef<number | null>(null)
+  const autoDismissTimerRef = useRef<number | null>(null)
   const lastPlacedContextRef = useRef("")
   const lastSizeKeyRef = useRef("")
 
@@ -98,7 +103,26 @@ export default function OverlayView() {
   )
   const overlaySizeKey = overlaySize ? `${overlaySize.width}x${overlaySize.height}` : ""
 
+  function cancelAutoDismiss() {
+    if (autoDismissTimerRef.current !== null) {
+      window.clearTimeout(autoDismissTimerRef.current)
+      autoDismissTimerRef.current = null
+    }
+  }
+
+  function scheduleAutoDismiss(delay: number) {
+    cancelAutoDismiss()
+    if (!readOverlayPreferences().smartAutoDismiss) return
+
+    autoDismissTimerRef.current = window.setTimeout(() => {
+      autoDismissTimerRef.current = null
+      dismissMutation.mutate()
+    }, delay)
+  }
+
   useEffect(() => subscribeOverlayPreferences(setPreferences), [])
+
+  useEffect(() => () => cancelAutoDismiss(), [])
 
   useEffect(() => {
     let disposed = false
@@ -152,6 +176,7 @@ export default function OverlayView() {
 
     async function syncNativeWindow() {
       if (!overlayVisible) {
+        cancelAutoDismiss()
         lastPlacedContextRef.current = ""
         lastSizeKeyRef.current = ""
         await desktop.overlay.hide()
@@ -168,6 +193,7 @@ export default function OverlayView() {
       }
 
       if (lastPlacedContextRef.current !== overlayContextId) {
+        cancelAutoDismiss()
         await desktop.overlay.place(
           currentPreferences.positionMode,
           currentPreferences.customPosition,
@@ -184,18 +210,78 @@ export default function OverlayView() {
     }
   }, [overlayContextId, overlayRevision, overlaySize, overlaySizeKey, overlayVisible])
 
+  useEffect(() => {
+    if (!overlayVisible) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest("input, textarea, select, [contenteditable='true']")) return
+
+      cancelAutoDismiss()
+
+      if (event.key === "Escape") {
+        event.preventDefault()
+        if (menuOpen) {
+          setMenuPosition(null)
+        } else if (actionPresentation !== "compact") {
+          dispatchOverlayCommand("escape")
+        } else {
+          dismissMutation.mutate()
+        }
+        return
+      }
+
+      if (state?.phase !== "ready") return
+
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+        const selectedText = window.getSelection()?.toString().trim() ?? ""
+        if (selectedText) return
+        event.preventDefault()
+        if (actionPresentation === "result") {
+          dispatchOverlayCommand("copy")
+        } else {
+          void handleCopy()
+        }
+        return
+      }
+
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+
+      if (["1", "2", "3", "4"].includes(event.key)) {
+        event.preventDefault()
+        dispatchOverlayCommand(`action-${event.key}` as "action-1" | "action-2" | "action-3" | "action-4")
+      } else if (event.key.toLowerCase() === "m") {
+        event.preventDefault()
+        dispatchOverlayCommand("more")
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [actionPresentation, menuOpen, overlayVisible, state?.phase, state?.translated_text])
+
   async function handleCopy() {
     if (!state?.translated_text) return
     try {
       await navigator.clipboard.writeText(state.translated_text)
       setCopied(true)
+      scheduleAutoDismiss(1400)
       window.setTimeout(() => setCopied(false), 900)
     } catch {
       setCopied(false)
     }
   }
 
+  function handleCompletedInteraction(interaction: OverlayCompletedInteraction) {
+    if (interaction === "handoff") {
+      scheduleAutoDismiss(600)
+    } else if (interaction === "copy") {
+      scheduleAutoDismiss(1400)
+    }
+  }
+
   function handleActionPresentationChange(presentation: OverlayActionPresentation) {
+    cancelAutoDismiss()
     setActionPresentationState((current) => {
       if (current.contextId === overlayContextId && current.presentation === presentation) {
         return current
@@ -204,12 +290,14 @@ export default function OverlayView() {
     })
   }
 
-  function handleDragStart(event: ReactPointerEvent<HTMLElement>) {
+  async function handleDragStart(event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0 || preferences.locked || preferences.clickThrough) return
     if ((event.target as HTMLElement).closest("button, [data-overlay-menu]")) return
 
+    cancelAutoDismiss()
     draggingRef.current = true
     pendingMoveRef.current = null
+    setDragVisualActive(true)
     setMenuPosition(null)
 
     if (dragArmTimerRef.current !== null) {
@@ -222,15 +310,20 @@ export default function OverlayView() {
       dragArmTimerRef.current = null
     }, 450)
 
-    void desktop.overlay.startDragging()
+    try {
+      await desktop.overlay.startDragging()
+    } finally {
+      setDragVisualActive(false)
+    }
   }
 
   function handleContextMenu(event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault()
     if (preferences.clickThrough) return
 
+    cancelAutoDismiss()
     const width = 220
-    const estimatedVisibleHeight = Math.min(244, window.innerHeight - 16)
+    const estimatedVisibleHeight = Math.min(344, window.innerHeight - 16)
     setMenuPosition({
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
       y: Math.max(
@@ -241,6 +334,7 @@ export default function OverlayView() {
   }
 
   async function applyPreferences(patch: Partial<OverlayPreferences>) {
+    cancelAutoDismiss()
     const next = updateOverlayPreferences(patch)
     setPreferences(next)
     setMenuPosition(null)
@@ -292,17 +386,25 @@ export default function OverlayView() {
     <main
       className="h-screen w-screen overflow-hidden bg-transparent p-2 text-slate-100"
       onContextMenu={handleContextMenu}
-      onPointerDown={() => setMenuPosition(null)}
+      onPointerDown={() => {
+        cancelAutoDismiss()
+        setMenuPosition(null)
+      }}
     >
-      <section className="ait-overlay-shell flex h-full flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900 shadow-2xl">
+      <section
+        key={overlayContextId}
+        className={`ait-overlay-shell flex h-full flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900 shadow-2xl ${
+          dragVisualActive ? "is-dragging" : ""
+        } ${preferences.positionMode === "mouse_follow" ? "ait-overlay-near-enter" : ""}`}
+      >
         <header
           className={`flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 ${
             preferences.locked ? "cursor-default" : "cursor-move"
           }`}
-          onPointerDown={handleDragStart}
+          onPointerDown={(event) => void handleDragStart(event)}
         >
           <div className="flex min-w-0 items-center gap-3">
-            <span className="select-none text-xs tracking-[-0.15em] text-slate-600">••••</span>
+            <span className="ait-overlay-drag-handle select-none text-xs tracking-[-0.15em] text-slate-600">••••</span>
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                 AITranslator
@@ -323,7 +425,8 @@ export default function OverlayView() {
             <button
               type="button"
               aria-label="Close overlay"
-              className="ait-control-motion rounded-full px-2.5 py-1.5 text-sm text-slate-400 hover:bg-white/10 hover:text-white"
+              title="关闭 · Esc"
+              className="ait-overlay-quiet-button flex h-7 w-7 items-center justify-center rounded-full text-sm text-slate-400"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => dismissMutation.mutate()}
             >
@@ -376,20 +479,23 @@ export default function OverlayView() {
             key={state.context_id}
             state={state}
             onPresentationChange={handleActionPresentationChange}
+            onCompletedInteraction={handleCompletedInteraction}
           />
         )}
 
         <footer className="flex items-center justify-between border-t border-white/10 px-4 py-3">
           <span className="truncate text-[10px] text-slate-600">
-            {positionLabels[preferences.positionMode]} · right-click for options
+            {positionLabels[preferences.positionMode]} · Esc close · right-click
           </span>
           {state.phase === "ready" && (
             <button
               type="button"
-              className="ait-control-motion rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/15"
+              aria-live="polite"
+              title="复制当前译文 · Ctrl/Cmd+C"
+              className={`ait-overlay-copy-button ait-control-motion rounded-full px-3 py-1.5 text-xs font-medium ${copied ? "is-copied" : ""}`}
               onClick={() => void handleCopy()}
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? "✓ Copied" : "Copy"}
             </button>
           )}
         </footer>
@@ -450,6 +556,18 @@ export default function OverlayView() {
             active={preferences.clickThrough}
             onClick={() => void applyPreferences({ clickThrough: !preferences.clickThrough })}
           />
+          <MenuItem
+            label="Smart auto-dismiss"
+            active={preferences.smartAutoDismiss}
+            onClick={() => void applyPreferences({ smartAutoDismiss: !preferences.smartAutoDismiss })}
+          />
+
+          <div className="my-1 border-t border-white/10" />
+          <MenuHeading>Shortcuts</MenuHeading>
+          <MenuShortcut label="Close / collapse" keys="Esc" />
+          <MenuShortcut label="Copy active view" keys="Ctrl+C" />
+          <MenuShortcut label="AI actions" keys="1–4" />
+          <MenuShortcut label="More actions" keys="M" />
 
           <div className="my-1 border-t border-white/10" />
           <MenuItem label="Hide overlay" danger onClick={() => dismissMutation.mutate()} />
@@ -464,6 +582,17 @@ function MenuHeading({ children }: { children: string }) {
     <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
       {children}
     </p>
+  )
+}
+
+function MenuShortcut({ label, keys }: { label: string; keys: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-2.5 py-1.5 text-[10px] text-slate-500">
+      <span>{label}</span>
+      <kbd className="rounded-md border border-white/10 bg-white/[0.035] px-1.5 py-0.5 font-mono text-[9px] text-slate-400">
+        {keys}
+      </kbd>
+    </div>
   )
 }
 

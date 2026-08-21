@@ -8,6 +8,7 @@ import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 export default function CompanionHandoffNavigator() {
   const navigate = useNavigate()
   const location = useLocation()
+  const initialized = useRef(false)
   const lastNavigatedHandoff = useRef("")
 
   const handoffQuery = useQuery({
@@ -20,12 +21,20 @@ export default function CompanionHandoffNavigator() {
   const handoffId = handoffQuery.data?.handoff?.handoff_id ?? ""
 
   useEffect(() => {
+    if (!handoffQuery.isSuccess) return
+
+    if (!initialized.current) {
+      initialized.current = true
+      lastNavigatedHandoff.current = handoffId
+      return
+    }
+
     if (!handoffId || handoffId === lastNavigatedHandoff.current) return
     lastNavigatedHandoff.current = handoffId
     if (location.pathname !== "/chat" || location.search) {
       navigate("/chat")
     }
-  }, [handoffId, location.pathname, location.search, navigate])
+  }, [handoffId, handoffQuery.isSuccess, location.pathname, location.search, navigate])
 
   return null
 }

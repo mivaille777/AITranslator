@@ -28,6 +28,7 @@ class CompanionHandoffState:
     context_before: str = ""
     context_after: str = ""
     source_kind: str = "browser_selection"
+    conversation_id: str = ""
     ai_content: str = ""
     ai_action: str = ""
     suggested_prompt: str = ""
@@ -117,6 +118,7 @@ class CompanionHandoffService:
         context_before: str = "",
         context_after: str = "",
         source_kind: str = "browser_selection",
+        conversation_id: str = "",
         ai_content: str = "",
         ai_action: str = "",
         suggested_prompt: str = "",
@@ -159,6 +161,7 @@ class CompanionHandoffService:
                 context_after=str(context_after or "").strip(),
                 source_kind=str(source_kind or "browser_selection").strip()
                 or "browser_selection",
+                conversation_id=str(conversation_id or "").strip(),
                 ai_content=str(ai_content or "").strip(),
                 ai_action=str(ai_action or "").strip(),
                 suggested_prompt=str(suggested_prompt or "").strip(),

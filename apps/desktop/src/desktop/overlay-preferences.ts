@@ -1,6 +1,7 @@
 import type { DesktopPoint, OverlayPositionMode } from "./adapter"
 
-const STORAGE_KEY = "aitrans.overlay.preferences.v1"
+const STORAGE_KEY = "aitrans.overlay.preferences.v2"
+const LEGACY_STORAGE_KEY = "aitrans.overlay.preferences.v1"
 const CHANGE_EVENT = "aitrans-overlay-preferences-changed"
 
 export interface OverlayPreferences {
@@ -42,38 +43,58 @@ function isDesktopPoint(value: unknown): value is DesktopPoint {
   )
 }
 
+function normalizePreferences(
+  parsed: Partial<OverlayPreferences>,
+  { resetClickThrough = false }: { resetClickThrough?: boolean } = {},
+): OverlayPreferences {
+  return {
+    positionMode: isPositionMode(parsed.positionMode)
+      ? parsed.positionMode
+      : DEFAULT_OVERLAY_PREFERENCES.positionMode,
+    alwaysOnTop:
+      typeof parsed.alwaysOnTop === "boolean"
+        ? parsed.alwaysOnTop
+        : DEFAULT_OVERLAY_PREFERENCES.alwaysOnTop,
+    locked:
+      typeof parsed.locked === "boolean"
+        ? parsed.locked
+        : DEFAULT_OVERLAY_PREFERENCES.locked,
+    clickThrough: resetClickThrough
+      ? false
+      : typeof parsed.clickThrough === "boolean"
+        ? parsed.clickThrough
+        : DEFAULT_OVERLAY_PREFERENCES.clickThrough,
+    smartAutoDismiss:
+      typeof parsed.smartAutoDismiss === "boolean"
+        ? parsed.smartAutoDismiss
+        : DEFAULT_OVERLAY_PREFERENCES.smartAutoDismiss,
+    customPosition: isDesktopPoint(parsed.customPosition)
+      ? parsed.customPosition
+      : null,
+  }
+}
+
 export function readOverlayPreferences(): OverlayPreferences {
   if (typeof window === "undefined") return DEFAULT_OVERLAY_PREFERENCES
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_OVERLAY_PREFERENCES
-    const parsed = JSON.parse(raw) as Partial<OverlayPreferences>
-
-    return {
-      positionMode: isPositionMode(parsed.positionMode)
-        ? parsed.positionMode
-        : DEFAULT_OVERLAY_PREFERENCES.positionMode,
-      alwaysOnTop:
-        typeof parsed.alwaysOnTop === "boolean"
-          ? parsed.alwaysOnTop
-          : DEFAULT_OVERLAY_PREFERENCES.alwaysOnTop,
-      locked:
-        typeof parsed.locked === "boolean"
-          ? parsed.locked
-          : DEFAULT_OVERLAY_PREFERENCES.locked,
-      clickThrough:
-        typeof parsed.clickThrough === "boolean"
-          ? parsed.clickThrough
-          : DEFAULT_OVERLAY_PREFERENCES.clickThrough,
-      smartAutoDismiss:
-        typeof parsed.smartAutoDismiss === "boolean"
-          ? parsed.smartAutoDismiss
-          : DEFAULT_OVERLAY_PREFERENCES.smartAutoDismiss,
-      customPosition: isDesktopPoint(parsed.customPosition)
-        ? parsed.customPosition
-        : null,
+    if (raw) {
+      return normalizePreferences(JSON.parse(raw) as Partial<OverlayPreferences>)
     }
+
+    const legacyRaw = window.localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (!legacyRaw) return DEFAULT_OVERLAY_PREFERENCES
+
+    // v1 could persist click-through=true indefinitely, leaving the native overlay
+    // impossible to click after an upgrade. Preserve placement preferences but make
+    // pointer interaction safe again; users can explicitly re-enable click-through.
+    const migrated = normalizePreferences(
+      JSON.parse(legacyRaw) as Partial<OverlayPreferences>,
+      { resetClickThrough: true },
+    )
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated))
+    return migrated
   } catch {
     return DEFAULT_OVERLAY_PREFERENCES
   }
@@ -102,7 +123,9 @@ export function subscribeOverlayPreferences(
   if (typeof window === "undefined") return () => undefined
 
   const handleStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) callback(readOverlayPreferences())
+    if (event.key === STORAGE_KEY || event.key === LEGACY_STORAGE_KEY) {
+      callback(readOverlayPreferences())
+    }
   }
   const handleLocalChange = () => callback(readOverlayPreferences())
 

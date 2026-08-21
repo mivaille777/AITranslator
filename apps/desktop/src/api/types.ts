@@ -240,6 +240,7 @@ export interface CompanionHandoffRequest extends ReadingContextFields {
   translated_text: string
   source_language: string
   target_language: string
+  conversation_id?: string
   ai_content?: string
   ai_action?: string
   suggested_prompt?: string
@@ -249,6 +250,7 @@ export interface CompanionHandoff extends CompanionHandoffRequest {
   revision: number
   handoff_id: string
   created_at: string
+  conversation_id: string
   ai_content: string
   ai_action: string
   suggested_prompt: string

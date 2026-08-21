@@ -1,0 +1,3 @@
+.ait-panel{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);border-radius:16px;backdrop-filter:blur(16px)}
+.ait-button{border-radius:12px;padding:8px 14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);cursor:pointer}
+.ait-input{height:42px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:0 14px}

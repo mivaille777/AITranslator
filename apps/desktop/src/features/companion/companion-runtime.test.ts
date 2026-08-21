@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 
+import type { CompanionHandoff } from "../../api/types"
 import {
   buildCompanionChatRequest,
+  companionHandoffRuntimeSeed,
   companionHistory,
   type CompanionRuntimeMessage,
 } from "./companion-runtime"
@@ -67,5 +69,41 @@ describe("companion runtime", () => {
     expect(request.history).toEqual([
       { role: "user", content: "previous question" },
     ])
+  })
+
+  it("creates a stable reading runtime seed from a non-null handoff", () => {
+    const handoff: CompanionHandoff = {
+      revision: 3,
+      handoff_id: "handoff-3",
+      created_at: "2026-08-21T12:00:00Z",
+      source_text: "selected source",
+      translated_text: "selected translation",
+      source_language: "en",
+      target_language: "zh-CN",
+      resource_url: "file:///paper.pdf",
+      resource_title: "Paper",
+      section_heading: "4.1",
+      context_before: "before",
+      context_after: "after",
+      source_kind: "pdf_uia",
+      ai_content: "existing explanation",
+      ai_action: "reading_explain",
+      suggested_prompt: "continue from this context",
+    }
+
+    const seed = companionHandoffRuntimeSeed(handoff)
+
+    expect(seed).toMatchObject({
+      contextMode: "reading",
+      draft: "continue from this context",
+      sessionId: "companion-handoff-3",
+      scopeId: "handoff:handoff-3",
+    })
+    expect(seed.context).toMatchObject({
+      source_text: "selected source",
+      translated_text: "selected translation",
+      ai_content: "existing explanation",
+      ai_action: "reading_explain",
+    })
   })
 })

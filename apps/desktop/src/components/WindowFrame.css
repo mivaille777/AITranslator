@@ -15,25 +15,33 @@
   display:flex;
   align-items:center;
   gap:12px;
-  padding:0 12px;
+  padding:0 14px;
   user-select:none;
 }
 
 .window-brand {
   display:flex;
   align-items:center;
-  gap:8px;
+  gap:9px;
   font-size:13px;
   font-weight:600;
   color:#0f172a;
 }
 
+.window-brand small {
+  display:block;
+  margin-top:1px;
+  font-size:9px;
+  font-weight:500;
+  color:#94a3b8;
+}
+
 .window-logo {
-  width:22px;
-  height:22px;
+  width:24px;
+  height:24px;
   display:grid;
   place-items:center;
-  border-radius:7px;
+  border-radius:8px;
   background:#0f172a;
   color:white;
   font-size:12px;
@@ -45,7 +53,7 @@
   display:flex;
   align-items:center;
   gap:6px;
-  font-size:12px;
+  font-size:11px;
   color:#64748b;
 }
 
@@ -59,25 +67,26 @@
 .window-controls {
   display:flex;
   align-items:center;
-  gap:4px;
+  gap:3px;
 }
 
 .window-controls button {
-  width:26px;
-  height:26px;
+  width:24px;
+  height:24px;
   display:grid;
   place-items:center;
   border:0;
-  border-radius:8px;
+  border-radius:999px;
   background:transparent;
   color:#64748b;
   cursor:pointer;
-  transition:.18s ease;
+  transition:transform .18s ease, background .18s ease, color .18s ease;
 }
 
 .window-controls button:hover {
   background:#eef2f7;
   color:#0f172a;
+  transform:scale(1.08);
 }
 
 .window-controls .close:hover {

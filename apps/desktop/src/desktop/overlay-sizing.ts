@@ -4,6 +4,7 @@ export interface OverlayWindowSize {
 }
 
 export type OverlayVisualPhase = "hidden" | "loading" | "ready" | "error"
+export type OverlayActionPresentation = "compact" | "expanded" | "result"
 
 export interface OverlaySizingInput {
   phase: OverlayVisualPhase
@@ -11,6 +12,7 @@ export interface OverlaySizingInput {
   sourceText?: string
   message?: string
   menuOpen?: boolean
+  actionPresentation?: OverlayActionPresentation
 }
 
 export const OVERLAY_WINDOW_WIDTH = 420
@@ -18,7 +20,13 @@ export const OVERLAY_WINDOW_WIDTH = 420
 const MIN_HEIGHT = 184
 const MENU_MIN_HEIGHT = 360
 const READY_MIN_HEIGHT = 286
-const READY_MAX_HEIGHT = 540
+const READY_MAX_HEIGHT = 600
+
+const ACTION_RESERVE: Record<OverlayActionPresentation, number> = {
+  compact: 62,
+  expanded: 108,
+  result: 224,
+}
 
 function wrappedLineCount(text: string, charsPerLine: number, maxLines: number): number {
   const normalized = text.trim()
@@ -38,6 +46,7 @@ export function computeOverlayWindowSize({
   sourceText = "",
   message = "",
   menuOpen = false,
+  actionPresentation = "compact",
 }: OverlaySizingInput): OverlayWindowSize {
   let height: number
 
@@ -51,9 +60,8 @@ export function computeOverlayWindowSize({
     const sourceLines = wrappedLineCount(sourceText, 54, 3)
     const translationHeight = translationLines * 24
     const sourceHeight = sourceLines > 0 ? 24 + sourceLines * 20 : 0
-    const quickActionReserve = 70
 
-    height = 154 + translationHeight + sourceHeight + quickActionReserve
+    height = 148 + translationHeight + sourceHeight + ACTION_RESERVE[actionPresentation]
     height = Math.max(READY_MIN_HEIGHT, Math.min(READY_MAX_HEIGHT, height))
   }
 

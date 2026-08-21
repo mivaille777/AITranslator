@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -81,16 +82,19 @@ export default function OverlayView() {
     actionPresentationState.contextId === overlayContextId
       ? actionPresentationState.presentation
       : "compact"
-  const overlaySize = state
-    ? computeOverlayWindowSize({
-        phase: state.phase,
-        translatedText: state.translated_text,
-        sourceText: state.source_text,
-        message: state.message,
-        menuOpen,
-        actionPresentation,
-      })
-    : null
+  const overlaySize = useMemo(
+    () => state
+      ? computeOverlayWindowSize({
+          phase: state.phase,
+          translatedText: state.translated_text,
+          sourceText: state.source_text,
+          message: state.message,
+          menuOpen,
+          actionPresentation,
+        })
+      : null,
+    [actionPresentation, menuOpen, state],
+  )
   const overlaySizeKey = overlaySize ? `${overlaySize.width}x${overlaySize.height}` : ""
 
   const cancelAutoDismiss = useCallback(() => {

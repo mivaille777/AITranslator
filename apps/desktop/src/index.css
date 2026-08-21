@@ -166,6 +166,11 @@ summary:focus-visible {
   transform: scale(0.985);
 }
 
+.ait-overlay-state-enter {
+  transform-origin: center;
+  animation: ait-overlay-state-enter 220ms var(--ait-ease-spring) both;
+}
+
 @keyframes ait-workspace-enter {
   from {
     opacity: 0;
@@ -209,6 +214,17 @@ summary:focus-visible {
   from {
     opacity: 0;
     transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ait-overlay-state-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.985);
   }
   to {
     opacity: 1;

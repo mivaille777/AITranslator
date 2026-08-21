@@ -1,13 +1,10 @@
-"""Core runtime primitives for AITranslator agents."""
+"""Core runtime primitives for AITranslator agents.
 
-from backend.agent_core.context import ReadingContextProvider
-from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
+Service-backed adapters intentionally live in their own modules so importing
+``backend.agent_core`` does not eagerly initialize selection or provider stacks.
+"""
+
 from backend.agent_core.runtime import AgentRuntime
 from backend.agent_core.state import AgentState
 
-__all__ = [
-    "AgentState",
-    "AgentRuntime",
-    "ReadingContextProvider",
-    "ProductAgentRuntimeAdapter",
-]
+__all__ = ["AgentState", "AgentRuntime"]

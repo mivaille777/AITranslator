@@ -185,14 +185,37 @@ export interface ResearchNoteListResponse {
   notes: ResearchNoteListItem[]
 }
 
+export type ResearchSourceFamily = "browser" | "pdf" | "word" | "desktop" | "other"
+export type ResearchIdentityQuality = "locator" | "title" | "note"
+
 export interface ResearchSourceSummary {
   source_id: string
   display_title: string
   resource_url: string
+  resource_locator: string
   source_kind: string
+  source_family: ResearchSourceFamily
+  identity_quality: ResearchIdentityQuality
+  note_count: number
+  section_count: number
+  linked_conversation_count: number
+  annotation_count: number
+  ai_evidence_count: number
+  updated_at: string
+}
+
+export interface ResearchSourceSection {
+  section_id: string
+  heading: string
   note_count: number
   linked_conversation_count: number
+  annotation_count: number
+  ai_evidence_count: number
   updated_at: string
+}
+
+export interface ResearchSourceProfile extends ResearchSourceSummary {
+  sections: ResearchSourceSection[]
 }
 
 export interface ResearchNoteDetail extends ResearchNoteListItem {

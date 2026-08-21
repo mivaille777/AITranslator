@@ -12,6 +12,12 @@ export class ApiError extends Error {
   }
 }
 
+export function apiWebSocketUrl(path: string): string {
+  const url = new URL(`${API_BASE_URL}${path}`)
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:"
+  return url.toString()
+}
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   headers.set("Accept", "application/json")

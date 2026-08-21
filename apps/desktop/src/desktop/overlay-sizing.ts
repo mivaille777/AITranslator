@@ -3,7 +3,7 @@ export interface OverlayWindowSize {
   height: number
 }
 
-export type OverlayVisualPhase = "loading" | "ready" | "error"
+export type OverlayVisualPhase = "hidden" | "loading" | "ready" | "error"
 
 export interface OverlaySizingInput {
   phase: OverlayVisualPhase
@@ -41,7 +41,7 @@ export function computeOverlayWindowSize({
 }: OverlaySizingInput): OverlayWindowSize {
   let height: number
 
-  if (phase === "loading") {
+  if (phase === "hidden" || phase === "loading") {
     height = 190
   } else if (phase === "error") {
     const messageLines = Math.max(1, wrappedLineCount(message, 42, 4))

@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from "./client"
 import type {
+  ConversationContextUpdate,
   ConversationDeleteResponse,
   ConversationDetail,
   ConversationListResponse,
@@ -30,6 +31,16 @@ export function rewindConversation(
   return apiPost<ConversationDetail, { user_message_id: string }>(
     `/api/conversations/${encodeURIComponent(conversationId)}/rewind`,
     { user_message_id: userMessageId },
+  )
+}
+
+export function updateConversationContext(
+  conversationId: string,
+  payload: ConversationContextUpdate,
+): Promise<ConversationDetail> {
+  return apiPatch<ConversationDetail, ConversationContextUpdate>(
+    `/api/conversations/${encodeURIComponent(conversationId)}/context`,
+    payload,
   )
 }
 

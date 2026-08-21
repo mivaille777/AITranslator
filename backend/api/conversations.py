@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.api.dependencies import get_conversation_store_service
 from backend.models.conversations import (
+    ConversationContextUpdateRequest,
     ConversationDeleteResponse,
     ConversationDetailResponse,
     ConversationListResponse,
@@ -43,7 +44,19 @@ def _message_response(message: StoredMessage) -> ConversationMessageResponse:
     )
 
 
-def _summary_response(conversation: StoredConversation) -> ConversationSummaryResponse:
+def _context_mode(service: Any, conversation: StoredConversation) -> str:
+    resolver = getattr(service, "context_mode", None)
+    if callable(resolver):
+        value = str(resolver(conversation.conversation_id) or "").strip().lower()
+        if value in {"general", "reading"}:
+            return value
+    return "reading" if conversation.source_text.strip() else "general"
+
+
+def _summary_response(
+    service: Any,
+    conversation: StoredConversation,
+) -> ConversationSummaryResponse:
     return ConversationSummaryResponse(
         conversation_id=conversation.conversation_id,
         session_id=conversation.session_id,
@@ -52,15 +65,19 @@ def _summary_response(conversation: StoredConversation) -> ConversationSummaryRe
         updated_at=conversation.updated_at,
         provider=conversation.provider,
         model=conversation.model,
+        context_mode=_context_mode(service, conversation),
         resource_title=conversation.resource_title,
         section_heading=conversation.section_heading,
         source_kind=conversation.source_kind,
     )
 
 
-def _detail_response(conversation: StoredConversation) -> ConversationDetailResponse:
+def _detail_response(
+    service: Any,
+    conversation: StoredConversation,
+) -> ConversationDetailResponse:
     return ConversationDetailResponse(
-        **_summary_response(conversation).model_dump(),
+        **_summary_response(service, conversation).model_dump(),
         source_text=conversation.source_text,
         translated_text=conversation.translated_text,
         source_language=conversation.source_language,
@@ -78,7 +95,10 @@ def list_conversations(
     limit: int = Query(default=30, ge=1, le=50),
 ) -> ConversationListResponse:
     return ConversationListResponse(
-        conversations=[_summary_response(item) for item in service.list_recent(limit=limit)]
+        conversations=[
+            _summary_response(service, item)
+            for item in service.list_recent(limit=limit)
+        ]
     )
 
 
@@ -89,8 +109,11 @@ def get_conversation(
 ) -> ConversationDetailResponse:
     conversation = service.get(conversation_id)
     if conversation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
-    return _detail_response(conversation)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found.",
+        )
+    return _detail_response(service, conversation)
 
 
 @router.patch("/{conversation_id}", response_model=ConversationDetailResponse)
@@ -107,11 +130,17 @@ def rename_conversation(
             detail=str(exc),
         ) from exc
     if conversation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
-    return _detail_response(conversation)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found.",
+        )
+    return _detail_response(service, conversation)
 
 
-@router.post("/{conversation_id}/rewind", response_model=ConversationDetailResponse)
+@router.post(
+    "/{conversation_id}/rewind",
+    response_model=ConversationDetailResponse,
+)
 def rewind_conversation(
     conversation_id: str,
     payload: ConversationRewindRequest,
@@ -120,7 +149,7 @@ def rewind_conversation(
     rewind = getattr(service, "rewind_from_user_message", None)
     if not callable(rewind):
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="Conversation branch rewriting is unavailable.",
         )
     try:
@@ -135,7 +164,43 @@ def rewind_conversation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Conversation or user message not found.",
         )
-    return _detail_response(conversation)
+    return _detail_response(service, conversation)
+
+
+@router.patch(
+    "/{conversation_id}/context",
+    response_model=ConversationDetailResponse,
+)
+def update_conversation_context(
+    conversation_id: str,
+    payload: ConversationContextUpdateRequest,
+    service: ConversationStoreDependency,
+) -> ConversationDetailResponse:
+    update_context = getattr(service, "update_context", None)
+    if not callable(update_context):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Conversation context management is unavailable.",
+        )
+    fields = payload.model_dump(exclude_none=True)
+    mode = str(fields.pop("context_mode"))
+    try:
+        conversation = update_context(
+            conversation_id,
+            context_mode=mode,
+            **fields,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found.",
+        )
+    return _detail_response(service, conversation)
 
 
 @router.delete("/{conversation_id}", response_model=ConversationDeleteResponse)

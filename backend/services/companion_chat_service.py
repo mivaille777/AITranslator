@@ -31,7 +31,7 @@ class CompanionChatService:
 
     REST requests keep using the stable non-streaming service for compatibility.
     WebSocket requests use the UI-independent streaming core. Neither path
-    introduces LangGraph or desktop UI ownership into the normal Companion chat.
+    introduces LangGraph or desktop UI ownership into normal Companion chat.
     """
 
     def __init__(
@@ -83,7 +83,7 @@ class CompanionChatService:
         *,
         session_id: str,
         user_message: str,
-        source_text: str,
+        source_text: str = "",
         translated_text: str = "",
         source_language: str = "auto",
         target_language: str = "zh-CN",
@@ -92,9 +92,10 @@ class CompanionChatService:
         section_heading: str = "",
         context_before: str = "",
         context_after: str = "",
-        source_kind: str = "browser_selection",
+        source_kind: str = "",
         history: tuple[tuple[str, str], ...] = (),
         request_id: int = 0,
+        context_mode: str = "reading",
     ) -> ChatRequest:
         _ = (source_language, target_language)
 
@@ -110,16 +111,17 @@ class CompanionChatService:
                 )
             )
 
+        grounded = str(context_mode or "").strip().lower() == "reading"
         context = ChatContext(
-            source_text=source_text,
-            translated_text=translated_text,
+            source_text=source_text if grounded else "",
+            translated_text=translated_text if grounded else "",
             reading=ReadingContext(
-                resource_url=resource_url,
-                resource_title=resource_title,
-                section_heading=section_heading,
-                context_before=context_before,
-                context_after=context_after,
-                source_kind=source_kind,
+                resource_url=resource_url if grounded else "",
+                resource_title=resource_title if grounded else "",
+                section_heading=section_heading if grounded else "",
+                context_before=context_before if grounded else "",
+                context_after=context_after if grounded else "",
+                source_kind=source_kind if grounded else "",
             ),
         )
         return ChatRequest(

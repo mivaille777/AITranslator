@@ -22,8 +22,10 @@ export default function CompanionHandoffNavigator() {
   useEffect(() => {
     if (!handoffId || handoffId === lastNavigatedHandoff.current) return
     lastNavigatedHandoff.current = handoffId
-    if (location.pathname !== "/chat") navigate("/chat")
-  }, [handoffId, location.pathname, navigate])
+    if (location.pathname !== "/chat" || location.search) {
+      navigate("/chat")
+    }
+  }, [handoffId, location.pathname, location.search, navigate])
 
   return null
 }

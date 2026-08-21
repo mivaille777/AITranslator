@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from backend.models.quick_actions import ReadingContextPayload
 
@@ -31,6 +31,7 @@ class CompanionDismissRequest(BaseModel):
 
 
 CompanionChatRole = Literal["user", "assistant"]
+CompanionChatContextMode = Literal["general", "reading"]
 
 
 class CompanionChatMessage(BaseModel):
@@ -38,12 +39,37 @@ class CompanionChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=30_000)
 
 
-class CompanionChatRequest(ReadingContextPayload):
+class CompanionChatRequest(BaseModel):
     conversation_id: str = Field(default="", max_length=128)
     session_id: str = Field(min_length=1, max_length=128)
     user_message: str = Field(min_length=1, max_length=20_000)
     history: list[CompanionChatMessage] = Field(default_factory=list, max_length=32)
     request_id: int = Field(default=0, ge=0)
+    context_mode: CompanionChatContextMode = "reading"
+    source_text: str = Field(default="", max_length=20_000)
+    translated_text: str = Field(default="", max_length=50_000)
+    source_language: str = Field(default="auto", max_length=64)
+    target_language: str = Field(default="zh-CN", max_length=64)
+    resource_url: str = Field(default="", max_length=4096)
+    resource_title: str = Field(default="", max_length=1024)
+    section_heading: str = Field(default="", max_length=1024)
+    context_before: str = Field(default="", max_length=4000)
+    context_after: str = Field(default="", max_length=4000)
+    source_kind: str = Field(default="", max_length=128)
+
+    @field_validator("source_language", "target_language")
+    @classmethod
+    def validate_language(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("language code must not be empty")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_reading_context(self) -> "CompanionChatRequest":
+        if self.context_mode == "reading" and not self.source_text.strip():
+            raise ValueError("Reading-grounded chat requires selected source text.")
+        return self
 
 
 class CompanionChatResponse(BaseModel):

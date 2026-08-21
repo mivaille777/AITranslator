@@ -12,13 +12,19 @@ import {
   streamCompanionChat,
   type CompanionChatStreamHandle,
 } from "../../api/companion-stream"
-import { getConversation, rewindConversation } from "../../api/conversations"
+import {
+  getConversation,
+  rewindConversation,
+  updateConversationContext,
+} from "../../api/conversations"
 import { saveResearchNote } from "../../api/quick-actions"
 import type {
+  ChatContextMode,
   CompanionChatMessage,
   CompanionChatRequest,
   CompanionChatStreamEvent,
   CompanionHandoff,
+  ConversationContextUpdate,
   ConversationDetail,
   ConversationMessage,
   ResearchNoteSaveRequest,
@@ -30,7 +36,7 @@ import { EmptyState } from "../../shared/ui/EmptyState"
 import ConversationHistoryPanel from "./ConversationHistoryPanel"
 
 type MessageStatus = "complete" | "streaming" | "cancelled" | "error"
-type ContextMode = "none" | "handoff" | "stored" | "draft"
+type ContextOrigin = "none" | "handoff" | "stored" | "draft"
 
 interface WorkspaceMessage extends CompanionChatMessage {
   id: string
@@ -48,7 +54,49 @@ interface StreamEventContext {
   localAssistantId: string
 }
 
-type ActiveContext = CompanionHandoff | ConversationDetail
+interface ChatContextSnapshot {
+  source_text: string
+  translated_text: string
+  source_language: string
+  target_language: string
+  resource_url: string
+  resource_title: string
+  section_heading: string
+  context_before: string
+  context_after: string
+  source_kind: string
+  ai_content?: string
+  ai_action?: string
+}
+
+const EMPTY_CONTEXT: ChatContextSnapshot = {
+  source_text: "",
+  translated_text: "",
+  source_language: "auto",
+  target_language: "zh-CN",
+  resource_url: "",
+  resource_title: "",
+  section_heading: "",
+  context_before: "",
+  context_after: "",
+  source_kind: "",
+}
+
+function snapshotFromContext(context: CompanionHandoff | ConversationDetail): ChatContextSnapshot {
+  return {
+    source_text: context.source_text,
+    translated_text: context.translated_text,
+    source_language: context.source_language,
+    target_language: context.target_language,
+    resource_url: context.resource_url,
+    resource_title: context.resource_title,
+    section_heading: context.section_heading,
+    context_before: context.context_before,
+    context_after: context.context_after,
+    source_kind: context.source_kind,
+    ...( "ai_content" in context ? { ai_content: context.ai_content, ai_action: context.ai_action } : {}),
+  }
+}
 
 function historyFrom(messages: WorkspaceMessage[]): CompanionChatMessage[] {
   return messages
@@ -90,11 +138,16 @@ export default function CompanionWorkspace() {
   const [activeRequestId, setActiveRequestId] = useState<number | null>(null)
   const [activeConversationId, setActiveConversationId] = useState("")
   const [restoredConversation, setRestoredConversation] = useState<ConversationDetail | null>(null)
-  const [draftContext, setDraftContext] = useState<ActiveContext | null>(null)
+  const [draftContext, setDraftContext] = useState<ChatContextSnapshot | null>(null)
+  const [chatContextMode, setChatContextMode] = useState<ChatContextMode>("general")
   const [openingConversation, setOpeningConversation] = useState(false)
   const [branchingMessageId, setBranchingMessageId] = useState("")
+  const [contextUpdating, setContextUpdating] = useState(false)
+  const [editingMessageId, setEditingMessageId] = useState("")
+  const [editingText, setEditingText] = useState("")
   const handoffIdRef = useRef("")
-  const contextModeRef = useRef<ContextMode>("none")
+  const contextOriginRef = useRef<ContextOrigin>("none")
+  const contextModeRef = useRef<ChatContextMode>("general")
   const scopeRef = useRef("")
   const sessionIdRef = useRef("")
   const requestCounterRef = useRef(0)
@@ -119,7 +172,9 @@ export default function CompanionWorkspace() {
 
   const handoff = handoffQuery.data?.handoff ?? null
   const chatAvailable = chatStatusQuery.data?.available ?? false
-  const activeContext: ActiveContext | null = draftContext ?? restoredConversation ?? handoff
+  const restoredSnapshot = restoredConversation ? snapshotFromContext(restoredConversation) : null
+  const handoffSnapshot = handoff ? snapshotFromContext(handoff) : null
+  const activeContext = draftContext ?? restoredSnapshot ?? handoffSnapshot
   const routedConversationId = searchParams.get("conversation") ?? ""
 
   const setConversationRoute = useCallback((conversationId: string) => {
@@ -134,6 +189,11 @@ export default function CompanionWorkspace() {
     setActiveConversationId(conversationId)
   }, [])
 
+  const applyContextMode = useCallback((mode: ChatContextMode) => {
+    contextModeRef.current = mode
+    setChatContextMode(mode)
+  }, [])
+
   const closeActiveStream = useCallback(() => {
     streamHandleRef.current?.cancel()
     streamHandleRef.current?.close()
@@ -144,17 +204,20 @@ export default function CompanionWorkspace() {
 
   const resetToHandoff = useCallback((nextHandoff: CompanionHandoff) => {
     closeActiveStream()
-    contextModeRef.current = "handoff"
+    contextOriginRef.current = "handoff"
     scopeRef.current = `handoff:${nextHandoff.handoff_id}`
     sessionIdRef.current = `companion-${nextHandoff.handoff_id}`
-    setDraftContext(null)
+    setDraftContext(snapshotFromContext(nextHandoff))
     setRestoredConversation(null)
+    applyContextMode("reading")
     applyConversationId("")
     setMessages([])
     setDraft(nextHandoff.suggested_prompt ?? "")
     setErrorMessage("")
+    setEditingMessageId("")
+    setEditingText("")
     setConversationRoute("")
-  }, [applyConversationId, closeActiveStream, setConversationRoute])
+  }, [applyContextMode, applyConversationId, closeActiveStream, setConversationRoute])
 
   const openConversation = useCallback(async (conversationId: string, updateRoute = true) => {
     if (!conversationId || openingConversationRef.current) return
@@ -173,14 +236,17 @@ export default function CompanionWorkspace() {
         queryFn: () => getConversation(conversationId),
         staleTime: 0,
       })
-      contextModeRef.current = "stored"
+      contextOriginRef.current = "stored"
       scopeRef.current = `stored:${conversation.conversation_id}`
       sessionIdRef.current = conversation.session_id
       setDraftContext(null)
       setRestoredConversation(conversation)
+      applyContextMode(conversation.context_mode)
       applyConversationId(conversation.conversation_id)
       setMessages(restoredMessages(conversation.messages))
       setDraft("")
+      setEditingMessageId("")
+      setEditingText("")
       if (updateRoute) setConversationRoute(conversation.conversation_id)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to open conversation.")
@@ -188,30 +254,39 @@ export default function CompanionWorkspace() {
       openingConversationRef.current = false
       setOpeningConversation(false)
     }
-  }, [applyConversationId, closeActiveStream, messages.length, queryClient, setConversationRoute])
+  }, [applyContextMode, applyConversationId, closeActiveStream, messages.length, queryClient, setConversationRoute])
 
   useEffect(() => {
     const nextId = handoff?.handoff_id ?? ""
-    if (nextId === handoffIdRef.current) return
-
-    handoffIdRef.current = nextId
-    queueMicrotask(() => {
-      if (handoff) {
-        resetToHandoff(handoff)
-      } else if (contextModeRef.current === "handoff") {
-        closeActiveStream()
-        contextModeRef.current = "none"
-        scopeRef.current = ""
-        sessionIdRef.current = ""
-        setDraftContext(null)
-        setRestoredConversation(null)
-        applyConversationId("")
-        setMessages([])
-        setDraft("")
-        setErrorMessage("")
+    if (!nextId) {
+      if (contextOriginRef.current === "handoff") {
+        queueMicrotask(() => {
+          contextOriginRef.current = "none"
+          scopeRef.current = ""
+          sessionIdRef.current = ""
+          setDraftContext(null)
+          setRestoredConversation(null)
+          applyContextMode("general")
+          applyConversationId("")
+          setMessages([])
+          setDraft("")
+          setErrorMessage("")
+        })
       }
-    })
-  }, [applyConversationId, closeActiveStream, handoff, resetToHandoff])
+      handoffIdRef.current = ""
+      return
+    }
+
+    if (routedConversationId) {
+      handoffIdRef.current = nextId
+      return
+    }
+
+    const shouldConsume = nextId !== handoffIdRef.current || contextOriginRef.current === "stored"
+    if (!shouldConsume || !handoff) return
+    handoffIdRef.current = nextId
+    queueMicrotask(() => resetToHandoff(handoff))
+  }, [applyContextMode, applyConversationId, handoff, resetToHandoff, routedConversationId])
 
   useEffect(() => {
     if (!routedConversationId) return
@@ -230,11 +305,12 @@ export default function CompanionWorkspace() {
     mutationFn: (handoffId: string) => dismissCompanionHandoff(handoffId),
     onMutate: closeActiveStream,
     onSuccess: () => {
-      contextModeRef.current = "none"
+      contextOriginRef.current = "none"
       scopeRef.current = ""
       sessionIdRef.current = ""
-      setDraftContext(null)
+      setDraftContext(EMPTY_CONTEXT)
       setRestoredConversation(null)
+      applyContextMode("general")
       applyConversationId("")
       setMessages([])
       setDraft("")
@@ -257,31 +333,35 @@ export default function CompanionWorkspace() {
       const conversation = await getConversation(conversationId)
       if (scopeRef.current !== expectedScope) return
       setMessages(restoredMessages(conversation.messages))
-      if (contextModeRef.current === "stored") setRestoredConversation(conversation)
+      setRestoredConversation(conversation)
+      setDraftContext(null)
+      applyContextMode(conversation.context_mode)
       queryClient.setQueryData(queryKeys.conversations.detail(conversationId), conversation)
       void queryClient.invalidateQueries({ queryKey: ["conversations"] })
     } catch {
       // Keep the transport error already shown to the user.
     }
-  }, [queryClient])
+  }, [applyContextMode, queryClient])
 
   function useCurrentReading() {
     if (!handoff) return
     resetToHandoff(handoff)
   }
 
-  function startNewConversation() {
-    if (!activeContext) return
+  function startNewGeneralConversation() {
     closeActiveStream()
-    contextModeRef.current = "draft"
-    scopeRef.current = uniqueScope("draft")
+    contextOriginRef.current = "draft"
+    scopeRef.current = uniqueScope("draft-general")
     sessionIdRef.current = uniqueScope("session")
-    setDraftContext(activeContext)
+    setDraftContext(activeContext ?? EMPTY_CONTEXT)
     setRestoredConversation(null)
+    applyContextMode("general")
     applyConversationId("")
     setMessages([])
     setDraft("")
     setErrorMessage("")
+    setEditingMessageId("")
+    setEditingText("")
     setConversationRoute("")
   }
 
@@ -290,16 +370,100 @@ export default function CompanionWorkspace() {
       resetToHandoff(handoff)
       return
     }
-    contextModeRef.current = "none"
-    scopeRef.current = ""
-    sessionIdRef.current = ""
-    setDraftContext(null)
+    contextOriginRef.current = "draft"
+    scopeRef.current = uniqueScope("draft-general")
+    sessionIdRef.current = uniqueScope("session")
+    setDraftContext(EMPTY_CONTEXT)
     setRestoredConversation(null)
+    applyContextMode("general")
     applyConversationId("")
     setMessages([])
     setDraft("")
     setErrorMessage("")
     setConversationRoute("")
+  }
+
+  async function persistContextUpdate(payload: ConversationContextUpdate) {
+    const conversationId = conversationIdRef.current
+    if (!conversationId) return null
+    const updated = await updateConversationContext(conversationId, payload)
+    setRestoredConversation(updated)
+    setDraftContext(null)
+    contextOriginRef.current = "stored"
+    scopeRef.current = `stored:${updated.conversation_id}`
+    sessionIdRef.current = updated.session_id
+    applyContextMode(updated.context_mode)
+    queryClient.setQueryData(queryKeys.conversations.detail(conversationId), updated)
+    void queryClient.invalidateQueries({ queryKey: ["conversations"] })
+    return updated
+  }
+
+  async function detachContext() {
+    if (activeRequestRef.current !== null || contextUpdating) return
+    setContextUpdating(true)
+    setErrorMessage("")
+    try {
+      if (conversationIdRef.current) {
+        await persistContextUpdate({ context_mode: "general" })
+      } else {
+        applyContextMode("general")
+        if (!draftContext) setDraftContext(activeContext ?? EMPTY_CONTEXT)
+        if (contextOriginRef.current === "handoff") contextOriginRef.current = "draft"
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to detach reading context.")
+    } finally {
+      setContextUpdating(false)
+    }
+  }
+
+  async function attachSavedContext() {
+    if (!activeContext?.source_text || activeRequestRef.current !== null || contextUpdating) return
+    setContextUpdating(true)
+    setErrorMessage("")
+    try {
+      if (conversationIdRef.current) {
+        await persistContextUpdate({ context_mode: "reading" })
+      } else {
+        applyContextMode("reading")
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to attach saved reading context.")
+    } finally {
+      setContextUpdating(false)
+    }
+  }
+
+  async function attachCurrentReading() {
+    if (!handoff || activeRequestRef.current !== null || contextUpdating) return
+    const current = snapshotFromContext(handoff)
+    setContextUpdating(true)
+    setErrorMessage("")
+    try {
+      if (conversationIdRef.current) {
+        await persistContextUpdate({
+          context_mode: "reading",
+          source_text: current.source_text,
+          translated_text: current.translated_text,
+          source_language: current.source_language,
+          target_language: current.target_language,
+          resource_url: current.resource_url,
+          resource_title: current.resource_title,
+          section_heading: current.section_heading,
+          context_before: current.context_before,
+          context_after: current.context_after,
+          source_kind: current.source_kind,
+        })
+      } else {
+        setDraftContext(current)
+        applyContextMode("reading")
+        if (contextOriginRef.current === "none") contextOriginRef.current = "draft"
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Unable to attach current reading context.")
+    } finally {
+      setContextUpdating(false)
+    }
   }
 
   function finishRequest(requestId: number) {
@@ -337,12 +501,7 @@ export default function CompanionWorkspace() {
       setMessages((current) =>
         current.map((message) =>
           message.id === localAssistantId
-            ? {
-                ...message,
-                content: event.accumulated_text,
-                serverMessageId: event.message_id,
-                status: "streaming",
-              }
+            ? { ...message, content: event.accumulated_text, serverMessageId: event.message_id, status: "streaming" }
             : message,
         ),
       )
@@ -372,12 +531,7 @@ export default function CompanionWorkspace() {
       setMessages((current) =>
         current.map((message) =>
           message.id === localAssistantId
-            ? {
-                ...message,
-                serverMessageId: event.message_id,
-                status: "cancelled",
-                errorCode: "user_cancelled",
-              }
+            ? { ...message, serverMessageId: event.message_id, status: "cancelled", errorCode: "user_cancelled" }
             : message,
         ),
       )
@@ -388,12 +542,7 @@ export default function CompanionWorkspace() {
     setMessages((current) =>
       current.map((message) =>
         message.id === localAssistantId
-          ? {
-              ...message,
-              serverMessageId: event.message_id,
-              status: "error",
-              errorCode: event.code,
-            }
+          ? { ...message, serverMessageId: event.message_id, status: "error", errorCode: event.code }
           : message,
       ),
     )
@@ -402,7 +551,12 @@ export default function CompanionWorkspace() {
   }
 
   function startExchange(userMessage: string, baseMessages: WorkspaceMessage[] = messages) {
-    if (!activeContext || activeRequestRef.current !== null) return
+    const context = activeContext ?? EMPTY_CONTEXT
+    if (activeRequestRef.current !== null) return
+    if (contextModeRef.current === "reading" && !context.source_text.trim()) {
+      setErrorMessage("Reading-grounded Chat requires an attached selection.")
+      return
+    }
     const normalized = userMessage.trim()
     if (!normalized) return
 
@@ -426,29 +580,26 @@ export default function CompanionWorkspace() {
       conversation_id: conversationIdRef.current,
       session_id: sessionIdRef.current || uniqueScope("session"),
       user_message: normalized,
-      source_text: activeContext.source_text,
-      translated_text: activeContext.translated_text,
-      source_language: activeContext.source_language,
-      target_language: activeContext.target_language,
-      resource_url: activeContext.resource_url,
-      resource_title: activeContext.resource_title,
-      section_heading: activeContext.section_heading,
-      context_before: activeContext.context_before,
-      context_after: activeContext.context_after,
-      source_kind: activeContext.source_kind,
+      context_mode: contextModeRef.current,
+      source_text: context.source_text,
+      translated_text: context.translated_text,
+      source_language: context.source_language,
+      target_language: context.target_language,
+      resource_url: context.resource_url,
+      resource_title: context.resource_title,
+      section_heading: context.section_heading,
+      context_before: context.context_before,
+      context_after: context.context_after,
+      source_kind: context.source_kind,
       history,
       request_id: requestId,
     }
 
-    const scopeId = scopeRef.current
+    const scopeId = scopeRef.current || uniqueScope("draft-general")
+    if (!scopeRef.current) scopeRef.current = scopeId
     streamHandleRef.current = streamCompanionChat(payload, {
       onEvent: (streamEvent) =>
-        handleStreamEvent(streamEvent, {
-          scopeId,
-          requestId,
-          localUserId,
-          localAssistantId,
-        }),
+        handleStreamEvent(streamEvent, { scopeId, requestId, localUserId, localAssistantId }),
       onTransportError: (error) => {
         if (scopeRef.current !== scopeId || activeRequestRef.current !== requestId) return
         setMessages((current) =>
@@ -489,10 +640,13 @@ export default function CompanionWorkspace() {
     try {
       const rewound = await rewindConversation(conversationId, userMessageId)
       const baseMessages = restoredMessages(rewound.messages)
-      if (contextModeRef.current === "stored") setRestoredConversation(rewound)
+      setRestoredConversation(rewound)
+      setDraftContext(null)
       setMessages(baseMessages)
       queryClient.setQueryData(queryKeys.conversations.detail(conversationId), rewound)
       void queryClient.invalidateQueries({ queryKey: ["conversations"] })
+      setEditingMessageId("")
+      setEditingText("")
       startExchange(replacementText, baseMessages)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Unable to rewrite conversation branch.")
@@ -501,20 +655,31 @@ export default function CompanionWorkspace() {
     }
   }
 
-  function editAndResend(message: WorkspaceMessage) {
-    const edited = window.prompt("Edit message and resend", message.content)?.trim()
-    if (!edited || edited === message.content) return
+  function beginEditMessage(message: WorkspaceMessage) {
+    setEditingMessageId(message.id)
+    setEditingText(message.content)
+  }
+
+  function cancelEditMessage() {
+    setEditingMessageId("")
+    setEditingText("")
+  }
+
+  function commitEditMessage(message: WorkspaceMessage) {
+    const edited = editingText.trim()
+    if (!edited || edited === message.content) {
+      cancelEditMessage()
+      return
+    }
     void rewriteFromUser(message, edited)
   }
 
   function saveLinkedNote() {
     const conversationId = conversationIdRef.current
-    if (!activeContext || !conversationId) return
+    if (!activeContext || !conversationId || chatContextMode !== "reading" || !activeContext.source_text) return
     const lastAssistant = [...messages]
       .reverse()
       .find((message) => message.role === "assistant" && message.status === "complete")
-    const handoffAiContent = "ai_content" in activeContext ? activeContext.ai_content : ""
-    const handoffAiAction = "ai_action" in activeContext ? activeContext.ai_action : ""
     saveNoteMutation.mutate({
       source_text: activeContext.source_text,
       translated_text: activeContext.translated_text,
@@ -526,221 +691,213 @@ export default function CompanionWorkspace() {
       context_before: activeContext.context_before,
       context_after: activeContext.context_after,
       source_kind: activeContext.source_kind,
-      ai_content: lastAssistant?.content || handoffAiContent,
-      ai_action: lastAssistant ? "conversation_answer" : handoffAiAction,
+      ai_content: lastAssistant?.content || activeContext.ai_content || "",
+      ai_action: lastAssistant ? "conversation_answer" : activeContext.ai_action || "",
       conversation_id: conversationId,
     })
   }
 
-  const contextTitle = activeContext
-    ? activeContext.resource_title || activeContext.section_heading || "Current selection"
-    : "No active context"
+  const contextTitle = chatContextMode === "general"
+    ? "General Chat"
+    : activeContext?.resource_title || activeContext?.section_heading || "Reading context"
+  const canAttachSaved = Boolean(activeContext?.source_text)
+  const branchBusy = Boolean(branchingMessageId) || activeRequestId !== null
 
   return (
-    <section className="grid min-h-[680px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:grid-cols-[250px_330px_minmax(0,1fr)]">
+    <section className="grid min-h-[680px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:grid-cols-[270px_340px_minmax(0,1fr)]">
       <ConversationHistoryPanel
         activeConversationId={activeConversationId}
         hasCurrentReading={Boolean(handoff)}
-        canStartNewConversation={Boolean(activeContext)}
         onOpen={(conversationId) => void openConversation(conversationId)}
         onUseCurrentReading={useCurrentReading}
-        onNewConversation={startNewConversation}
+        onNewGeneralConversation={startNewGeneralConversation}
         onDeletedActive={handleDeletedActive}
       />
 
       <aside className="border-b border-slate-200 bg-slate-50/70 p-5 xl:border-b-0 xl:border-r">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              {contextModeRef.current === "stored"
-                ? "Stored context"
-                : contextModeRef.current === "draft"
-                  ? "New thread context"
-                  : "Frozen context"}
-            </p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Chat context</p>
             <h2 className="mt-2 truncate text-sm font-semibold text-slate-900">{contextTitle}</h2>
-            {activeContext?.section_heading && (
-              <p className="mt-1 truncate text-xs text-slate-500">{activeContext.section_heading}</p>
-            )}
           </div>
-          {contextModeRef.current === "handoff" && handoff && (
-            <Button
-              size="xs"
-              disabled={dismissMutation.isPending}
-              onClick={() => dismissMutation.mutate(handoff.handoff_id)}
-            >
-              Clear
-            </Button>
-          )}
+          <Badge tone={chatContextMode === "reading" ? "info" : "neutral"}>
+            {chatContextMode === "reading" ? "Reading-grounded" : "General"}
+          </Badge>
         </div>
 
-        {activeContext ? (
+        <div className="mt-4 grid grid-cols-2 rounded-xl bg-slate-200/70 p-1">
+          <button
+            type="button"
+            disabled={contextUpdating || activeRequestId !== null}
+            className={`rounded-lg px-2 py-2 text-xs font-medium transition ${chatContextMode === "general" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+            onClick={() => void detachContext()}
+          >
+            General
+          </button>
+          <button
+            type="button"
+            disabled={contextUpdating || activeRequestId !== null || (!canAttachSaved && !handoff)}
+            className={`rounded-lg px-2 py-2 text-xs font-medium transition ${chatContextMode === "reading" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 disabled:opacity-40"}`}
+            onClick={() => void (canAttachSaved ? attachSavedContext() : attachCurrentReading())}
+          >
+            Reading
+          </button>
+        </div>
+
+        {chatContextMode === "general" ? (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-xs font-medium text-slate-700">No reading evidence is injected.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              The assistant only receives conversation history and your new message. Detached reading context is kept locally so it can be re-attached later.
+            </p>
+            {handoff && (
+              <Button className="mt-3" size="xs" onClick={() => void attachCurrentReading()} disabled={contextUpdating}>
+                Attach current reading
+              </Button>
+            )}
+          </div>
+        ) : activeContext ? (
           <>
             <ContextPreview context={activeContext} />
-            {"ai_content" in activeContext && activeContext.ai_content && (
+            {handoff && (
+              <Button className="mt-3" size="xs" onClick={() => void attachCurrentReading()} disabled={contextUpdating}>
+                Replace with current reading
+              </Button>
+            )}
+            {activeContext.ai_content && (
               <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/70 p-3">
                 <div className="flex items-center gap-2">
                   <Badge tone="info">Quick Action</Badge>
-                  {activeContext.ai_action && (
-                    <span className="text-[10px] text-cyan-700/70">{activeContext.ai_action}</span>
-                  )}
+                  {activeContext.ai_action && <span className="text-[10px] text-cyan-700/70">{activeContext.ai_action}</span>}
                 </div>
-                <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">
-                  {activeContext.ai_content}
-                </p>
+                <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">{activeContext.ai_content}</p>
               </div>
             )}
             {activeContext.resource_url && (
-              <p className="mt-4 break-all font-mono text-[10px] leading-4 text-slate-400">
-                {activeContext.resource_url}
-              </p>
+              <p className="mt-4 break-all font-mono text-[10px] leading-4 text-slate-400">{activeContext.resource_url}</p>
             )}
             {activeConversationId && (
               <div className="mt-4">
                 <Button size="xs" disabled={saveNoteMutation.isPending} onClick={saveLinkedNote}>
                   {saveNoteMutation.isPending ? "Saving…" : "Save linked note"}
                 </Button>
-                {saveNoteMutation.isSuccess && (
-                  <p className="mt-2 text-[10px] text-emerald-600">Research Note linked to this conversation.</p>
-                )}
+                {saveNoteMutation.isSuccess && <p className="mt-2 text-[10px] text-emerald-600">Research Note linked to this conversation.</p>}
               </div>
             )}
           </>
         ) : (
-          <p className="mt-4 text-xs leading-5 text-slate-500">
-            Open a saved conversation or create a new AI Chat handoff from the reading overlay.
-          </p>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Attach the current reading selection to use grounded chat.</p>
+        )}
+
+        {contextOriginRef.current === "handoff" && handoff && (
+          <Button className="mt-4" size="xs" disabled={dismissMutation.isPending} onClick={() => dismissMutation.mutate(handoff.handoff_id)}>
+            Clear handoff
+          </Button>
         )}
       </aside>
 
       <div className="flex min-h-0 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-6">
-          {!activeContext && (
+          {messages.length === 0 && (
             <EmptyState
-              title="No active AI Chat context"
-              description="Open a saved conversation from the history panel, select text in the browser and choose AI Chat from the overlay, or reopen a Research Note."
-              actions={(
+              title={chatContextMode === "general" ? "Start a General Chat" : "Ask about this reading context"}
+              description={chatContextMode === "general"
+                ? "This conversation is not grounded in a browser selection. You can attach reading context at any time."
+                : "The selected passage and bounded nearby context will be supplied as reference evidence."}
+              actions={!activeContext && chatContextMode === "reading" ? (
                 <>
-                  <Link to="/reading" className={buttonClassName()}>
-                    Reading Context
-                  </Link>
-                  <Link to="/research" className={buttonClassName({ variant: "primary" })}>
-                    Research Notes
-                  </Link>
+                  <Link to="/reading" className={buttonClassName()}>Reading Context</Link>
+                  <Link to="/research" className={buttonClassName({ variant: "primary" })}>Research Notes</Link>
                 </>
-              )}
+              ) : undefined}
             />
           )}
 
-          {activeContext && messages.length === 0 && (
-            <div className="rounded-2xl bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-500">
-              {contextModeRef.current === "stored"
-                ? "This conversation was restored from local SQLite. Continue asking questions and new streamed messages will be committed to the same conversation."
-                : contextModeRef.current === "draft"
-                  ? "This is a fresh thread using the current frozen reading context. SQLite will create the conversation only after the first message is accepted."
-                  : "当前划词、译文、网页标题、章节和前后文已经冻结为这次对话上下文。第一次发送后会创建持久化 conversation，回复通过本地 FastAPI WebSocket 增量写入 SQLite。"}
-            </div>
-          )}
-
-          {activeContext && (
-            <div className="mt-4 space-y-3">
-              {messages.map((message, index) => {
-                const userBefore = message.role === "assistant" ? previousUserMessage(messages, index) : null
-                const userServerId = message.role === "user" ? message.serverMessageId || message.id : ""
-                const branchBusy = Boolean(branchingMessageId) || activeRequestId !== null
-                return (
-                  <div
-                    key={message.id}
-                    className={
-                      message.role === "user"
-                        ? "ml-auto max-w-[78%] rounded-2xl bg-slate-950 px-4 py-3 text-sm leading-6 text-white"
-                        : "max-w-[88%] rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"
-                    }
-                  >
-                    {message.role === "assistant" ? (
-                      <>
-                        {message.content ? (
-                          <div className="max-w-none"><ReactMarkdown>{message.content}</ReactMarkdown></div>
-                        ) : message.status === "streaming" ? (
-                          <div className="flex items-center gap-2 text-slate-400">
-                            <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-700" />
-                            Waiting for the first token…
-                          </div>
-                        ) : (
-                          <p className="text-slate-400">
-                            {message.status === "cancelled" ? "Generation stopped." : "No response content."}
-                          </p>
-                        )}
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          {message.status === "streaming" && <Badge tone="info">Streaming</Badge>}
-                          {message.status === "cancelled" && <Badge tone="warning">Stopped</Badge>}
-                          {message.status === "error" && <Badge tone="danger">Failed</Badge>}
-                          {message.status === "complete" && message.provider && (
-                            <Badge tone="success">
-                              {message.provider}{message.model ? ` · ${message.model}` : ""}
-                            </Badge>
-                          )}
-                          {message.errorCode && message.status !== "complete" && (
-                            <span className="text-[10px] text-slate-400">{message.errorCode}</span>
-                          )}
-                          {userBefore && (userBefore.serverMessageId || !userBefore.id.startsWith("user-local-")) && message.status !== "streaming" && (
-                            <button
-                              type="button"
-                              disabled={branchBusy}
-                              className="text-[10px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-40"
-                              onClick={() => void rewriteFromUser(userBefore, userBefore.content)}
-                            >
-                              {message.status === "complete" ? "Regenerate" : "Retry"}
-                            </button>
-                          )}
+          <div className="mt-4 space-y-3">
+            {messages.map((message, index) => {
+              const userBefore = message.role === "assistant" ? previousUserMessage(messages, index) : null
+              const userServerId = message.role === "user" ? message.serverMessageId || message.id : ""
+              const editing = message.role === "user" && editingMessageId === message.id
+              return (
+                <div
+                  key={message.id}
+                  className={message.role === "user"
+                    ? "ml-auto max-w-[78%] rounded-2xl bg-slate-950 px-4 py-3 text-sm leading-6 text-white"
+                    : "max-w-[88%] rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"}
+                >
+                  {message.role === "assistant" ? (
+                    <>
+                      {message.content ? (
+                        <div className="max-w-none"><ReactMarkdown>{message.content}</ReactMarkdown></div>
+                      ) : message.status === "streaming" ? (
+                        <div className="flex items-center gap-2 text-slate-400">
+                          <span className="h-3 w-3 animate-spin rounded-full border border-slate-300 border-t-slate-700" />
+                          Waiting for the first token…
                         </div>
-                      </>
-                    ) : (
-                      <>
-                        <p className="whitespace-pre-wrap">{message.content}</p>
-                        {userServerId && !userServerId.startsWith("user-local-") && (
-                          <div className="mt-2 text-right">
-                            <button
-                              type="button"
-                              disabled={branchBusy}
-                              className="text-[10px] text-slate-400 hover:text-white disabled:opacity-40"
-                              onClick={() => editAndResend(message)}
-                            >
-                              Edit & resend
-                            </button>
-                          </div>
+                      ) : (
+                        <p className="text-slate-400">{message.status === "cancelled" ? "Generation stopped." : "No response content."}</p>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {message.status === "streaming" && <Badge tone="info">Streaming</Badge>}
+                        {message.status === "cancelled" && <Badge tone="warning">Stopped</Badge>}
+                        {message.status === "error" && <Badge tone="danger">Failed</Badge>}
+                        {message.status === "complete" && message.provider && <Badge tone="success">{message.provider}{message.model ? ` · ${message.model}` : ""}</Badge>}
+                        {message.errorCode && message.status !== "complete" && <span className="text-[10px] text-slate-400">{message.errorCode}</span>}
+                        {userBefore && (userBefore.serverMessageId || !userBefore.id.startsWith("user-local-")) && message.status !== "streaming" && (
+                          <button
+                            type="button"
+                            disabled={branchBusy}
+                            className="text-[10px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-40"
+                            onClick={() => void rewriteFromUser(userBefore, userBefore.content)}
+                          >
+                            {message.status === "complete" ? "Regenerate" : "Retry"}
+                          </button>
                         )}
-                      </>
-                    )}
-                  </div>
-                )
-              })}
+                      </div>
+                    </>
+                  ) : editing ? (
+                    <div>
+                      <textarea
+                        autoFocus
+                        className="min-h-24 w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm leading-6 text-white outline-none focus:border-slate-500"
+                        value={editingText}
+                        onChange={(event) => setEditingText(event.target.value)}
+                      />
+                      <div className="mt-2 flex justify-end gap-2">
+                        <button type="button" className="text-[10px] text-slate-400 hover:text-white" onClick={cancelEditMessage}>Cancel</button>
+                        <button type="button" className="rounded bg-white px-2 py-1 text-[10px] font-medium text-slate-900 disabled:opacity-40" disabled={!editingText.trim() || branchBusy} onClick={() => commitEditMessage(message)}>Resend</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      {userServerId && !userServerId.startsWith("user-local-") && (
+                        <div className="mt-2 text-right">
+                          <button type="button" disabled={branchBusy} className="text-[10px] text-slate-400 hover:text-white disabled:opacity-40" onClick={() => beginEditMessage(message)}>Edit & resend</button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })}
 
-              {errorMessage && (
-                <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorMessage}</p>
-              )}
-            </div>
-          )}
+            {errorMessage && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{errorMessage}</p>}
+          </div>
         </div>
 
         <form className="border-t border-slate-100 p-4" onSubmit={handleSubmit}>
           {!chatAvailable && chatStatusQuery.isSuccess && (
-            <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">
-              AI Chat 未配置：{chatStatusQuery.data.detail}
-            </p>
+            <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">AI Chat 未配置：{chatStatusQuery.data.detail}</p>
           )}
           <div className="flex items-end gap-2">
             <textarea
               className="max-h-36 min-h-12 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
-              placeholder={
-                activeContext
-                  ? activeRequestId === null
-                    ? "继续问这段内容…"
-                    : "当前回复仍在生成，可先编辑下一条消息…"
-                  : "先打开一个 conversation 或当前阅读上下文…"
-              }
+              placeholder={activeRequestId === null
+                ? chatContextMode === "general" ? "Ask anything…" : "继续问这段内容…"
+                : "当前回复仍在生成，可先编辑下一条消息…"}
               value={draft}
-              disabled={!activeContext || openingConversation}
+              disabled={openingConversation}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -750,22 +907,15 @@ export default function CompanionWorkspace() {
               }}
             />
             {activeRequestId !== null ? (
-              <Button type="button" variant="danger" size="md" onClick={cancelStream}>
-                停止
-              </Button>
+              <Button type="button" variant="danger" size="md" onClick={cancelStream}>停止</Button>
             ) : (
-              <Button
-                type="submit"
-                variant="primary"
-                size="md"
-                disabled={!activeContext || !chatAvailable || !draft.trim() || openingConversation || Boolean(branchingMessageId)}
-              >
+              <Button type="submit" variant="primary" size="md" disabled={!chatAvailable || !draft.trim() || openingConversation || Boolean(branchingMessageId)}>
                 发送
               </Button>
             )}
           </div>
           <p className="mt-2 text-[10px] text-slate-400">
-            Enter 发送 · Shift+Enter 换行 · WebSocket Streaming · SQLite branch lifecycle · URL-routed conversation
+            Enter 发送 · Shift+Enter 换行 · {chatContextMode === "reading" ? "Reading-grounded" : "General"} · WebSocket Streaming · SQLite branches
           </p>
         </form>
       </div>
@@ -773,7 +923,7 @@ export default function CompanionWorkspace() {
   )
 }
 
-function ContextPreview({ context }: { context: ActiveContext }) {
+function ContextPreview({ context }: { context: ChatContextSnapshot }) {
   return (
     <div className="mt-4 space-y-3">
       <div className="rounded-xl border border-slate-200 bg-white p-3">

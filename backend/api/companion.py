@@ -124,6 +124,7 @@ def send_companion_chat(
             source_kind=payload.source_kind,
             history=tuple((item.role, item.content) for item in payload.history),
             request_id=payload.request_id,
+            context_mode=payload.context_mode,
         )
     except AIConfigurationError as exc:
         raise HTTPException(
@@ -137,6 +138,7 @@ def send_companion_chat(
         ) from exc
 
     return CompanionChatResponse(
+        conversation_id=payload.conversation_id,
         session_id=result.session_id,
         user_message=result.user_message,
         output_text=result.output_text,

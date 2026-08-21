@@ -52,7 +52,31 @@ def _stream_kwargs(payload: Any) -> dict[str, Any]:
         "source_kind": payload.source_kind,
         "history": tuple((item.role, item.content) for item in payload.history),
         "request_id": payload.request_id,
+        "context_mode": payload.context_mode,
     }
+
+
+def _begin_exchange(store: ConversationStoreService, payload: Any, request_id: int):
+    kwargs = {
+        "conversation_id": payload.conversation_id,
+        "session_id": payload.session_id,
+        "user_message": payload.user_message,
+        "request_id": request_id,
+        "source_text": payload.source_text,
+        "translated_text": payload.translated_text,
+        "source_language": payload.source_language,
+        "target_language": payload.target_language,
+        "resource_url": payload.resource_url,
+        "resource_title": payload.resource_title,
+        "section_heading": payload.section_heading,
+        "context_before": payload.context_before,
+        "context_after": payload.context_after,
+        "source_kind": payload.source_kind,
+    }
+    context_aware = getattr(store, "begin_exchange_with_context_mode", None)
+    if callable(context_aware):
+        return context_aware(context_mode=payload.context_mode, **kwargs)
+    return store.begin_exchange(**kwargs)
 
 
 def _validation_message(exc: ValidationError) -> str:
@@ -164,22 +188,7 @@ async def stream_companion_chat(
         payload = start.request
         request_id = payload.request_id
         try:
-            exchange = store.begin_exchange(
-                conversation_id=payload.conversation_id,
-                session_id=payload.session_id,
-                user_message=payload.user_message,
-                request_id=request_id,
-                source_text=payload.source_text,
-                translated_text=payload.translated_text,
-                source_language=payload.source_language,
-                target_language=payload.target_language,
-                resource_url=payload.resource_url,
-                resource_title=payload.resource_title,
-                section_heading=payload.section_heading,
-                context_before=payload.context_before,
-                context_after=payload.context_after,
-                source_kind=payload.source_kind,
-            )
+            exchange = _begin_exchange(store, payload, request_id)
         except (OSError, ValueError) as exc:
             await websocket.send_json(
                 {
@@ -348,6 +357,3 @@ async def stream_companion_chat(
         for task in (sender_task, receiver_task):
             if task is not None and not task.done():
                 task.cancel()
-        # ``asyncio.to_thread`` cannot forcibly stop the provider thread. The
-        # cooperative Event makes it stop on the next provider delta, while the
-        # message is already durably terminal in SQLite.

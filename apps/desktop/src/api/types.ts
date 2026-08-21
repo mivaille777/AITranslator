@@ -209,6 +209,7 @@ export interface CompanionHandoffEnvelope {
 }
 
 export type CompanionChatRole = "user" | "assistant"
+export type ChatContextMode = "general" | "reading"
 
 export interface CompanionChatMessage {
   role: CompanionChatRole
@@ -223,6 +224,7 @@ export interface CompanionChatRequest extends ReadingContextFields {
   translated_text: string
   source_language: string
   target_language: string
+  context_mode: ChatContextMode
   history: CompanionChatMessage[]
   request_id?: number
 }
@@ -318,6 +320,7 @@ export interface ConversationSummary {
   updated_at: string
   provider: string
   model: string
+  context_mode: ChatContextMode
   resource_title: string
   section_heading: string
   source_kind: string
@@ -333,6 +336,20 @@ export interface ConversationDetail extends ConversationSummary, ReadingContextF
 
 export interface ConversationListResponse {
   conversations: ConversationSummary[]
+}
+
+export interface ConversationContextUpdate {
+  context_mode: ChatContextMode
+  source_text?: string
+  translated_text?: string
+  source_language?: string
+  target_language?: string
+  resource_url?: string
+  resource_title?: string
+  section_heading?: string
+  context_before?: string
+  context_after?: string
+  source_kind?: string
 }
 
 export interface ConversationDeleteResponse {

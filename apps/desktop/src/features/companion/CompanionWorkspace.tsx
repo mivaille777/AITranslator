@@ -31,7 +31,8 @@ import type {
 } from "../../api/types"
 import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import { Badge } from "../../shared/ui/Badge"
-import { Button, buttonClassName } from "../../shared/ui/Button"
+import { Button } from "../../shared/ui/Button"
+import { buttonClassName } from "../../shared/ui/button-styles"
 import { EmptyState } from "../../shared/ui/EmptyState"
 import ConversationHistoryPanel from "./ConversationHistoryPanel"
 
@@ -94,7 +95,7 @@ function snapshotFromContext(context: CompanionHandoff | ConversationDetail): Ch
     context_before: context.context_before,
     context_after: context.context_after,
     source_kind: context.source_kind,
-    ...( "ai_content" in context ? { ai_content: context.ai_content, ai_action: context.ai_action } : {}),
+    ...("ai_content" in context ? { ai_content: context.ai_content, ai_action: context.ai_action } : {}),
   }
 }
 
@@ -702,9 +703,15 @@ export default function CompanionWorkspace() {
     : activeContext?.resource_title || activeContext?.section_heading || "Reading context"
   const canAttachSaved = Boolean(activeContext?.source_text)
   const branchBusy = Boolean(branchingMessageId) || activeRequestId !== null
+  const showingHandoff = Boolean(
+    handoff &&
+      !activeConversationId &&
+      chatContextMode === "reading" &&
+      draftContext?.source_text === handoff.source_text,
+  )
 
   return (
-    <section className="grid min-h-[680px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:grid-cols-[270px_340px_minmax(0,1fr)]">
+    <section className="ait-chat-shell ait-surface grid min-h-[680px] overflow-hidden xl:grid-cols-[270px_340px_minmax(0,1fr)]">
       <ConversationHistoryPanel
         activeConversationId={activeConversationId}
         hasCurrentReading={Boolean(handoff)}
@@ -714,7 +721,7 @@ export default function CompanionWorkspace() {
         onDeletedActive={handleDeletedActive}
       />
 
-      <aside className="border-b border-slate-200 bg-slate-50/70 p-5 xl:border-b-0 xl:border-r">
+      <aside className="border-b border-slate-200/70 bg-slate-50/60 p-5 xl:border-b-0 xl:border-r">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Chat context</p>
@@ -725,11 +732,19 @@ export default function CompanionWorkspace() {
           </Badge>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 rounded-xl bg-slate-200/70 p-1">
+        <div className="relative mt-4 grid grid-cols-2 overflow-hidden rounded-[14px] bg-slate-200/70 p-1">
+          <span
+            aria-hidden="true"
+            className={`ait-segment-indicator absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-[11px] bg-white shadow-sm ${
+              chatContextMode === "reading" ? "translate-x-full" : "translate-x-0"
+            }`}
+          />
           <button
             type="button"
             disabled={contextUpdating || activeRequestId !== null}
-            className={`rounded-lg px-2 py-2 text-xs font-medium transition ${chatContextMode === "general" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+            className={`relative z-10 rounded-[11px] px-2 py-2 text-xs font-medium transition-colors ${
+              chatContextMode === "general" ? "text-slate-900" : "text-slate-500"
+            }`}
             onClick={() => void detachContext()}
           >
             General
@@ -737,72 +752,76 @@ export default function CompanionWorkspace() {
           <button
             type="button"
             disabled={contextUpdating || activeRequestId !== null || (!canAttachSaved && !handoff)}
-            className={`rounded-lg px-2 py-2 text-xs font-medium transition ${chatContextMode === "reading" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 disabled:opacity-40"}`}
+            className={`relative z-10 rounded-[11px] px-2 py-2 text-xs font-medium transition-colors disabled:opacity-40 ${
+              chatContextMode === "reading" ? "text-slate-900" : "text-slate-500"
+            }`}
             onClick={() => void (canAttachSaved ? attachSavedContext() : attachCurrentReading())}
           >
             Reading
           </button>
         </div>
 
-        {chatContextMode === "general" ? (
-          <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
-            <p className="text-xs font-medium text-slate-700">No reading evidence is injected.</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              The assistant only receives conversation history and your new message. Detached reading context is kept locally so it can be re-attached later.
-            </p>
-            {handoff && (
-              <Button className="mt-3" size="xs" onClick={() => void attachCurrentReading()} disabled={contextUpdating}>
-                Attach current reading
-              </Button>
-            )}
-          </div>
-        ) : activeContext ? (
-          <>
-            <ContextPreview context={activeContext} />
-            {handoff && (
-              <Button className="mt-3" size="xs" onClick={() => void attachCurrentReading()} disabled={contextUpdating}>
-                Replace with current reading
-              </Button>
-            )}
-            {activeContext.ai_content && (
-              <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/70 p-3">
-                <div className="flex items-center gap-2">
-                  <Badge tone="info">Quick Action</Badge>
-                  {activeContext.ai_action && <span className="text-[10px] text-cyan-700/70">{activeContext.ai_action}</span>}
-                </div>
-                <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">{activeContext.ai_content}</p>
-              </div>
-            )}
-            {activeContext.resource_url && (
-              <p className="mt-4 break-all font-mono text-[10px] leading-4 text-slate-400">{activeContext.resource_url}</p>
-            )}
-            {activeConversationId && (
-              <div className="mt-4">
-                <Button size="xs" disabled={saveNoteMutation.isPending} onClick={saveLinkedNote}>
-                  {saveNoteMutation.isPending ? "Saving…" : "Save linked note"}
+        <div key={chatContextMode} className="ait-context-panel-enter">
+          {chatContextMode === "general" ? (
+            <div className="mt-4 rounded-[16px] border border-slate-200/70 bg-white/85 p-3.5">
+              <p className="text-xs font-medium text-slate-700">No reading context attached.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                The assistant receives conversation history and your new message. Reading evidence can be attached again at any time.
+              </p>
+              {handoff && (
+                <Button className="mt-3" size="xs" onClick={() => void attachCurrentReading()} disabled={contextUpdating}>
+                  Attach current reading
                 </Button>
-                {saveNoteMutation.isSuccess && <p className="mt-2 text-[10px] text-emerald-600">Research Note linked to this conversation.</p>}
-              </div>
-            )}
-          </>
-        ) : (
-          <p className="mt-4 text-xs leading-5 text-slate-500">Attach the current reading selection to use grounded chat.</p>
-        )}
+              )}
+            </div>
+          ) : activeContext ? (
+            <>
+              <ContextPreview context={activeContext} />
+              {handoff && (
+                <Button className="mt-3" size="xs" onClick={() => void attachCurrentReading()} disabled={contextUpdating}>
+                  Replace with current reading
+                </Button>
+              )}
+              {activeContext.ai_content && (
+                <div className="mt-3 rounded-[16px] border border-cyan-100 bg-cyan-50/70 p-3.5">
+                  <div className="flex items-center gap-2">
+                    <Badge tone="info">Quick Action</Badge>
+                    {activeContext.ai_action && <span className="text-[10px] text-cyan-700/70">{activeContext.ai_action}</span>}
+                  </div>
+                  <p className="mt-2 line-clamp-8 whitespace-pre-wrap text-xs leading-5 text-slate-700">{activeContext.ai_content}</p>
+                </div>
+              )}
+              {activeContext.resource_url && (
+                <p className="mt-4 break-all font-mono text-[10px] leading-4 text-slate-400">{activeContext.resource_url}</p>
+              )}
+              {activeConversationId && (
+                <div className="mt-4">
+                  <Button size="xs" disabled={saveNoteMutation.isPending} onClick={saveLinkedNote}>
+                    {saveNoteMutation.isPending ? "Saving…" : "Save linked note"}
+                  </Button>
+                  {saveNoteMutation.isSuccess && <p className="mt-2 text-[10px] text-emerald-600">Research Note linked to this conversation.</p>}
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="mt-4 text-xs leading-5 text-slate-500">Attach the current reading selection to use grounded chat.</p>
+          )}
 
-        {contextOriginRef.current === "handoff" && handoff && (
-          <Button className="mt-4" size="xs" disabled={dismissMutation.isPending} onClick={() => dismissMutation.mutate(handoff.handoff_id)}>
-            Clear handoff
-          </Button>
-        )}
+          {showingHandoff && handoff && (
+            <Button className="mt-4" size="xs" disabled={dismissMutation.isPending} onClick={() => dismissMutation.mutate(handoff.handoff_id)}>
+              Clear handoff
+            </Button>
+          )}
+        </div>
       </aside>
 
-      <div className="flex min-h-0 flex-col">
+      <div className="flex min-h-0 flex-col bg-white/95">
         <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-6">
           {messages.length === 0 && (
             <EmptyState
               title={chatContextMode === "general" ? "Start a General Chat" : "Ask about this reading context"}
               description={chatContextMode === "general"
-                ? "This conversation is not grounded in a browser selection. You can attach reading context at any time."
+                ? "This conversation has no reading context attached. You can attach reading evidence at any time."
                 : "The selected passage and bounded nearby context will be supplied as reference evidence."}
               actions={!activeContext && chatContextMode === "reading" ? (
                 <>
@@ -821,9 +840,9 @@ export default function CompanionWorkspace() {
               return (
                 <div
                   key={message.id}
-                  className={message.role === "user"
-                    ? "ml-auto max-w-[78%] rounded-2xl bg-slate-950 px-4 py-3 text-sm leading-6 text-white"
-                    : "max-w-[88%] rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700"}
+                  className={`ait-chat-message-enter ${message.role === "user"
+                    ? "ml-auto max-w-[78%] rounded-[20px] bg-slate-950 px-4 py-3 text-sm leading-6 text-white shadow-sm"
+                    : "max-w-[88%] rounded-[20px] border border-slate-100 bg-slate-50/85 px-4 py-3 text-sm leading-6 text-slate-700"}`}
                 >
                   {message.role === "assistant" ? (
                     <>
@@ -886,13 +905,13 @@ export default function CompanionWorkspace() {
           </div>
         </div>
 
-        <form className="border-t border-slate-100 p-4" onSubmit={handleSubmit}>
+        <form className="border-t border-slate-100/80 bg-white/90 p-4 backdrop-blur-xl" onSubmit={handleSubmit}>
           {!chatAvailable && chatStatusQuery.isSuccess && (
             <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-700">AI Chat 未配置：{chatStatusQuery.data.detail}</p>
           )}
           <div className="flex items-end gap-2">
             <textarea
-              className="max-h-36 min-h-12 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm leading-6 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="max-h-36 min-h-12 flex-1 resize-none rounded-[16px] border border-slate-200/80 bg-slate-50/85 px-3.5 py-2.5 text-sm leading-6 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
               placeholder={activeRequestId === null
                 ? chatContextMode === "general" ? "Ask anything…" : "继续问这段内容…"
                 : "当前回复仍在生成，可先编辑下一条消息…"}
@@ -926,12 +945,12 @@ export default function CompanionWorkspace() {
 function ContextPreview({ context }: { context: ChatContextSnapshot }) {
   return (
     <div className="mt-4 space-y-3">
-      <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="rounded-[16px] border border-slate-200/70 bg-white/85 p-3.5">
         <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Selection</p>
         <p className="mt-2 line-clamp-8 text-xs leading-5 text-slate-700">{context.source_text}</p>
       </div>
       {context.translated_text && (
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
+        <div className="rounded-[16px] border border-slate-200/70 bg-white/85 p-3.5">
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Translation</p>
           <p className="mt-2 line-clamp-7 text-xs leading-5 text-slate-600">{context.translated_text}</p>
         </div>

@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react"
 import { Link, useLocation } from "react-router-dom"
 
-import { buttonClassName } from "../ui/Button"
+import { buttonClassName } from "../ui/button-styles"
 
 interface RouteBoundaryState {
   error: Error | null

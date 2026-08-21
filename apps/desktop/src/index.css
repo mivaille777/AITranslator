@@ -17,6 +17,7 @@
   --ait-motion-slow: 320ms;
   --ait-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --ait-ease-control: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ait-ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 *,
@@ -69,7 +70,8 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+summary:focus-visible {
   outline: 2px solid rgba(59, 130, 246, 0.48);
   outline-offset: 2px;
 }
@@ -99,6 +101,39 @@ textarea:focus-visible {
   transform: scale(0.985);
 }
 
+.ait-nav-item,
+.ait-nav-icon {
+  transition:
+    transform var(--ait-motion-standard) var(--ait-ease-spring),
+    background-color var(--ait-motion-standard) var(--ait-ease-standard),
+    color var(--ait-motion-standard) var(--ait-ease-standard);
+}
+
+.ait-nav-item[aria-current="page"] .ait-nav-icon {
+  transform: scale(1.06);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.ait-system-popover {
+  transform-origin: top right;
+  animation: ait-popover-enter var(--ait-motion-standard) var(--ait-ease-spring) both;
+}
+
+.ait-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(226, 232, 240, 0.8);
+}
+
+.ait-skeleton::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.82), transparent);
+  animation: ait-skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
 @keyframes ait-workspace-enter {
   from {
     opacity: 0;
@@ -107,6 +142,23 @@ textarea:focus-visible {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ait-popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ait-skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
   }
 }
 

@@ -58,14 +58,14 @@ export default function WorkspaceShell({
                   key={route.path}
                   to={route.path}
                   className={({ isActive }) =>
-                    `ait-control-motion group relative flex shrink-0 items-center gap-3 overflow-hidden rounded-[14px] px-3.5 py-3 text-sm font-medium ${
+                    `ait-control-motion ait-nav-item group relative flex shrink-0 items-center gap-3 overflow-hidden rounded-[14px] px-3.5 py-3 text-sm font-medium ${
                       isActive
                         ? "bg-white/[0.11] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]"
                         : "text-slate-400 hover:bg-white/[0.055] hover:text-slate-100"
                     }`
                   }
                 >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.035] transition-colors group-hover:bg-white/[0.07]">
+                  <span className="ait-nav-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.035] group-hover:bg-white/[0.07]">
                     <Icon size={16} strokeWidth={1.8} />
                   </span>
                   <span>{route.label}</span>

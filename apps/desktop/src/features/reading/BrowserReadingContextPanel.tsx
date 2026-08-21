@@ -41,8 +41,8 @@ export default function BrowserReadingContextPanel({
   const captureLabel = readingSelection
     ? `${readingSelection.source_kind || "reading"} · ${readingSelection.provider}`
     : browserStatus?.has_extension_activity
-      ? "Browser bridge ready"
-      : "Waiting for Browser DOM / UIA / Word"
+      ? "Browser DOM bridge ready · Native readers also available"
+      : "Waiting for Browser DOM / PDF UIA / Word / Desktop UIA"
 
   return (
     <section className="rounded-[24px] border border-slate-200/70 bg-white/90 p-5 shadow-[0_12px_38px_rgba(15,23,42,0.055)] backdrop-blur-xl">

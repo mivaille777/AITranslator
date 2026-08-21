@@ -139,6 +139,7 @@ summary:focus-visible {
 }
 
 .ait-segment-indicator {
+  width: calc(50% - 4px);
   pointer-events: none;
   transition: transform 280ms var(--ait-ease-spring);
   will-change: transform;

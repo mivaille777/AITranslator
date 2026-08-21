@@ -37,6 +37,7 @@ describe("buildOverlayChatHandoff", () => {
     expect(handoff.source_text).toBe(overlayState.source_text)
     expect(handoff.translated_text).toBe(overlayState.translated_text)
     expect(handoff.section_heading).toBe("3.4 Local refinement")
+    expect(handoff.conversation_id).toBe("")
     expect(handoff.ai_content).toBe(quickResult.output_text)
     expect(handoff.ai_action).toBe("reading_explain")
   })
@@ -51,5 +52,17 @@ describe("buildOverlayChatHandoff", () => {
     expect(handoff.ai_content).toBe("A newer conversational answer.")
     expect(handoff.ai_action).toBe("conversation_answer")
     expect(handoff.suggested_prompt).toContain("主 AI Chat")
+  })
+
+  it("carries the persisted overlay conversation into the main workspace", () => {
+    const handoff = buildOverlayChatHandoff(
+      overlayState,
+      quickResult,
+      "A completed compact-chat answer.",
+      "  conversation-overlay-42  ",
+    )
+
+    expect(handoff.conversation_id).toBe("conversation-overlay-42")
+    expect(handoff.ai_content).toBe("A completed compact-chat answer.")
   })
 })

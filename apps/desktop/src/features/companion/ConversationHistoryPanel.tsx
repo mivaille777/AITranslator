@@ -83,14 +83,14 @@ export default function ConversationHistoryPanel({
   }
 
   return (
-    <aside className="border-b border-slate-200 bg-slate-950 p-3 text-slate-200 xl:border-b-0 xl:border-r xl:border-slate-800">
+    <aside className="border-b border-slate-200 bg-[#060918] p-3 text-slate-200 xl:border-b-0 xl:border-r xl:border-white/[0.06]">
       <div className="px-1 py-2">
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
               Conversations
             </p>
-            <p className="mt-1 text-xs text-slate-400">Durable local history</p>
+            <p className="mt-1 text-xs text-slate-400">Local history</p>
           </div>
           <Button size="xs" onClick={onNewGeneralConversation}>
             <Plus size={12} />
@@ -101,14 +101,14 @@ export default function ConversationHistoryPanel({
         {hasCurrentReading && (
           <button
             type="button"
-            className="mt-3 w-full rounded-lg border border-cyan-500/25 bg-cyan-500/10 px-2.5 py-2 text-left text-xs text-cyan-100 transition hover:bg-cyan-500/15"
+            className="ait-control-motion mt-3 w-full rounded-[13px] border border-cyan-400/20 bg-cyan-400/[0.09] px-3 py-2.5 text-left text-xs font-medium text-cyan-100 hover:bg-cyan-400/[0.14]"
             onClick={onUseCurrentReading}
           >
             Use current reading context
           </button>
         )}
 
-        <label className="mt-3 flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-2 focus-within:border-slate-600">
+        <label className="mt-3 flex items-center gap-2 rounded-[13px] border border-white/[0.06] bg-white/[0.045] px-3 py-2.5 transition-colors focus-within:border-white/[0.14] focus-within:bg-white/[0.06]">
           <Search size={13} className="shrink-0 text-slate-500" />
           <input
             className="min-w-0 flex-1 bg-transparent text-xs text-slate-200 outline-none placeholder:text-slate-600"
@@ -147,17 +147,17 @@ export default function ConversationHistoryPanel({
                   return (
                     <div
                       key={conversation.conversation_id}
-                      className={`group rounded-xl border p-2.5 transition ${
+                      className={`ait-conversation-item group rounded-[14px] border p-2.5 ${
                         active
-                          ? "border-cyan-500/40 bg-cyan-500/10"
-                          : "border-transparent hover:border-slate-700 hover:bg-slate-900"
+                          ? "translate-x-1 border-white/[0.09] bg-white/[0.09] shadow-[0_8px_24px_rgba(0,0,0,0.12)]"
+                          : "border-transparent hover:translate-x-0.5 hover:border-white/[0.06] hover:bg-white/[0.05]"
                       }`}
                     >
                       {editing ? (
                         <div>
                           <input
                             autoFocus
-                            className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500/50"
+                            className="w-full rounded-[10px] border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-500/50"
                             value={editingTitle}
                             onChange={(event) => setEditingTitle(event.target.value)}
                             onKeyDown={(event) => {
@@ -171,7 +171,7 @@ export default function ConversationHistoryPanel({
                           <div className="mt-2 flex gap-1">
                             <button
                               type="button"
-                              className="rounded bg-slate-800 px-2 py-1 text-[10px] text-slate-200"
+                              className="rounded-[9px] bg-slate-800 px-2 py-1 text-[10px] text-slate-200"
                               disabled={renameMutation.isPending}
                               onClick={() => commitRename(conversation.conversation_id)}
                             >
@@ -179,7 +179,7 @@ export default function ConversationHistoryPanel({
                             </button>
                             <button
                               type="button"
-                              className="rounded px-2 py-1 text-[10px] text-slate-500 hover:text-slate-200"
+                              className="rounded-[9px] px-2 py-1 text-[10px] text-slate-500 hover:text-slate-200"
                               onClick={() => {
                                 setEditingId("")
                                 setEditingTitle("")
@@ -211,17 +211,17 @@ export default function ConversationHistoryPanel({
                               )}
                             </div>
                           </button>
-                          <div className="mt-2 flex gap-1 opacity-70 transition group-hover:opacity-100">
+                          <div className={`mt-2 flex gap-1 transition-opacity ${active ? "opacity-80" : "opacity-0 group-hover:opacity-80"}`}>
                             <button
                               type="button"
-                              className="rounded px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-800 hover:text-slate-200"
+                              className="rounded-[8px] px-1.5 py-1 text-[10px] text-slate-500 hover:bg-white/[0.06] hover:text-slate-200"
                               onClick={() => beginRename(conversation.conversation_id, conversation.title)}
                             >
                               Rename
                             </button>
                             <button
                               type="button"
-                              className="rounded px-1.5 py-1 text-[10px] text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"
+                              className="rounded-[8px] px-1.5 py-1 text-[10px] text-slate-500 hover:bg-rose-500/10 hover:text-rose-300"
                               onClick={() => remove(conversation.conversation_id, conversation.title)}
                             >
                               Delete

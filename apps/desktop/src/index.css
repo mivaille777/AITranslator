@@ -47,6 +47,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html[data-ait-view="overlay"],
+html[data-ait-view="overlay"] body,
+html[data-ait-view="overlay"] #root {
+  background: transparent;
+}
+
 #root {
   min-height: 100vh;
 }

@@ -61,6 +61,7 @@ export default function OverlayPreferencesPanel() {
       positionMode: "mouse_follow",
       locked: false,
       clickThrough: false,
+      smartAutoDismiss: true,
     })
     setPreferences(next)
     await desktop.overlay.setClickThrough(false)
@@ -91,7 +92,7 @@ export default function OverlayPreferencesPanel() {
           </button>
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-[1.35fr_1fr_1fr_1fr]">
+        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-[1.35fr_repeat(4,1fr)]">
           <label className="grid gap-2 rounded-[18px] border border-slate-200/60 bg-slate-50/70 p-4 text-xs font-medium text-slate-600">
             <span className="flex items-center justify-between gap-2">
               Position mode
@@ -127,6 +128,12 @@ export default function OverlayPreferencesPanel() {
             checked={preferences.clickThrough}
             onChange={(checked) => void apply({ clickThrough: checked })}
             warning={preferences.clickThrough}
+          />
+          <PreferenceToggle
+            label="Smart dismiss"
+            description="Close after explicit completed actions such as copy or AI Chat handoff; never on idle reading."
+            checked={preferences.smartAutoDismiss}
+            onChange={(checked) => void apply({ smartAutoDismiss: checked })}
           />
         </div>
 

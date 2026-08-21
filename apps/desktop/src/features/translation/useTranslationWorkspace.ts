@@ -5,7 +5,12 @@ import { getBrowserPage, getBrowserSelection, getBrowserStatus } from "../../api
 import { getHealth } from "../../api/health"
 import { presentOverlay, showOverlayError, showOverlayLoading } from "../../api/overlay"
 import { getReadingSelection, type ReadingSelection } from "../../api/reading"
-import { getTranslationStatus, translateText } from "../../api/translation"
+import {
+  getTranslationStatus,
+  setTranslationProvider,
+  translateText,
+  type TranslationProviderName,
+} from "../../api/translation"
 import type {
   BrowserBridgeStatusResponse,
   BrowserPage,
@@ -21,6 +26,8 @@ export interface TranslationWorkspaceController {
   backendState: BackendState
   backendService: string
   providerName: string
+  translationProvider: TranslationProviderName
+  providerSwitching: boolean
   browserStatus: BrowserBridgeStatusResponse | undefined
   browserStatusChecking: boolean
   browserSelection: BrowserSelection | null
@@ -38,6 +45,7 @@ export interface TranslationWorkspaceController {
   updateSourceText: (value: string) => void
   setSourceLanguage: (value: string) => void
   setTargetLanguage: (value: string) => void
+  setTranslationProvider: (value: TranslationProviderName) => void
   setFollowBrowserSelection: (checked: boolean) => void
   setAutoTranslateSelection: (checked: boolean) => void
   translateManual: () => void
@@ -111,9 +119,25 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     },
   })
 
+  const providerMutation = useMutation({
+    mutationFn: setTranslationProvider,
+    onSuccess: () => {
+      setTranslation(null)
+      setTranslationError("")
+      void translationStatusQuery.refetch()
+    },
+    onError: (error) => {
+      setTranslationError(
+        error instanceof Error ? error.message : "Unable to switch translation provider.",
+      )
+    },
+  })
+
   const browserSelection = browserSelectionQuery.data?.selection ?? null
   const browserPage = browserPageQuery.data?.page ?? null
   const readingSelection = readingSelectionQuery.data?.selection ?? null
+  const translationProvider: TranslationProviderName =
+    translationStatusQuery.data?.provider === "youdao_web" ? "youdao_web" : "google_web"
 
   const translateReadingSelection = useCallback(
     async (selection: ReadingSelection) => {
@@ -210,6 +234,12 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     setTranslationError("")
   }
 
+  function changeTranslationProvider(value: TranslationProviderName) {
+    if (value === translationProvider || providerMutation.isPending) return
+    setTranslationError("")
+    providerMutation.mutate(value)
+  }
+
   function translateManual() {
     if (!sourceText.trim()) {
       setTranslationError("Enter or capture some text before translating.")
@@ -260,6 +290,8 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     backendState,
     backendService: healthQuery.data?.service ?? "aitrans-backend",
     providerName: translationStatusQuery.data?.provider ?? "Not loaded",
+    translationProvider,
+    providerSwitching: providerMutation.isPending,
     browserStatus: browserStatusQuery.data,
     browserStatusChecking: browserStatusQuery.isPending,
     browserSelection,
@@ -277,6 +309,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     updateSourceText,
     setSourceLanguage,
     setTargetLanguage,
+    setTranslationProvider: changeTranslationProvider,
     setFollowBrowserSelection,
     setAutoTranslateSelection,
     translateManual,

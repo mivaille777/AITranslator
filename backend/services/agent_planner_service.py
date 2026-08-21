@@ -60,6 +60,7 @@ class AgentPlannerService:
         context_after: str,
         source_kind: str,
         tools: tuple[AgentToolSpec, ...],
+        **_: Any,
     ) -> str:
         payload = {
             "user_request": user_message,

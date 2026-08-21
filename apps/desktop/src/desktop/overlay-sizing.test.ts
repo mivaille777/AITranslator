@@ -49,9 +49,30 @@ describe("computeOverlayWindowSize", () => {
     const compact = computeOverlayWindowSize({ ...base, actionPresentation: "compact" })
     const expanded = computeOverlayWindowSize({ ...base, actionPresentation: "expanded" })
     const result = computeOverlayWindowSize({ ...base, actionPresentation: "result" })
+    const chat = computeOverlayWindowSize({ ...base, actionPresentation: "chat" })
 
     expect(expanded.height).toBeGreaterThan(compact.height)
     expect(result.height).toBeGreaterThan(expanded.height)
+    expect(chat.height).toBeGreaterThan(result.height)
+    expect(chat.height).toBe(600)
+  })
+
+  it("keeps chat at a stable native cap independent of streaming text", () => {
+    const shortChat = computeOverlayWindowSize({
+      phase: "ready",
+      translatedText: "Short.",
+      sourceText: "Source.",
+      actionPresentation: "chat",
+    })
+    const longChat = computeOverlayWindowSize({
+      phase: "ready",
+      translatedText: "Translation ".repeat(200),
+      sourceText: "Source ".repeat(100),
+      actionPresentation: "chat",
+    })
+
+    expect(shortChat.height).toBe(600)
+    expect(longChat.height).toBe(600)
   })
 
   it("temporarily expands compact states while the context menu is open", () => {

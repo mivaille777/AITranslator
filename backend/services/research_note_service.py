@@ -1,35 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-import hashlib
 from typing import Any
 
 from app.ai.chat.models import ChatContext, ReadingContext
 from app.research.notes import ResearchNote, ResearchNoteSaveResult, ResearchNoteStore
-
-
-@dataclass(frozen=True, slots=True)
-class ResearchSourceSummary:
-    source_id: str
-    display_title: str
-    resource_url: str
-    source_kind: str
-    note_count: int
-    linked_conversation_count: int
-    updated_at: str
-
-
-def research_source_id(note: ResearchNote) -> str:
-    identity = "\x1f".join(
-        (
-            note.source_kind.casefold(),
-            note.resource_url.casefold(),
-            note.resource_title.casefold(),
-        )
-    )
-    if not identity.replace("\x1f", ""):
-        identity = f"note:{note.note_id}"
-    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+from backend.services.research_source_profile import (
+    ResearchSourceProfile,
+    ResearchSourceSummary,
+    research_source_id,
+    summarize_source,
+)
 
 
 class ResearchNoteService:
@@ -101,47 +81,50 @@ class ResearchNoteService:
     def count(self) -> int:
         return int(self._store.count())
 
-    def list_sources(self, *, limit: int = 100) -> tuple[ResearchSourceSummary, ...]:
-        notes = self.list_recent(limit=limit)
-        grouped: dict[str, dict[str, object]] = {}
-        for note in notes:
-            source_id = research_source_id(note)
-            current = grouped.get(source_id)
-            if current is None:
-                grouped[source_id] = {
-                    "display_title": note.resource_title or note.resource_url or note.source_kind or "Unidentified source",
-                    "resource_url": note.resource_url,
-                    "source_kind": note.source_kind,
-                    "note_count": 1,
-                    "conversation_ids": {note.conversation_id} if note.conversation_id else set(),
-                    "updated_at": note.updated_at,
-                }
-                continue
-            current["note_count"] = int(current["note_count"]) + 1
-            conversation_ids = current["conversation_ids"]
-            if isinstance(conversation_ids, set) and note.conversation_id:
-                conversation_ids.add(note.conversation_id)
-            if note.updated_at > str(current["updated_at"]):
-                current["updated_at"] = note.updated_at
+    def _group_source_notes(self, *, limit: int = 100) -> dict[str, tuple[ResearchNote, ...]]:
+        grouped: dict[str, list[ResearchNote]] = {}
+        for note in self.list_recent(limit=limit):
+            grouped.setdefault(research_source_id(note), []).append(note)
+        return {source_id: tuple(notes) for source_id, notes in grouped.items()}
 
-        summaries = [
-            ResearchSourceSummary(
-                source_id=source_id,
-                display_title=str(values["display_title"]),
-                resource_url=str(values["resource_url"]),
-                source_kind=str(values["source_kind"]),
-                note_count=int(values["note_count"]),
-                linked_conversation_count=len(values["conversation_ids"]),
-                updated_at=str(values["updated_at"]),
-            )
-            for source_id, values in grouped.items()
+    def list_sources(self, *, limit: int = 100) -> tuple[ResearchSourceSummary, ...]:
+        profiles = [
+            summarize_source(notes)
+            for notes in self._group_source_notes(limit=limit).values()
         ]
-        summaries.sort(key=lambda item: item.updated_at, reverse=True)
-        return tuple(summaries)
+        profiles.sort(key=lambda item: item.updated_at, reverse=True)
+        return tuple(
+            ResearchSourceSummary(
+                source_id=item.source_id,
+                display_title=item.display_title,
+                resource_url=item.resource_url,
+                resource_locator=item.resource_locator,
+                source_kind=item.source_kind,
+                source_family=item.source_family,
+                identity_quality=item.identity_quality,
+                note_count=item.note_count,
+                section_count=item.section_count,
+                linked_conversation_count=item.linked_conversation_count,
+                annotation_count=item.annotation_count,
+                ai_evidence_count=item.ai_evidence_count,
+                updated_at=item.updated_at,
+            )
+            for item in profiles
+        )
+
+    def get_source(self, source_id: str, *, limit: int = 100) -> ResearchSourceProfile | None:
+        candidate = str(source_id or "").strip()
+        if not candidate:
+            return None
+        notes = self._group_source_notes(limit=limit).get(candidate)
+        if not notes:
+            return None
+        return summarize_source(notes)
 
 
 __all__ = [
     "ResearchNoteService",
+    "ResearchSourceProfile",
     "ResearchSourceSummary",
     "research_source_id",
 ]

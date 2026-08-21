@@ -50,4 +50,4 @@ class OverlayErrorRequest(OverlayReadingContext):
 
 class OverlayCompanionBindingRequest(BaseModel):
     context_id: str = Field(min_length=1, max_length=128)
-    conversation_id: str = Field(min_length=1, max_length=128)
+    conversation_id: str = Field(default="", max_length=128)

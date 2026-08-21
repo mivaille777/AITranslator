@@ -8,6 +8,7 @@ from backend.models.quick_actions import ReadingContextPayload
 
 
 class CompanionHandoffRequest(ReadingContextPayload):
+    conversation_id: str = Field(default="", max_length=128)
     ai_content: str = Field(default="", max_length=30_000)
     ai_action: str = Field(default="", max_length=128)
     suggested_prompt: str = Field(default="", max_length=2_000)
@@ -17,6 +18,7 @@ class CompanionHandoffResponse(ReadingContextPayload):
     revision: int
     handoff_id: str
     created_at: str
+    conversation_id: str = ""
     ai_content: str = ""
     ai_action: str = ""
     suggested_prompt: str = ""

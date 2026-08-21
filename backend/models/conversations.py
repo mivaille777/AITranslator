@@ -54,6 +54,10 @@ class ConversationRenameRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
 
 
+class ConversationRewindRequest(BaseModel):
+    user_message_id: str = Field(min_length=1, max_length=128)
+
+
 class ConversationDeleteResponse(BaseModel):
     deleted: bool
     conversation_id: str

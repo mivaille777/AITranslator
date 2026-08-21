@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from app.ai.chat.models import (
     ChatContext,
@@ -11,6 +11,7 @@ from app.ai.chat.models import (
     ReadingContext,
 )
 from app.ai.chat.service import AIChatService
+from app.ai.chat.stream_service import ProviderStreamingAIChatService
 from app.ai.errors import AIConfigurationError
 from app.ai.service import AITextService
 
@@ -26,11 +27,11 @@ class CompanionChatResult:
 
 
 class CompanionChatService:
-    """Non-streaming WebReBuild bridge to the existing provider-neutral chat core.
+    """WebReBuild boundary around the existing provider-neutral chat core.
 
-    This keeps Stage 2E useful without introducing LangGraph or persistent chat
-    session ownership. Streaming and durable conversation history remain a later
-    chat-stage concern.
+    REST requests keep using the stable non-streaming service for compatibility.
+    WebSocket requests use the UI-independent streaming core. Neither path
+    introduces LangGraph or desktop UI ownership into the normal Companion chat.
     """
 
     def __init__(
@@ -38,9 +39,11 @@ class CompanionChatService:
         *,
         text_service: AITextService | Any | None = None,
         chat_service: AIChatService | Any | None = None,
+        stream_service: ProviderStreamingAIChatService | Any | None = None,
     ) -> None:
         self._text_service = text_service
         self._chat_service = chat_service
+        self._stream_service = stream_service
 
     def _ensure_text_service(self) -> AITextService | Any:
         if self._text_service is None:
@@ -52,15 +55,31 @@ class CompanionChatService:
             self._chat_service = AIChatService(self._ensure_text_service())
         return self._chat_service
 
+    def _ensure_stream_service(self) -> ProviderStreamingAIChatService | Any:
+        if self._stream_service is None:
+            self._stream_service = ProviderStreamingAIChatService(
+                self._ensure_text_service()
+            )
+        return self._stream_service
+
+    @property
+    def provider_name(self) -> str:
+        service = self._ensure_text_service()
+        return str(getattr(service, "provider_name", "")).strip() or "unknown"
+
+    @property
+    def model(self) -> str:
+        service = self._ensure_text_service()
+        return str(getattr(service, "model", "")).strip() or "unknown"
+
     def status(self) -> tuple[bool, str, str, str]:
         try:
-            service = self._ensure_text_service()
-            return True, service.provider_name, service.model, ""
+            return True, self.provider_name, self.model, ""
         except AIConfigurationError as exc:
             return False, "deepseek", "", str(exc)
 
-    def send(
-        self,
+    @staticmethod
+    def _build_request(
         *,
         session_id: str,
         user_message: str,
@@ -76,7 +95,7 @@ class CompanionChatService:
         source_kind: str = "browser_selection",
         history: tuple[tuple[str, str], ...] = (),
         request_id: int = 0,
-    ) -> CompanionChatResult:
+    ) -> ChatRequest:
         _ = (source_language, target_language)
 
         messages: list[ChatMessage] = []
@@ -103,15 +122,17 @@ class CompanionChatService:
                 source_kind=source_kind,
             ),
         )
-        result = self._ensure_chat_service().execute(
-            ChatRequest(
-                session_id=session_id,
-                user_message=user_message,
-                context=context,
-                history=tuple(messages),
-                request_id=request_id,
-            )
+        return ChatRequest(
+            session_id=session_id,
+            user_message=user_message,
+            context=context,
+            history=tuple(messages),
+            request_id=request_id,
         )
+
+    def send(self, **kwargs: Any) -> CompanionChatResult:
+        request = self._build_request(**kwargs)
+        result = self._ensure_chat_service().execute(request)
         return CompanionChatResult(
             session_id=result.session_id,
             user_message=result.user_message,
@@ -121,8 +142,13 @@ class CompanionChatService:
             request_id=result.request_id,
         )
 
+    def stream(self, **kwargs: Any) -> Iterator[str]:
+        request = self._build_request(**kwargs)
+        yield from self._ensure_stream_service().stream(request)
+
     def close(self) -> None:
         service = self._text_service
+        self._stream_service = None
         self._chat_service = None
         self._text_service = None
         if service is not None:

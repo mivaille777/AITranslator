@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import type { OverlayStateResponse, QuickActionResponse } from "../api/types"
-import { buildOverlayChatHandoff } from "./OverlayCompactChat"
+import { buildOverlayChatHandoff } from "./overlay-chat-context"
 
 const overlayState: OverlayStateResponse = {
   revision: 4,

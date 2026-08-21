@@ -93,6 +93,42 @@ function ConvertTo-EncodedPowerShellCommand {
     return [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($Command))
 }
 
+function Get-GitDirtyClassification {
+    param([string[]]$Lines)
+
+    $generated = [System.Collections.Generic.List[string]]::new()
+    $blocking = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($line in $Lines) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $status = if ($line.Length -ge 2) { $line.Substring(0, 2) } else { "" }
+        $path = if ($line.Length -ge 4) { $line.Substring(3).Trim() } else { $line.Trim() }
+
+        # These are local artifacts created by normal verification/runtime use.
+        # Ignore them only while they are UNTRACKED. If any of these files ever
+        # become tracked, modifications must block the pull like normal source files.
+        $safeGenerated = $status -eq "??" -and (
+            $path -eq "apps/desktop/src-tauri/Cargo.lock" -or
+            $path -match '^config/.+\.sqlite3(?:-shm|-wal)?$'
+        )
+
+        if ($safeGenerated) {
+            $generated.Add($line)
+        }
+        else {
+            $blocking.Add($line)
+        }
+    }
+
+    return [PSCustomObject]@{
+        Generated = @($generated)
+        Blocking = @($blocking)
+    }
+}
+
 Write-Host ""
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host " AITranslator verification pipeline" -ForegroundColor Cyan
@@ -137,13 +173,32 @@ if ($CurrentBranch -ne $ExpectedBranch) {
     throw "Wrong Git branch '$CurrentBranch'. Expected '$ExpectedBranch'. Refusing to touch another branch."
 }
 
-# Refuse to pull over uncommitted work. This keeps the script safe for daily use.
-$DirtyFiles = @(git status --porcelain)
+# Protect real source/config changes, but do not block normal verification on
+# known untracked runtime artifacts such as the local SQLite DB or Cargo.lock.
+$DirtyFiles = @(git status --porcelain --untracked-files=all)
 Assert-LastExitCode "Unable to read Git working tree status."
-if ($DirtyFiles.Count -gt 0) {
-    Write-Host "Uncommitted changes:" -ForegroundColor Red
-    $DirtyFiles | ForEach-Object { Write-Host "  $_" -ForegroundColor Red }
-    throw "Working tree is not clean. Commit/stash local changes before running verification."
+$DirtyClassification = Get-GitDirtyClassification $DirtyFiles
+
+if ($DirtyClassification.Generated.Count -gt 0) {
+    Write-Host "Generated/runtime artifacts detected (allowed):" -ForegroundColor DarkYellow
+    $DirtyClassification.Generated | ForEach-Object {
+        Write-Host "  $_" -ForegroundColor DarkYellow
+    }
+}
+
+if ($DirtyClassification.Blocking.Count -gt 0) {
+    Write-Host "Source-controlled or unknown local changes detected:" -ForegroundColor Red
+    $DirtyClassification.Blocking | ForEach-Object {
+        Write-Host "  $_" -ForegroundColor Red
+    }
+    Write-Host ""
+    Write-Host "Inspect tracked changes before deciding whether to keep or restore them:" -ForegroundColor Yellow
+    Write-Host "  git diff -- apps/desktop/package-lock.json apps/desktop/src-tauri/Cargo.toml" -ForegroundColor Cyan
+    Write-Host "  git status --short" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "If those tracked changes are NOT intentional, restore only after reviewing the diff:" -ForegroundColor Yellow
+    Write-Host "  git restore -- apps/desktop/package-lock.json apps/desktop/src-tauri/Cargo.toml" -ForegroundColor Cyan
+    throw "Tracked/unknown working-tree changes require review before automatic git pull."
 }
 
 Write-Host "Branch            : $CurrentBranch" -ForegroundColor Green

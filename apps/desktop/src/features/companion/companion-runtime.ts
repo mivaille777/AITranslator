@@ -66,6 +66,26 @@ export function companionContextSnapshot(
   }
 }
 
+export interface CompanionHandoffRuntimeSeed {
+  context: CompanionContextSnapshot
+  contextMode: "reading"
+  draft: string
+  sessionId: string
+  scopeId: string
+}
+
+export function companionHandoffRuntimeSeed(
+  handoff: CompanionHandoff,
+): CompanionHandoffRuntimeSeed {
+  return {
+    context: companionContextSnapshot(handoff),
+    contextMode: "reading",
+    draft: handoff.suggested_prompt ?? "",
+    sessionId: `companion-${handoff.handoff_id}`,
+    scopeId: `handoff:${handoff.handoff_id}`,
+  }
+}
+
 export function companionHistory(
   messages: CompanionRuntimeMessage[],
   limit = 16,

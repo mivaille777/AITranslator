@@ -15,6 +15,7 @@ export type {
   DesktopAdapter,
   DesktopPoint,
   DesktopRuntime,
+  DesktopSize,
   OverlayPositionMode,
   OverlayWindowAdapter,
   WindowAdapter,

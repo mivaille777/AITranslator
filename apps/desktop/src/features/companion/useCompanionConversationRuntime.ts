@@ -114,7 +114,9 @@ export function useCompanionConversationRuntime(
   const openingConversationRef = useRef(false)
   const onConversationAcceptedRef = useRef(options.onConversationAccepted)
 
-  onConversationAcceptedRef.current = options.onConversationAccepted
+  useEffect(() => {
+    onConversationAcceptedRef.current = options.onConversationAccepted
+  }, [options.onConversationAccepted])
 
   const chatStatusQuery = useQuery({
     queryKey: queryKeys.companion.chatStatus,

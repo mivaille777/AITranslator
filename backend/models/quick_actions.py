@@ -68,6 +68,7 @@ class ResearchNoteSaveResponse(BaseModel):
     display_title: str
     excerpt: str
     updated_at: str
+    conversation_id: str = ""
 
 
 class ResearchNoteListItem(BaseModel):
@@ -85,6 +86,7 @@ class ResearchNoteListItem(BaseModel):
     source_kind: str = ""
     ai_content: str = ""
     ai_action: str = ""
+    conversation_id: str = ""
 
 
 class ResearchNoteListResponse(BaseModel):

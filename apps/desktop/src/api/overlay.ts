@@ -39,9 +39,9 @@ function withReadingContext<T extends { context_id: string }>(payload: T): T & R
   }
 }
 
-async function notifyOverlayStateChanged(): Promise<void> {
+async function notifyOverlayStateChanged(contextId = ""): Promise<void> {
   try {
-    await desktop.overlay.notifyStateChanged()
+    await desktop.overlay.notifyStateChanged(contextId)
   } catch {
     // Event delivery is an optimization; polling remains the recovery path.
   }
@@ -56,7 +56,7 @@ export async function showOverlayLoading(payload: OverlayLoadingRequest): Promis
     "/api/overlay/loading",
     withReadingContext(payload),
   )
-  await notifyOverlayStateChanged()
+  await notifyOverlayStateChanged(payload.context_id)
   return response
 }
 
@@ -65,7 +65,7 @@ export async function presentOverlay(payload: OverlayPresentRequest): Promise<Ov
     "/api/overlay/present",
     withReadingContext(payload),
   )
-  await notifyOverlayStateChanged()
+  await notifyOverlayStateChanged(payload.context_id)
   return response
 }
 
@@ -74,12 +74,12 @@ export async function showOverlayError(payload: OverlayErrorRequest): Promise<Ov
     "/api/overlay/error",
     withReadingContext(payload),
   )
-  await notifyOverlayStateChanged()
+  await notifyOverlayStateChanged(payload.context_id)
   return response
 }
 
 export async function dismissOverlay(): Promise<OverlayStateResponse> {
   const response = await apiPost<OverlayStateResponse, Record<string, never>>("/api/overlay/dismiss", {})
-  await notifyOverlayStateChanged()
+  await notifyOverlayStateChanged("")
   return response
 }

@@ -12,6 +12,11 @@ export interface DesktopPoint {
   y: number
 }
 
+export interface DesktopSize {
+  width: number
+  height: number
+}
+
 export interface WindowAdapter {
   show(): Promise<void>
   hide(): Promise<void>
@@ -23,6 +28,7 @@ export interface OverlayWindowAdapter extends WindowAdapter {
     mode: OverlayPositionMode,
     customPosition?: DesktopPoint | null,
   ): Promise<DesktopPoint | null>
+  resize(size: DesktopSize): Promise<void>
   startDragging(): Promise<void>
   getPosition(): Promise<DesktopPoint | null>
   setAlwaysOnTop(enabled: boolean): Promise<void>

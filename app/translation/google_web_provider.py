@@ -1,10 +1,14 @@
-"""Google Translate web-compatible provider.
+"""Google Translate browser-web translation provider.
 
 The request contract mirrors the browser-style GTX flow used by mature clients
 such as Zotero PDF Translate: a ``translate_a/single`` GET containing the
 browser token (``tk``), language parameters and the response ``dt`` set.
 
-This module does not handle CAPTCHA or attempt to bypass access controls.  It
+Only the browser-facing ``translate.google.com`` route is used. Legacy local
+configuration that points at ``translate.googleapis.com`` is migrated in memory
+to the browser route rather than creating a second runtime path.
+
+This module does not handle CAPTCHA or attempt to bypass access controls. It
 keeps those responses diagnosable while never logging the user's source text or
 full request URL.
 """
@@ -30,12 +34,12 @@ from app.translation.base import TranslationProvider
 from app.translation.errors import WebTranslationError
 
 
-DEFAULT_WEB_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
-GOOGLE_WEB_ENDPOINT = "https://translate.google.com/translate_a/single"
+DEFAULT_WEB_ENDPOINT = "https://translate.google.com/translate_a/single"
 LEGACY_WEB_ENDPOINTS = frozenset(
     {
         "http://translate.google.com/translate_a/single",
         "http://translate.googleapis.com/translate_a/single",
+        "https://translate.googleapis.com/translate_a/single",
     }
 )
 DEFAULT_TIMEOUT_SECONDS = 8.0
@@ -83,7 +87,7 @@ class _RequestsWebRequester:
     """Persistent browser-like transport with redirect and proxy support.
 
     ``requests.Session`` follows redirects and honours normal environment proxy
-    settings.  Explicit certifi verification avoids depending on a malformed
+    settings. Explicit certifi verification avoids depending on a malformed
     Windows certificate-store entry in the active Conda environment.
     """
 
@@ -187,9 +191,7 @@ class GoogleWebTranslationProvider(TranslationProvider):
     @staticmethod
     def _safe_endpoint(value: object) -> str:
         endpoint = str(value).strip().rstrip("?")
-        if endpoint == "http://translate.google.com/translate_a/single":
-            return GOOGLE_WEB_ENDPOINT
-        if endpoint == "http://translate.googleapis.com/translate_a/single":
+        if endpoint in LEGACY_WEB_ENDPOINTS:
             return DEFAULT_WEB_ENDPOINT
         parsed = urlsplit(endpoint)
         if parsed.scheme == "https" and parsed.hostname:
@@ -524,7 +526,6 @@ __all__ = [
     "DEFAULT_TIMEOUT_SECONDS",
     "DEFAULT_USER_AGENT",
     "DEFAULT_WEB_ENDPOINT",
-    "GOOGLE_WEB_ENDPOINT",
     "GoogleWebTranslationProvider",
     "LEGACY_WEB_ENDPOINTS",
     "TRANSIENT_HTTP_STATUSES",

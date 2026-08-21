@@ -443,7 +443,14 @@ class TranslationManager:
             request.target_language,
             request.source_text,
         )
-        if cached_result is not None and cached_result.provider == self.provider_name:
+        cache_provider_matches = (
+            cached_result is not None
+            and (
+                not self._provider_managed
+                or cached_result.provider == self.provider_name
+            )
+        )
+        if cache_provider_matches:
             self.logger.info("CACHE_HIT request_id=%s", request.request_id)
             return replace(
                 cached_result,
@@ -451,9 +458,10 @@ class TranslationManager:
                 request_id=request.request_id,
             )
         if cached_result is not None:
-            # The legacy cache key predates provider selection. Treat an entry
-            # produced by another provider as a miss; a successful current
-            # provider result will overwrite the same L2 row safely.
+            # Managed web providers share a legacy cache whose key predates
+            # provider selection. Treat another provider's result as a miss.
+            # Explicitly injected providers retain the historical cache
+            # semantics used by tests and offline callers.
             self.logger.info(
                 "CACHE_PROVIDER_MISS request_id=%s cached_provider=%s active_provider=%s",
                 request.request_id,

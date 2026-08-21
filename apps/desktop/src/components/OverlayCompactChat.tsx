@@ -65,14 +65,28 @@ export default function OverlayCompactChat({
   }
 
   function openMainChat() {
+    // The persisted conversation is finalized before the terminal stream event.
+    // Do not transfer while a reply is still streaming because the main window
+    // would load only the last persisted partial snapshot without owning that socket.
+    if (runtime.activeRequestId !== null) return
+
     handoffMutation.mutate(
       buildOverlayChatHandoff(
         state,
         aiResult,
         latestAssistant?.content ?? "",
+        runtime.conversationId,
       ),
     )
   }
+
+  const mainChatLabel = handoffMutation.isPending
+    ? "Opening…"
+    : runtime.activeRequestId !== null
+      ? "Finish response first"
+      : runtime.conversationId
+        ? "Continue in main ↗"
+        : "Open main chat ↗"
 
   return (
     <div className="border-b border-white/10 bg-black/10">
@@ -236,11 +250,11 @@ export default function OverlayCompactChat({
           </span>
           <button
             type="button"
-            disabled={handoffMutation.isPending}
+            disabled={handoffMutation.isPending || runtime.activeRequestId !== null}
             className="text-[9px] font-medium text-slate-500 hover:text-slate-300 disabled:opacity-40"
             onClick={openMainChat}
           >
-            {handoffMutation.isPending ? "Opening…" : "Open main chat ↗"}
+            {mainChatLabel}
           </button>
         </div>
       </div>

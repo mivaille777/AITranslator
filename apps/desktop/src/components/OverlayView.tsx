@@ -17,10 +17,18 @@ import {
   updateOverlayPreferences,
   type OverlayPreferences,
 } from "../desktop/overlay-preferences"
-import { computeOverlayWindowSize } from "../desktop/overlay-sizing"
+import {
+  computeOverlayWindowSize,
+  type OverlayActionPresentation,
+} from "../desktop/overlay-sizing"
 import { queryKeys, queryPolling } from "../shared/query/query-keys"
+import OverlayQuickActions from "./OverlayQuickActions"
 
 type MenuPosition = { x: number; y: number }
+type ActionPresentationState = {
+  contextId: string
+  presentation: OverlayActionPresentation
+}
 
 const positionLabels: Record<OverlayPositionMode, string> = {
   mouse_follow: "Near cursor",
@@ -34,6 +42,10 @@ export default function OverlayView() {
   const [copied, setCopied] = useState(false)
   const [preferences, setPreferences] = useState(readOverlayPreferences)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
+  const [actionPresentationState, setActionPresentationState] = useState<ActionPresentationState>({
+    contextId: "",
+    presentation: "compact",
+  })
   const draggingRef = useRef(false)
   const pendingMoveRef = useRef<DesktopPoint | null>(null)
   const moveIdleTimerRef = useRef<number | null>(null)
@@ -60,6 +72,10 @@ export default function OverlayView() {
   const overlayContextId = state?.context_id ?? ""
   const overlayRevision = state?.revision ?? 0
   const menuOpen = menuPosition !== null
+  const actionPresentation =
+    actionPresentationState.contextId === overlayContextId
+      ? actionPresentationState.presentation
+      : "compact"
   const overlaySize = useMemo(
     () => state
       ? computeOverlayWindowSize({
@@ -68,9 +84,17 @@ export default function OverlayView() {
           sourceText: state.source_text,
           message: state.message,
           menuOpen,
+          actionPresentation,
         })
       : null,
-    [menuOpen, state?.message, state?.phase, state?.source_text, state?.translated_text],
+    [
+      actionPresentation,
+      menuOpen,
+      state?.message,
+      state?.phase,
+      state?.source_text,
+      state?.translated_text,
+    ],
   )
   const overlaySizeKey = overlaySize ? `${overlaySize.width}x${overlaySize.height}` : ""
 
@@ -171,6 +195,15 @@ export default function OverlayView() {
     }
   }
 
+  function handleActionPresentationChange(presentation: OverlayActionPresentation) {
+    setActionPresentationState((current) => {
+      if (current.contextId === overlayContextId && current.presentation === presentation) {
+        return current
+      }
+      return { contextId: overlayContextId, presentation }
+    })
+  }
+
   function handleDragStart(event: ReactPointerEvent<HTMLElement>) {
     if (event.button !== 0 || preferences.locked || preferences.clickThrough) return
     if ((event.target as HTMLElement).closest("button, [data-overlay-menu]")) return
@@ -261,7 +294,7 @@ export default function OverlayView() {
       onContextMenu={handleContextMenu}
       onPointerDown={() => setMenuPosition(null)}
     >
-      <section className="flex h-full flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900 shadow-2xl">
+      <section className="ait-overlay-shell flex h-full flex-col overflow-hidden rounded-[24px] border border-white/10 bg-slate-900 shadow-2xl">
         <header
           className={`flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3 ${
             preferences.locked ? "cursor-default" : "cursor-move"
@@ -290,7 +323,7 @@ export default function OverlayView() {
             <button
               type="button"
               aria-label="Close overlay"
-              className="ait-control-motion rounded-lg px-2.5 py-1.5 text-sm text-slate-400 hover:bg-white/10 hover:text-white"
+              className="ait-control-motion rounded-full px-2.5 py-1.5 text-sm text-slate-400 hover:bg-white/10 hover:text-white"
               onPointerDown={(event) => event.stopPropagation()}
               onClick={() => dismissMutation.mutate()}
             >
@@ -299,7 +332,7 @@ export default function OverlayView() {
           </div>
         </header>
 
-        <div className={`min-h-0 flex-1 overflow-y-auto px-4 py-4 ${state.phase === "ready" ? "pb-24" : ""}`}>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {state.phase === "loading" && (
             <div key={`loading:${overlayRevision}`} className="ait-overlay-state-enter flex min-h-16 items-center gap-3 rounded-[18px] bg-white/[0.035] px-4 py-3 text-sm text-slate-300">
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />
@@ -338,6 +371,14 @@ export default function OverlayView() {
           )}
         </div>
 
+        {state.phase === "ready" && (
+          <OverlayQuickActions
+            key={state.context_id}
+            state={state}
+            onPresentationChange={handleActionPresentationChange}
+          />
+        )}
+
         <footer className="flex items-center justify-between border-t border-white/10 px-4 py-3">
           <span className="truncate text-[10px] text-slate-600">
             {positionLabels[preferences.positionMode]} · right-click for options
@@ -345,7 +386,7 @@ export default function OverlayView() {
           {state.phase === "ready" && (
             <button
               type="button"
-              className="ait-control-motion rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/15"
+              className="ait-control-motion rounded-full bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-white/15"
               onClick={() => void handleCopy()}
             >
               {copied ? "Copied" : "Copy"}
@@ -357,7 +398,7 @@ export default function OverlayView() {
       {menuPosition && (
         <div
           data-overlay-menu
-          className="ait-system-popover fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-[16px] border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
+          className="ait-overlay-context-menu ait-system-popover fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-[16px] border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
           style={{ left: menuPosition.x, top: menuPosition.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >

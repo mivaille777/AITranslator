@@ -25,6 +25,7 @@ export const queryKeys = {
   research: {
     notes: (limit: number) => ["research", "notes", limit] as const,
     workspace: (limit: number) => ["research", "workspace", limit] as const,
+    source: (sourceId: string) => ["research", "source", sourceId] as const,
     detail: (noteId: string) => ["research", "detail", noteId] as const,
   },
 } as const

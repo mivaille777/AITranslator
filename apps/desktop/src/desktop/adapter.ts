@@ -17,6 +17,11 @@ export interface DesktopSize {
   height: number
 }
 
+export interface CompanionNavigationSignal {
+  conversationId: string
+  handoffId: string
+}
+
 export interface WindowAdapter {
   show(): Promise<void>
   hide(): Promise<void>
@@ -36,6 +41,10 @@ export interface OverlayWindowAdapter extends WindowAdapter {
   onMoved(callback: (position: DesktopPoint) => void): Promise<() => void>
   notifyStateChanged(contextId?: string): Promise<void>
   onStateChanged(callback: (contextId: string) => void): Promise<() => void>
+  notifyCompanionNavigation(signal: CompanionNavigationSignal): Promise<void>
+  onCompanionNavigation(
+    callback: (signal: CompanionNavigationSignal) => void,
+  ): Promise<() => void>
 }
 
 export interface DesktopAdapter {

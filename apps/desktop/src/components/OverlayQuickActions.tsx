@@ -315,6 +315,7 @@ export default function OverlayQuickActions({
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
+                        data-tauri-drag-region="false"
                         className="ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px]"
                         onClick={openChat}
                       >
@@ -322,6 +323,7 @@ export default function OverlayQuickActions({
                       </button>
                       <button
                         type="button"
+                        data-tauri-drag-region="false"
                         aria-live="polite"
                         className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] ${copied ? "is-copied" : ""}`}
                         onClick={() => void copyActiveView()}
@@ -330,6 +332,7 @@ export default function OverlayQuickActions({
                       </button>
                       <button
                         type="button"
+                        data-tauri-drag-region="false"
                         aria-label="Collapse AI result"
                         className="ait-overlay-quiet-button flex h-6 w-6 items-center justify-center rounded-full text-xs"
                         onClick={closeResult}
@@ -389,6 +392,7 @@ export default function OverlayQuickActions({
 
             <button
               type="button"
+              data-tauri-drag-region="false"
               aria-label="More contextual actions"
               aria-expanded={moreOpen}
               title="更多操作 · M"
@@ -463,6 +467,7 @@ function ActionButton({
   return (
     <button
       type="button"
+      data-tauri-drag-region="false"
       title={title}
       disabled={disabled}
       className={`ait-overlay-action-button shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium ${wide ? "px-3.5" : ""} ${active ? "is-active" : ""}`}
@@ -485,6 +490,7 @@ function ViewTab({
   return (
     <button
       type="button"
+      data-tauri-drag-region="false"
       className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition ${
         active
           ? "bg-white/10 text-white"

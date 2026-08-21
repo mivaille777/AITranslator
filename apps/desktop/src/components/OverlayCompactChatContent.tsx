@@ -187,6 +187,7 @@ export default function OverlayCompactChat({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              data-tauri-drag-region="false"
               aria-label="Back to translation"
               className="ait-overlay-quiet-button flex h-7 w-7 items-center justify-center rounded-full text-sm text-slate-300"
               onClick={exitChat}
@@ -211,6 +212,7 @@ export default function OverlayCompactChat({
 
         <button
           type="button"
+          data-tauri-drag-region="false"
           disabled={
             runtime.contextUpdating ||
             runtime.activeRequestId !== null ||
@@ -252,6 +254,7 @@ export default function OverlayCompactChat({
           {runtime.recoveryState === "offline" && (
             <button
               type="button"
+              data-tauri-drag-region="false"
               className="shrink-0 rounded-full border border-current/15 px-2 py-0.5 font-medium hover:bg-white/[0.06]"
               onClick={() => void runtime.retryRecovery()}
             >
@@ -330,6 +333,7 @@ export default function OverlayCompactChat({
         {showJumpToLatest && (
           <button
             type="button"
+            data-tauri-drag-region="false"
             className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-slate-950/90 px-2.5 py-1 text-[9px] font-medium text-slate-300 shadow-lg backdrop-blur"
             onClick={jumpToLatest}
           >
@@ -344,6 +348,7 @@ export default function OverlayCompactChat({
           {retryUser && !runtime.conversationBusyElsewhere && (
             <button
               type="button"
+              data-tauri-drag-region="false"
               className="shrink-0 rounded-full border border-rose-200/15 px-2 py-0.5 font-medium hover:bg-rose-200/10"
               onClick={retryLastReply}
             >
@@ -398,6 +403,7 @@ export default function OverlayCompactChat({
           {runtime.activeRequestId !== null ? (
             <button
               type="button"
+              data-tauri-drag-region="false"
               title="Stop generation"
               className="ait-overlay-action-button flex h-9 w-9 items-center justify-center rounded-full text-xs text-rose-200"
               onClick={runtime.cancelStream}
@@ -407,6 +413,7 @@ export default function OverlayCompactChat({
           ) : (
             <button
               type="button"
+              data-tauri-drag-region="false"
               title="Send · Enter"
               disabled={
                 !runtime.chatAvailable ||
@@ -429,6 +436,7 @@ export default function OverlayCompactChat({
           </span>
           <button
             type="button"
+            data-tauri-drag-region="false"
             disabled={
               handoffMutation.isPending ||
               runtime.activeRequestId !== null ||

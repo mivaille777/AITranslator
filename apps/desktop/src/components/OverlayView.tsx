@@ -333,7 +333,7 @@ export default function OverlayView() {
   }
 
   if (!state?.visible) {
-    return <div className="h-screen w-screen bg-transparent" />
+    return null
   }
 
   return (

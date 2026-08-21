@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query"
 import ReactMarkdown from "react-markdown"
 
 import { createCompanionHandoff } from "../api/companion"
+import { bindOverlayCompanionConversation } from "../api/overlay"
 import type {
   CompanionHandoffRequest,
   OverlayStateResponse,
@@ -14,6 +15,7 @@ import { useCompanionConversationRuntime } from "../features/companion/useCompan
 import {
   buildOverlayChatHandoff,
   contextFromOverlay,
+  overlayCompanionConversationId,
 } from "./overlay-chat-context"
 
 export default function OverlayCompactChat({
@@ -26,12 +28,40 @@ export default function OverlayCompactChat({
   onClose: () => void
 }) {
   const context = contextFromOverlay(state, aiResult)
+  const persistedConversationId = overlayCompanionConversationId(state)
   const runtime = useCompanionConversationRuntime({
     initialContext: context,
     initialContextMode: "reading",
     initialSessionId: `overlay-${state.context_id}`,
     initialScopeId: `overlay:${state.context_id}`,
+    onConversationAccepted: (conversationId) => {
+      void bindOverlayCompanionConversation(state.context_id, conversationId).catch(() => {
+        // The context may have changed while the first response was accepted.
+        // A stale binding must never overwrite the newer selection.
+      })
+    },
   })
+  const runtimeConversationId = runtime.conversationId
+  const openRuntimeConversation = runtime.openConversation
+
+  useEffect(() => {
+    if (!persistedConversationId || runtimeConversationId === persistedConversationId) return
+    let cancelled = false
+
+    void openRuntimeConversation(persistedConversationId).then((conversation) => {
+      if (conversation || cancelled) return
+      void bindOverlayCompanionConversation(state.context_id, "").catch(() => undefined)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    openRuntimeConversation,
+    persistedConversationId,
+    runtimeConversationId,
+    state.context_id,
+  ])
 
   useEffect(() => {
     // Compact Chat is an explicit interactive mode. Temporarily override a
@@ -48,8 +78,19 @@ export default function OverlayCompactChat({
 
   const handoffMutation = useMutation({
     mutationFn: (payload: CompanionHandoffRequest) => createCompanionHandoff(payload),
-    onSuccess: async () => {
+    onSuccess: async (handoff) => {
       await desktop.window.show()
+      if (handoff.conversation_id) {
+        try {
+          await desktop.overlay.notifyCompanionNavigation({
+            conversationId: handoff.conversation_id,
+            handoffId: handoff.handoff_id,
+          })
+        } catch {
+          // Backend handoff polling remains the recovery path if native event
+          // delivery is unavailable during a dev reload or browser session.
+        }
+      }
       await desktop.window.focus()
     },
   })
@@ -68,7 +109,7 @@ export default function OverlayCompactChat({
     // The persisted conversation is finalized before the terminal stream event.
     // Do not transfer while a reply is still streaming because the main window
     // would load only the last persisted partial snapshot without owning that socket.
-    if (runtime.activeRequestId !== null) return
+    if (runtime.activeRequestId !== null || runtime.openingConversation) return
 
     handoffMutation.mutate(
       buildOverlayChatHandoff(
@@ -82,11 +123,13 @@ export default function OverlayCompactChat({
 
   const mainChatLabel = handoffMutation.isPending
     ? "Opening…"
-    : runtime.activeRequestId !== null
-      ? "Finish response first"
-      : runtime.conversationId
-        ? "Continue in main ↗"
-        : "Open main chat ↗"
+    : runtime.openingConversation
+      ? "Restoring…"
+      : runtime.activeRequestId !== null
+        ? "Finish response first"
+        : runtime.conversationId
+          ? "Continue in main ↗"
+          : "Open main chat ↗"
 
   return (
     <div className="border-b border-white/10 bg-black/10">
@@ -114,7 +157,11 @@ export default function OverlayCompactChat({
 
         <button
           type="button"
-          disabled={runtime.contextUpdating || runtime.activeRequestId !== null}
+          disabled={
+            runtime.contextUpdating ||
+            runtime.activeRequestId !== null ||
+            runtime.openingConversation
+          }
           className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] font-medium ${
             runtime.contextMode === "reading" ? "text-cyan-200" : "text-slate-400"
           }`}
@@ -128,7 +175,7 @@ export default function OverlayCompactChat({
         </button>
       </div>
 
-      {aiResult && recentMessages.length === 0 && (
+      {aiResult && recentMessages.length === 0 && !runtime.openingConversation && (
         <div className="mx-3 mb-2.5 rounded-[14px] border border-cyan-300/10 bg-cyan-300/[0.055] px-3 py-2.5">
           <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-cyan-200/60">
             Existing AI result
@@ -140,7 +187,12 @@ export default function OverlayCompactChat({
       )}
 
       <div className="h-[220px] overflow-y-auto px-3 py-2">
-        {recentMessages.length === 0 ? (
+        {runtime.openingConversation ? (
+          <div className="flex h-full items-center justify-center gap-2 text-[10px] text-slate-500">
+            <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/70" />
+            Restoring conversation…
+          </div>
+        ) : recentMessages.length === 0 ? (
           <div className="flex h-full items-center justify-center px-5 text-center">
             <div>
               <p className="text-xs font-medium text-slate-300">
@@ -200,8 +252,13 @@ export default function OverlayCompactChat({
             autoFocus
             rows={1}
             value={runtime.draft}
-            placeholder={runtime.activeRequestId === null ? "Ask a follow-up…" : "Generating…"}
-            className="max-h-20 min-h-9 flex-1 resize-none rounded-[13px] border border-white/[0.08] bg-white/[0.055] px-3 py-2 text-[11px] leading-4 text-slate-100 outline-none placeholder:text-slate-600 focus:border-white/[0.16] focus:bg-white/[0.07]"
+            disabled={runtime.openingConversation}
+            placeholder={runtime.openingConversation
+              ? "Restoring conversation…"
+              : runtime.activeRequestId === null
+                ? "Ask a follow-up…"
+                : "Generating…"}
+            className="max-h-20 min-h-9 flex-1 resize-none rounded-[13px] border border-white/[0.08] bg-white/[0.055] px-3 py-2 text-[11px] leading-4 text-slate-100 outline-none placeholder:text-slate-600 focus:border-white/[0.16] focus:bg-white/[0.07] disabled:opacity-50"
             onChange={(event) => runtime.setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -235,7 +292,11 @@ export default function OverlayCompactChat({
             <button
               type="button"
               title="Send · Enter"
-              disabled={!runtime.chatAvailable || !runtime.draft.trim()}
+              disabled={
+                !runtime.chatAvailable ||
+                !runtime.draft.trim() ||
+                runtime.openingConversation
+              }
               className="ait-overlay-action-button flex h-9 w-9 items-center justify-center rounded-full text-sm disabled:opacity-35"
               onClick={() => runtime.sendMessage()}
             >
@@ -250,7 +311,11 @@ export default function OverlayCompactChat({
           </span>
           <button
             type="button"
-            disabled={handoffMutation.isPending || runtime.activeRequestId !== null}
+            disabled={
+              handoffMutation.isPending ||
+              runtime.activeRequestId !== null ||
+              runtime.openingConversation
+            }
             className="text-[9px] font-medium text-slate-500 hover:text-slate-300 disabled:opacity-40"
             onClick={openMainChat}
           >

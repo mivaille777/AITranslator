@@ -159,6 +159,7 @@ export interface ResearchNoteSaveResponse {
   display_title: string
   excerpt: string
   updated_at: string
+  conversation_id: string
 }
 
 export interface ResearchNoteListItem {
@@ -176,6 +177,7 @@ export interface ResearchNoteListItem {
   source_kind: string
   ai_content: string
   ai_action: string
+  conversation_id: string
 }
 
 export interface ResearchNoteListResponse {

@@ -17,6 +17,7 @@ import type {
 import { computeOverlayPosition } from "../overlay-positioning"
 
 let overlayResizeGeneration = 0
+let overlayPlacementGeneration = 0
 
 async function getMainWindow(): Promise<TauriWindow | null> {
   const current = getCurrentWindow()
@@ -32,6 +33,10 @@ async function getOverlayWindow(): Promise<TauriWindow | null> {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(value, Math.max(minimum, maximum)))
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
 async function keepOverlayInsideWorkArea(overlay: TauriWindow): Promise<void> {
@@ -52,6 +57,38 @@ async function keepOverlayInsideWorkArea(overlay: TauriWindow): Promise<void> {
 
   if (nextX !== position.x || nextY !== position.y) {
     await overlay.setPosition(new PhysicalPosition(nextX, nextY))
+  }
+}
+
+async function animateOverlayPosition(
+  overlay: TauriWindow,
+  target: DesktopPoint,
+): Promise<void> {
+  const generation = ++overlayPlacementGeneration
+  const current = await overlay.outerPosition()
+  const deltaX = target.x - current.x
+  const deltaY = target.y - current.y
+  const distance = Math.hypot(deltaX, deltaY)
+
+  if (distance < 8 || distance > 900 || !(await overlay.isVisible())) {
+    await overlay.setPosition(new PhysicalPosition(target.x, target.y))
+    return
+  }
+
+  const steps = 7
+  for (let step = 1; step <= steps; step += 1) {
+    if (generation !== overlayPlacementGeneration) return
+
+    const t = step / steps
+    const eased = 1 - Math.pow(1 - t, 3)
+    await overlay.setPosition(
+      new PhysicalPosition(
+        Math.round(current.x + deltaX * eased),
+        Math.round(current.y + deltaY * eased),
+      ),
+    )
+
+    if (step < steps) await wait(14)
   }
 }
 
@@ -89,7 +126,12 @@ async function placeOverlay(
     customPosition,
   })
 
-  await overlay.setPosition(new PhysicalPosition(position.x, position.y))
+  if (mode === "mouse_follow") {
+    await animateOverlayPosition(overlay, position)
+  } else {
+    overlayPlacementGeneration += 1
+    await overlay.setPosition(new PhysicalPosition(position.x, position.y))
+  }
   return position
 }
 
@@ -124,9 +166,7 @@ async function resizeOverlay(target: DesktopSize): Promise<void> {
       ),
     )
 
-    if (step < steps) {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, stepDelay))
-    }
+    if (step < steps) await wait(stepDelay)
   }
 
   if (generation === overlayResizeGeneration) {
@@ -158,6 +198,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     },
     async hide() {
       overlayResizeGeneration += 1
+      overlayPlacementGeneration += 1
       const overlay = await getOverlayWindow()
       await overlay?.hide()
     },
@@ -168,6 +209,7 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     place: placeOverlay,
     resize: resizeOverlay,
     async startDragging() {
+      overlayPlacementGeneration += 1
       const overlay = await getOverlayWindow()
       await overlay?.startDragging()
     },

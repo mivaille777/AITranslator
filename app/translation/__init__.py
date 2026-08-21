@@ -20,10 +20,12 @@ from app.translation.task import (
     TranslationTaskSignals,
 )
 from app.translation.token.google_tk import generate_token
+from app.translation.youdao_web_provider import YoudaoWebTranslationProvider
 
 __all__ = [
     "FakeTranslationProvider",
     "GoogleWebTranslationProvider",
+    "YoudaoWebTranslationProvider",
     "TranslationCache",
     "HistoryEntry",
     "SQLiteTranslationStore",

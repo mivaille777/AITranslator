@@ -1,9 +1,15 @@
 param(
-    # Batch-specific tests to run before the complete suite.
+    # Batch-specific Python tests to run before the complete suite.
     # Examples:
     #   -NewTest "tests/test_translation_provider_persistence.py"
     #   -NewTest "tests/test_a.py","tests/test_b.py::test_case"
     [string[]]$NewTest = @(),
+
+    # Batch-specific Vitest targets to run before the complete frontend suite.
+    # Examples:
+    #   -NewFrontendTest "src/desktop/overlay-sizing.test.ts"
+    #   -NewFrontendTest "src/features/companion/companion-runtime.test.ts","src/components/OverlayCompactChat.test.ts"
+    [string[]]$NewFrontendTest = @(),
 
     # Run verification only; do not launch Backend/Tauri afterwards.
     [switch]$NoStart,
@@ -157,19 +163,32 @@ Write-Host "Current HEAD      : $CurrentCommit" -ForegroundColor Green
 # ------------------------------------------------------------
 
 Write-Step "Run batch-specific tests" 3
-Set-Location $RepoRoot
 
-$ResolvedTests = @($NewTest | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-if ($ResolvedTests.Count -eq 0) {
-    Write-Host "No -NewTest target supplied. Skipping targeted tests." -ForegroundColor DarkYellow
+$ResolvedPythonTests = @($NewTest | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+$ResolvedFrontendTests = @($NewFrontendTest | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+if ($ResolvedPythonTests.Count -eq 0 -and $ResolvedFrontendTests.Count -eq 0) {
+    Write-Host "No targeted test supplied. Skipping batch-specific tests." -ForegroundColor DarkYellow
 }
-else {
-    foreach ($testTarget in $ResolvedTests) {
+
+if ($ResolvedPythonTests.Count -gt 0) {
+    Set-Location $RepoRoot
+    foreach ($testTarget in $ResolvedPythonTests) {
         Write-Host "-> python -m pytest $testTarget -q" -ForegroundColor Cyan
         python -m pytest $testTarget -q
-        Assert-LastExitCode "Batch-specific test failed: $testTarget"
+        Assert-LastExitCode "Batch-specific Python test failed: $testTarget"
     }
-    Write-Host "Batch-specific tests PASSED." -ForegroundColor Green
+    Write-Host "Batch-specific Python tests PASSED." -ForegroundColor Green
+}
+
+if ($ResolvedFrontendTests.Count -gt 0) {
+    Set-Location $DesktopDir
+    foreach ($testTarget in $ResolvedFrontendTests) {
+        Write-Host "-> npx vitest run $testTarget" -ForegroundColor Cyan
+        npx vitest run $testTarget
+        Assert-LastExitCode "Batch-specific frontend test failed: $testTarget"
+    }
+    Write-Host "Batch-specific frontend tests PASSED." -ForegroundColor Green
 }
 
 # ------------------------------------------------------------

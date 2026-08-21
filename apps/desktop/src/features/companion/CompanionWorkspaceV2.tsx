@@ -16,6 +16,7 @@ import { buttonClassName } from "../../shared/ui/button-styles"
 import { EmptyState } from "../../shared/ui/EmptyState"
 import {
   companionContextSnapshot,
+  companionHandoffRuntimeSeed,
   createCompanionScope,
   EMPTY_COMPANION_CONTEXT,
   previousCompanionUserMessage,
@@ -64,11 +65,13 @@ export default function CompanionWorkspaceV2() {
   }, [openRuntimeConversation, routedConversationId, runtimeConversationId])
 
   useEffect(() => {
-    const nextId = handoff?.handoff_id ?? ""
-    if (!nextId) {
+    const activeHandoff = handoff
+    if (!activeHandoff) {
       handoffIdRef.current = ""
       return
     }
+
+    const nextId = activeHandoff.handoff_id
     if (routedConversationId) {
       handoffIdRef.current = nextId
       return
@@ -77,14 +80,9 @@ export default function CompanionWorkspaceV2() {
 
     handoffIdRef.current = nextId
     usingHandoffRef.current = true
+    const runtimeSeed = companionHandoffRuntimeSeed(activeHandoff)
     queueMicrotask(() => {
-      resetRuntime({
-        context: companionContextSnapshot(handoff),
-        contextMode: "reading",
-        draft: handoff.suggested_prompt ?? "",
-        sessionId: `companion-${handoff.handoff_id}`,
-        scopeId: `handoff:${handoff.handoff_id}`,
-      })
+      resetRuntime(runtimeSeed)
       setEditingMessageId("")
       setEditingText("")
       setConversationRoute("")
@@ -115,13 +113,7 @@ export default function CompanionWorkspaceV2() {
   function selectCurrentReading() {
     if (!handoff) return
     usingHandoffRef.current = true
-    runtime.reset({
-      context: companionContextSnapshot(handoff),
-      contextMode: "reading",
-      draft: handoff.suggested_prompt ?? "",
-      sessionId: `companion-${handoff.handoff_id}`,
-      scopeId: `handoff:${handoff.handoff_id}`,
-    })
+    runtime.reset(companionHandoffRuntimeSeed(handoff))
     setConversationRoute("")
   }
 

@@ -17,6 +17,7 @@ import type {
   OverlayPositionMode,
 } from "../adapter"
 import { computeOverlayPosition } from "../overlay-positioning"
+import { readOverlayPreferences } from "../overlay-preferences"
 
 const OVERLAY_STATE_CHANGED_EVENT = "aitrans-overlay-state-changed"
 
@@ -106,8 +107,7 @@ async function placeOverlay(
   })
 
   if (mode === "mouse_follow" && (await overlay.isVisible())) {
-    // Keep motion perceptible but response-first. State changes now reach the overlay
-    // via a native event instead of waiting for the polling interval.
+    // Response-first motion: the latest target replaces any in-flight native motion.
     await invoke("animate_overlay_position", {
       x: position.x,
       y: position.y,
@@ -221,6 +221,14 @@ export const tauriDesktopAdapter: DesktopAdapter = {
       })
     },
     async notifyStateChanged() {
+      // When the main window publishes a fresh selection, submit the latest near-cursor
+      // target immediately. Content refresh is notified separately below.
+      if (getCurrentWindow().label !== "overlay") {
+        const preferences = readOverlayPreferences()
+        if (preferences.positionMode === "mouse_follow" && !preferences.locked) {
+          await placeOverlay(preferences.positionMode, preferences.customPosition)
+        }
+      }
       await emitTo("overlay", OVERLAY_STATE_CHANGED_EVENT)
     },
     async onStateChanged(callback) {

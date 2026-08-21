@@ -23,16 +23,20 @@ import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import { Badge } from "../../shared/ui/Badge"
 import { Button } from "../../shared/ui/Button"
 import { EmptyState } from "../../shared/ui/EmptyState"
+import ResearchSourceProfilePanel from "./ResearchSourceProfilePanel"
 import { filterResearchNotes, researchSourceKinds } from "./research-workspace"
 
 const WORKSPACE_LIMIT = 100
+type DetailMode = "none" | "source" | "note"
 
 export default function ResearchWorkspace() {
   const navigate = useNavigate()
   const [query, setQuery] = useState("")
   const [sourceId, setSourceId] = useState("")
   const [sourceKind, setSourceKind] = useState("")
+  const [sectionHeading, setSectionHeading] = useState("")
   const [selectedNoteId, setSelectedNoteId] = useState("")
+  const [detailMode, setDetailMode] = useState<DetailMode>("none")
 
   const workspaceQuery = useQuery({
     queryKey: queryKeys.research.workspace(WORKSPACE_LIMIT),
@@ -45,14 +49,24 @@ export default function ResearchWorkspace() {
     query,
     sourceId,
     sourceKind,
+    sectionHeading,
   })
   const sources = workspace?.sources ?? []
   const sourceKinds = researchSourceKinds(sources)
-  const selectedNote = notes.find((note) => note.note_id === selectedNoteId) ?? notes[0] ?? null
+  const selectedNote = selectedNoteId
+    ? notes.find((note) => note.note_id === selectedNoteId) ?? null
+    : null
 
   function selectSource(nextSourceId: string) {
     setSourceId(nextSourceId)
+    setSectionHeading("")
     setSelectedNoteId("")
+    setDetailMode(nextSourceId ? "source" : "none")
+  }
+
+  function selectNote(noteId: string) {
+    setSelectedNoteId(noteId)
+    setDetailMode("note")
   }
 
   if (workspaceQuery.isPending) {
@@ -92,7 +106,7 @@ export default function ResearchWorkspace() {
             Sources, evidence and your annotations
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Saved reading evidence stays immutable here; your own annotation is edited separately and linked conversations remain reopenable.
+            Source profiles now separate document identity, represented sections and individual evidence notes. Captured evidence stays immutable while your annotation remains independently editable.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -111,7 +125,9 @@ export default function ResearchWorkspace() {
           onSelectSourceKind={(kind) => {
             setSourceKind(kind)
             setSourceId("")
+            setSectionHeading("")
             setSelectedNoteId("")
+            setDetailMode("none")
           }}
         />
 
@@ -119,16 +135,36 @@ export default function ResearchWorkspace() {
           notes={notes}
           query={query}
           selectedNoteId={selectedNote?.note_id ?? ""}
+          selectedSourceId={sourceId}
+          sectionHeading={sectionHeading}
           onQueryChange={setQuery}
-          onSelectNote={setSelectedNoteId}
+          onSelectNote={selectNote}
+          onOpenSourceOverview={() => {
+            setSelectedNoteId("")
+            setDetailMode(sourceId ? "source" : "none")
+          }}
+          onClearSection={() => setSectionHeading("")}
         />
 
         <main className="min-w-0 bg-white">
-          {selectedNote ? (
+          {detailMode === "source" && sourceId ? (
+            <ResearchSourceProfilePanel
+              sourceId={sourceId}
+              selectedSectionHeading={sectionHeading}
+              onSelectSection={(heading) => {
+                setSectionHeading(heading)
+                setSelectedNoteId("")
+                setDetailMode("source")
+              }}
+            />
+          ) : selectedNote ? (
             <ResearchNoteEditor
               key={selectedNote.note_id}
               note={selectedNote}
-              onDeleted={() => setSelectedNoteId("")}
+              onDeleted={() => {
+                setSelectedNoteId("")
+                setDetailMode(sourceId ? "source" : "none")
+              }}
               onOpenConversation={() => {
                 if (selectedNote.conversation_id) {
                   navigate(`/chat?conversation=${encodeURIComponent(selectedNote.conversation_id)}`)
@@ -139,8 +175,12 @@ export default function ResearchWorkspace() {
             <div className="p-6">
               <EmptyState
                 icon={<Search size={28} strokeWidth={1.5} />}
-                title="No notes match this filter"
-                description="Try another source, source type or search term."
+                title={notes.length === 0 ? "No notes match this filter" : "Choose a source or evidence note"}
+                description={
+                  notes.length === 0
+                    ? "Try another source, source type, section or search term."
+                    : "Open a source to inspect its profile, or choose one evidence note for full reading context and annotation."
+                }
               />
             </div>
           )}
@@ -177,7 +217,7 @@ function SourcePanel({
           value={selectedSourceKind}
           onChange={(event) => onSelectSourceKind(event.target.value)}
         >
-          <option value="">All source types</option>
+          <option value="">All provider types</option>
           {sourceKinds.map((kind) => (
             <option key={kind} value={kind}>{formatSourceKind(kind)}</option>
           ))}
@@ -213,11 +253,16 @@ function SourcePanel({
                 }`}
                 onClick={() => onSelectSource(source.source_id)}
               >
-                <p className="line-clamp-2 text-xs font-medium leading-5 text-slate-200">{source.display_title}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="line-clamp-2 text-xs font-medium leading-5 text-slate-200">{source.display_title}</p>
+                  <span className="shrink-0 rounded-full bg-slate-800 px-1.5 py-0.5 text-[9px] uppercase text-slate-400">
+                    {formatSourceFamily(source.source_family)}
+                  </span>
+                </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
-                  <span>{source.note_count} notes</span>
+                  <span>{source.note_count} evidence</span>
                   <span>·</span>
-                  <span>{formatSourceKind(source.source_kind)}</span>
+                  <span>{source.section_count} sections</span>
                   {source.linked_conversation_count > 0 && (
                     <>
                       <span>·</span>
@@ -237,14 +282,22 @@ function NoteListPanel({
   notes,
   query,
   selectedNoteId,
+  selectedSourceId,
+  sectionHeading,
   onQueryChange,
   onSelectNote,
+  onOpenSourceOverview,
+  onClearSection,
 }: {
   notes: ResearchNoteDetail[]
   query: string
   selectedNoteId: string
+  selectedSourceId: string
+  sectionHeading: string
   onQueryChange: (query: string) => void
   onSelectNote: (noteId: string) => void
+  onOpenSourceOverview: () => void
+  onClearSection: () => void
 }) {
   return (
     <aside className="border-b border-slate-200 bg-slate-50/70 p-3 xl:border-b-0 xl:border-r">
@@ -258,7 +311,27 @@ function NoteListPanel({
         />
       </label>
 
-      <div className="mt-3 max-h-[610px] space-y-2 overflow-y-auto pr-1">
+      {(selectedSourceId || sectionHeading) && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {selectedSourceId && (
+            <Button size="xs" variant="ghost" onClick={onOpenSourceOverview}>
+              Source overview
+            </Button>
+          )}
+          {sectionHeading && (
+            <button
+              type="button"
+              className="rounded-full bg-cyan-100 px-2.5 py-1 text-[10px] font-medium text-cyan-800"
+              onClick={onClearSection}
+              title="Clear section filter"
+            >
+              {sectionHeading} ×
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3 max-h-[570px] space-y-2 overflow-y-auto pr-1">
         {notes.map((note) => {
           const active = note.note_id === selectedNoteId
           return (
@@ -484,4 +557,15 @@ function EvidenceBlock({
 
 function formatSourceKind(value: string): string {
   return value ? value.replaceAll("_", " ") : "unknown"
+}
+
+function formatSourceFamily(value: string): string {
+  const labels: Record<string, string> = {
+    browser: "Web",
+    pdf: "PDF",
+    word: "Word",
+    desktop: "Desktop",
+    other: "Other",
+  }
+  return labels[value] ?? value
 }

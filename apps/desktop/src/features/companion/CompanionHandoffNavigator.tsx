@@ -54,7 +54,7 @@ export default function CompanionHandoffNavigator() {
 
   useEffect(() => {
     let disposed = false
-    let unlisten = () => undefined
+    let unlisten: () => void = () => undefined
 
     void desktop.overlay.onCompanionNavigation((signal) => {
       if (disposed) return

@@ -9,6 +9,14 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from pathlib import Path
+import sys
+
+# Direct execution makes ``scripts`` sys.path[0]. Add the repository root so
+# the top-level application package can be imported without PYTHONPATH setup.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from app.models.translation import TranslationRequest
 from app.translation.google_web_provider import GoogleWebTranslationProvider

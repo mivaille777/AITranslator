@@ -34,6 +34,8 @@ export interface OverlayWindowAdapter extends WindowAdapter {
   setAlwaysOnTop(enabled: boolean): Promise<void>
   setClickThrough(enabled: boolean): Promise<void>
   onMoved(callback: (position: DesktopPoint) => void): Promise<() => void>
+  notifyStateChanged(): Promise<void>
+  onStateChanged(callback: () => void): Promise<() => void>
 }
 
 export interface DesktopAdapter {

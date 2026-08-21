@@ -24,7 +24,8 @@ chat_selection_capture_enabled = true
 
 [google_web]
 enabled = true
-endpoint = "https://translate.googleapis.com/translate_a/single"
+# Browser-facing Google Translate only; no Google Cloud/API endpoint is used.
+endpoint = "https://translate.google.com/translate_a/single"
 timeout_ms = 8000
 # One bounded retry absorbs stale sessions and short 429/5xx bursts.
 max_retries = 1

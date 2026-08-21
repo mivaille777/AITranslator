@@ -7,6 +7,7 @@ from backend.api.dependencies import get_translation_service
 from backend.models.translation import (
     TranslationApiRequest,
     TranslationApiResponse,
+    TranslationProviderSelectionRequest,
     TranslationStatusResponse,
 )
 from backend.services.translation_service import TranslationService
@@ -18,15 +19,34 @@ TranslationServiceDependency = Annotated[
 ]
 
 
-@router.get("/status", response_model=TranslationStatusResponse)
-def translation_status(
-    service: TranslationServiceDependency,
-) -> TranslationStatusResponse:
+def build_status(service: TranslationService) -> TranslationStatusResponse:
     return TranslationStatusResponse(
         provider=service.provider_name,
         source_language=service.default_source_language,
         target_language=service.default_target_language,
     )
+
+
+@router.get("/status", response_model=TranslationStatusResponse)
+def translation_status(
+    service: TranslationServiceDependency,
+) -> TranslationStatusResponse:
+    return build_status(service)
+
+
+@router.post("/provider", response_model=TranslationStatusResponse)
+def select_translation_provider(
+    payload: TranslationProviderSelectionRequest,
+    service: TranslationServiceDependency,
+) -> TranslationStatusResponse:
+    try:
+        service.select_provider(payload.provider)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    return build_status(service)
 
 
 @router.post("", response_model=TranslationApiResponse)

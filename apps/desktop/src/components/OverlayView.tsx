@@ -16,6 +16,7 @@ import {
   updateOverlayPreferences,
   type OverlayPreferences,
 } from "../desktop/overlay-preferences"
+import { computeOverlayWindowSize } from "../desktop/overlay-sizing"
 import { queryKeys, queryPolling } from "../shared/query/query-keys"
 
 type MenuPosition = { x: number; y: number }
@@ -37,6 +38,7 @@ export default function OverlayView() {
   const moveIdleTimerRef = useRef<number | null>(null)
   const dragArmTimerRef = useRef<number | null>(null)
   const lastPlacedContextRef = useRef("")
+  const lastSizeKeyRef = useRef("")
 
   const overlayQuery = useQuery({
     queryKey: queryKeys.overlay.state,
@@ -56,6 +58,16 @@ export default function OverlayView() {
   const overlayVisible = state?.visible ?? false
   const overlayContextId = state?.context_id ?? ""
   const overlayRevision = state?.revision ?? 0
+  const overlaySize = state
+    ? computeOverlayWindowSize({
+        phase: state.phase,
+        translatedText: state.translated_text,
+        sourceText: state.source_text,
+        message: state.message,
+        menuOpen: Boolean(menuPosition),
+      })
+    : null
+  const overlaySizeKey = overlaySize ? `${overlaySize.width}x${overlaySize.height}` : ""
 
   useEffect(() => subscribeOverlayPreferences(setPreferences), [])
 
@@ -112,6 +124,7 @@ export default function OverlayView() {
     async function syncNativeWindow() {
       if (!overlayVisible) {
         lastPlacedContextRef.current = ""
+        lastSizeKeyRef.current = ""
         await desktop.overlay.hide()
         return
       }
@@ -119,6 +132,11 @@ export default function OverlayView() {
       const currentPreferences = readOverlayPreferences()
       await desktop.overlay.setAlwaysOnTop(currentPreferences.alwaysOnTop)
       await desktop.overlay.setClickThrough(currentPreferences.clickThrough)
+
+      if (overlaySize && lastSizeKeyRef.current !== overlaySizeKey) {
+        await desktop.overlay.resize(overlaySize)
+        lastSizeKeyRef.current = overlaySizeKey
+      }
 
       if (lastPlacedContextRef.current !== overlayContextId) {
         await desktop.overlay.place(
@@ -135,7 +153,7 @@ export default function OverlayView() {
     return () => {
       cancelled = true
     }
-  }, [overlayContextId, overlayRevision, overlayVisible])
+  }, [overlayContextId, overlayRevision, overlaySize, overlaySizeKey, overlayVisible])
 
   async function handleCopy() {
     if (!state?.translated_text) return
@@ -278,14 +296,17 @@ export default function OverlayView() {
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {state.phase === "loading" && (
-            <div className="flex h-full min-h-24 items-center justify-center gap-3 text-sm text-slate-300">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />
-              Translating…
+            <div key={`loading:${overlayRevision}`} className="ait-overlay-state-enter flex min-h-16 items-center gap-3 rounded-[18px] bg-white/[0.035] px-4 py-3 text-sm text-slate-300">
+              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />
+              <div>
+                <p className="font-medium text-slate-200">Translating</p>
+                <p className="mt-0.5 text-xs text-slate-500">Preparing the latest reading selection…</p>
+              </div>
             </div>
           )}
 
           {state.phase === "ready" && (
-            <div>
+            <div key={`ready:${overlayRevision}`} className="ait-overlay-state-enter">
               <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
                 {state.translated_text}
               </p>
@@ -298,8 +319,16 @@ export default function OverlayView() {
           )}
 
           {state.phase === "error" && (
-            <div className="rounded-xl border border-rose-400/20 bg-rose-400/10 p-3 text-sm leading-6 text-rose-200">
-              {state.message || "Translation failed"}
+            <div key={`error:${overlayRevision}`} className="ait-overlay-state-enter rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3.5">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-300/10 text-sm font-semibold text-rose-200">!</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-rose-100">Translation unavailable</p>
+                  <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">
+                    {state.message || "Translation failed"}
+                  </p>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -323,7 +352,7 @@ export default function OverlayView() {
       {menuPosition && (
         <div
           data-overlay-menu
-          className="fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-[16px] border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
+          className="ait-system-popover fixed z-50 max-h-[calc(100vh-16px)] w-[220px] overflow-y-auto rounded-[16px] border border-white/10 bg-slate-800 p-1.5 text-xs shadow-2xl"
           style={{ left: menuPosition.x, top: menuPosition.y }}
           onPointerDown={(event) => event.stopPropagation()}
         >

@@ -373,9 +373,8 @@ class TranslationManager:
     def configure_provider(self, *, force: bool = False) -> bool:
         """Apply current provider configuration to future requests.
 
-        Changing provider, endpoint, or request policy clears the in-memory
-        translation cache so a result produced by an older provider policy is
-        not reused accidentally.
+        Changing provider, endpoint, or request policy clears both cache levels
+        so a result produced by an older provider policy is not reused.
         """
 
         if not self._provider_managed and not force:
@@ -444,15 +443,26 @@ class TranslationManager:
             request.target_language,
             request.source_text,
         )
-        if cached_result is not None:
+        if cached_result is not None and cached_result.provider == self.provider_name:
             self.logger.info("CACHE_HIT request_id=%s", request.request_id)
             return replace(
                 cached_result,
                 source_text=request.source_text,
                 request_id=request.request_id,
             )
+        if cached_result is not None:
+            # The legacy cache key predates provider selection. Treat an entry
+            # produced by another provider as a miss; a successful current
+            # provider result will overwrite the same L2 row safely.
+            self.logger.info(
+                "CACHE_PROVIDER_MISS request_id=%s cached_provider=%s active_provider=%s",
+                request.request_id,
+                cached_result.provider,
+                self.provider_name,
+            )
+        else:
+            self.logger.info("CACHE_MISS request_id=%s", request.request_id)
 
-        self.logger.info("CACHE_MISS request_id=%s", request.request_id)
         try:
             result = self.provider.translate(request)
         except TranslationError:

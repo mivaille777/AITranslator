@@ -5,6 +5,7 @@ import {
   MessageSquareText,
   NotebookText,
   Settings2,
+  Sparkles,
 } from "lucide-react"
 import { NavLink, useLocation } from "react-router-dom"
 
@@ -62,10 +63,17 @@ export default function WorkspaceShell({ children, backendState, backendService,
               })}
             </nav>
 
-            <div className="px-4 pb-4 text-[11px] text-slate-500">
-              <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.04] px-3 py-3">
-                <p className="font-medium text-slate-300">Desktop runtime</p>
-                <p className="mt-1 capitalize text-slate-400">{desktop.runtime}</p>
+            <div className="px-4 pb-4">
+              <div className="rounded-[18px] border border-white/[0.08] bg-white/[0.04] px-3 py-3 text-[11px]">
+                <div className="flex items-center gap-2 text-slate-200">
+                  <Sparkles size={14} />
+                  <span className="font-medium">AI Agent</span>
+                </div>
+                <div className="mt-2 flex items-center gap-2 text-emerald-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  Online
+                </div>
+                <p className="mt-2 text-slate-400">{providerName || desktop.runtime}</p>
               </div>
             </div>
           </div>

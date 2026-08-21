@@ -26,6 +26,9 @@ export const browserDesktopAdapter: DesktopAdapter = {
     async place() {
       return null
     },
+    async resize() {
+      // Browser development mode cannot resize a native overlay window.
+    },
     async startDragging() {
       // Browser development mode cannot start a native window drag.
     },

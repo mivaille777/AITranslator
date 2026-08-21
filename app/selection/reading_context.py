@@ -1,15 +1,14 @@
-"""Adapters between selection providers and source-neutral reading context.
+"""Source-neutral adapters for richer selection capture.
 
-Stage 6C keeps document capture richer than the LLM prompt contract.  Local
-file paths and application identifiers stay in :class:`DocumentIdentity`; only
-prompt-safe fields are mapped into the existing :class:`ReadingContext` model.
+This module deliberately stays below the AI/chat layer.  It can enrich legacy
+``SelectedText`` values and browser snapshots, but it does not decide what
+metadata is safe or useful to send to an LLM.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.ai.chat.models import ReadingContext
 from app.models.selection import (
     DocumentIdentity,
     ReadingSelection,
@@ -83,30 +82,9 @@ def browser_snapshot_to_reading_selection(
     )
 
 
-def reading_selection_to_context(selection: ReadingSelection) -> ReadingContext:
-    """Map rich local capture into the existing prompt-safe ReadingContext.
-
-    ``resource_path``, ``application`` and ``page_number`` intentionally remain
-    local at this stage.  Stage 6D can decide which of those fields should be
-    surfaced in API/UI contracts.  A browser URL is already part of the
-    existing ReadingContext contract and is therefore preserved.
-    """
-
-    document = selection.document
-    return ReadingContext(
-        resource_url=document.resource_url,
-        resource_title=document.resource_title,
-        section_heading=selection.section_heading,
-        context_before=selection.context_before,
-        context_after=selection.context_after,
-        source_kind=document.source_kind,
-    )
-
-
 __all__ = [
     "browser_snapshot_to_reading_selection",
     "normalize_application_name",
     "reading_selection_from_selected_text",
-    "reading_selection_to_context",
     "source_kind_for_provider",
 ]

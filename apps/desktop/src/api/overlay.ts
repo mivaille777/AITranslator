@@ -78,6 +78,21 @@ export async function showOverlayError(payload: OverlayErrorRequest): Promise<Ov
   return response
 }
 
+export async function bindOverlayCompanionConversation(
+  contextId: string,
+  conversationId: string,
+): Promise<OverlayStateResponse> {
+  const response = await apiPost<
+    OverlayStateResponse,
+    { context_id: string; conversation_id: string }
+  >(
+    "/api/overlay/companion",
+    { context_id: contextId, conversation_id: conversationId },
+  )
+  await notifyOverlayStateChanged(contextId)
+  return response
+}
+
 export async function dismissOverlay(): Promise<OverlayStateResponse> {
   const response = await apiPost<OverlayStateResponse, Record<string, never>>("/api/overlay/dismiss", {})
   await notifyOverlayStateChanged("")

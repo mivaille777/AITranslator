@@ -7,9 +7,9 @@ level = "INFO"
 directory = "logs"
 
 [translation]
-# WebReBuild currently defaults to Youdao's web-compatible translator.
-# Set to "google_web" to restore the previous provider.
-provider = "youdao_web"
+# Preserve the established default. Set to "youdao_web" in user settings
+# when testing or selecting the Youdao web-compatible provider.
+provider = "google_web"
 source_language = "auto"
 target_language = "zh-CN"
 cache_enabled = true

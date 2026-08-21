@@ -33,6 +33,39 @@ body {
 
 button,input,select,textarea { font:inherit; }
 
+.ait-panel {
+  border:1px solid var(--ait-border-soft);
+  border-radius:var(--ait-radius-panel);
+  background:var(--ait-surface-panel);
+  box-shadow:0 12px 36px rgba(15,23,42,.08);
+  backdrop-filter:blur(18px);
+}
+
+.ait-input {
+  border:1px solid rgba(148,163,184,.24);
+  border-radius:16px;
+  background:rgba(248,250,252,.8);
+  transition:var(--ait-motion-standard) var(--ait-ease-standard);
+}
+
+.ait-input:focus {
+  background:white;
+  border-color:rgba(100,116,139,.5);
+  box-shadow:0 8px 24px rgba(15,23,42,.08);
+}
+
+.ait-button-primary {
+  border-radius:14px;
+  background:#0f172a;
+  color:white;
+  transition:var(--ait-motion-standard) var(--ait-ease-standard);
+}
+
+.ait-button-primary:hover {
+  background:#1e293b;
+  transform:translateY(-1px);
+}
+
 .workspace-header {
   position:sticky;
   top:0;

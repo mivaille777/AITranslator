@@ -9,6 +9,7 @@ from backend.services.conversation_lifecycle_service import ConversationLifecycl
 from backend.services.conversation_store_service import ConversationStoreService
 from backend.services.overlay_state_service import OverlayStateService
 from backend.services.quick_action_service import QuickActionService
+from backend.services.reading_selection_resolver import ReadingSelectionResolver
 from backend.services.research_note_service import ResearchNoteService
 from backend.services.translation_service import TranslationService
 
@@ -16,6 +17,8 @@ _translation_service: TranslationService | None = None
 _translation_service_lock = Lock()
 _browser_context_service: BrowserContextService | None = None
 _browser_context_service_lock = Lock()
+_reading_selection_resolver: ReadingSelectionResolver | None = None
+_reading_selection_resolver_lock = Lock()
 _overlay_state_service: OverlayStateService | None = None
 _overlay_state_service_lock = Lock()
 _quick_action_service: QuickActionService | None = None
@@ -70,6 +73,28 @@ def close_browser_context_service() -> None:
         service.close()
 
 
+def get_reading_selection_resolver() -> ReadingSelectionResolver:
+    global _reading_selection_resolver
+    if _reading_selection_resolver is not None:
+        return _reading_selection_resolver
+
+    with _reading_selection_resolver_lock:
+        if _reading_selection_resolver is None:
+            _reading_selection_resolver = ReadingSelectionResolver(
+                browser_context_service=get_browser_context_service()
+            )
+        return _reading_selection_resolver
+
+
+def close_reading_selection_resolver() -> None:
+    global _reading_selection_resolver
+    with _reading_selection_resolver_lock:
+        resolver = _reading_selection_resolver
+        _reading_selection_resolver = None
+    if resolver is not None:
+        resolver.clear_cache()
+
+
 def get_overlay_state_service() -> OverlayStateService:
     global _overlay_state_service
     if _overlay_state_service is not None:
@@ -108,7 +133,9 @@ def get_research_note_service() -> ResearchNoteService:
 
     with _research_note_service_lock:
         if _research_note_service is None:
-            _research_note_service = ResearchNoteService()
+            _research_note_service = ResearchNoteService(
+                reading_resolver=get_reading_selection_resolver()
+            )
         return _research_note_service
 
 
@@ -119,7 +146,9 @@ def get_companion_handoff_service() -> CompanionHandoffService:
 
     with _companion_handoff_service_lock:
         if _companion_handoff_service is None:
-            _companion_handoff_service = CompanionHandoffService()
+            _companion_handoff_service = CompanionHandoffService(
+                reading_resolver=get_reading_selection_resolver()
+            )
         return _companion_handoff_service
 
 
@@ -130,7 +159,9 @@ def get_companion_chat_service() -> CompanionChatService:
 
     with _companion_chat_service_lock:
         if _companion_chat_service is None:
-            _companion_chat_service = CompanionChatService()
+            _companion_chat_service = CompanionChatService(
+                reading_resolver=get_reading_selection_resolver()
+            )
         return _companion_chat_service
 
 

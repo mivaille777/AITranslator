@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { getBrowserPage, getBrowserSelection, getBrowserStatus } from "../../api/browser"
 import { getHealth } from "../../api/health"
 import { presentOverlay, showOverlayError, showOverlayLoading } from "../../api/overlay"
+import { getReadingSelection, type ReadingSelection } from "../../api/reading"
 import { getTranslationStatus, translateText } from "../../api/translation"
 import type {
   BrowserBridgeStatusResponse,
@@ -24,6 +25,7 @@ export interface TranslationWorkspaceController {
   browserStatusChecking: boolean
   browserSelection: BrowserSelection | null
   browserPage: BrowserPage | null
+  readingSelection: ReadingSelection | null
   sourceText: string
   sourceLanguage: string
   targetLanguage: string
@@ -90,6 +92,13 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     refetchInterval: queryPolling.browserPage,
   })
 
+  const readingSelectionQuery = useQuery({
+    queryKey: queryKeys.reading.selection,
+    queryFn: getReadingSelection,
+    enabled: healthQuery.isSuccess,
+    refetchInterval: queryPolling.readingSelection,
+  })
+
   const translationMutation = useMutation({
     mutationFn: translateText,
     onSuccess: (result) => {
@@ -104,18 +113,28 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
 
   const browserSelection = browserSelectionQuery.data?.selection ?? null
   const browserPage = browserPageQuery.data?.page ?? null
+  const readingSelection = readingSelectionQuery.data?.selection ?? null
 
-  const translateBrowserSelection = useCallback(
-    async (selection: BrowserSelection) => {
+  const translateReadingSelection = useCallback(
+    async (selection: ReadingSelection) => {
       const contextId = selection.selection_id
       lastAutoSelectionId.current = contextId
       setAutoTranslating(true)
+      const readingContext = {
+        resource_url: selection.resource_url,
+        resource_title: selection.resource_title,
+        section_heading: selection.section_heading,
+        context_before: selection.context_before,
+        context_after: selection.context_after,
+        source_kind: selection.source_kind,
+      }
 
       void showOverlayLoading({
         context_id: contextId,
         source_text: selection.text,
         source_language: sourceLanguage,
         target_language: targetLanguage,
+        ...readingContext,
       }).catch(() => undefined)
 
       try {
@@ -135,6 +154,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
           source_language: result.source_language,
           target_language: result.target_language,
           provider: result.provider,
+          ...readingContext,
         }).catch(() => undefined)
       } catch (error) {
         if (lastAutoSelectionId.current !== contextId) return
@@ -148,6 +168,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
           source_language: sourceLanguage,
           target_language: targetLanguage,
           message,
+          ...readingContext,
         }).catch(() => undefined)
       } finally {
         if (lastAutoSelectionId.current === contextId) {
@@ -159,23 +180,23 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
   )
 
   useEffect(() => {
-    if (!followBrowserSelection || !browserSelection) return
-    if (browserSelection.selection_id === lastSelectionId.current) return
+    if (!followBrowserSelection || !readingSelection) return
+    if (readingSelection.selection_id === lastSelectionId.current) return
 
-    lastSelectionId.current = browserSelection.selection_id
+    lastSelectionId.current = readingSelection.selection_id
     queueMicrotask(() => {
-      setSourceText(browserSelection.text)
+      setSourceText(readingSelection.text)
       setTranslation(null)
       setTranslationError("")
       if (autoTranslateSelection) {
-        void translateBrowserSelection(browserSelection)
+        void translateReadingSelection(readingSelection)
       }
     })
   }, [
     autoTranslateSelection,
-    browserSelection,
     followBrowserSelection,
-    translateBrowserSelection,
+    readingSelection,
+    translateReadingSelection,
   ])
 
   const backendState: BackendState = healthQuery.isPending
@@ -223,14 +244,14 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     setSourceText("")
     setTranslation(null)
     setTranslationError("")
-    lastSelectionId.current = browserSelection?.selection_id ?? ""
+    lastSelectionId.current = readingSelection?.selection_id ?? ""
     lastAutoSelectionId.current = ""
     setAutoTranslating(false)
   }
 
   function useLatestSelection() {
-    if (!browserSelection) return
-    setSourceText(browserSelection.text)
+    if (!readingSelection) return
+    setSourceText(readingSelection.text)
     setTranslation(null)
     setTranslationError("")
   }
@@ -243,6 +264,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     browserStatusChecking: browserStatusQuery.isPending,
     browserSelection,
     browserPage,
+    readingSelection,
     sourceText,
     sourceLanguage,
     targetLanguage,

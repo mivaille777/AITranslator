@@ -14,6 +14,7 @@ from app.ai.chat.service import AIChatService
 from app.ai.chat.stream_service import ProviderStreamingAIChatService
 from app.ai.errors import AIConfigurationError
 from app.ai.service import AITextService
+from backend.services.reading_context_adapter import to_reading_context
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,10 @@ class CompanionChatService:
     REST requests keep using the stable non-streaming service for compatibility.
     WebSocket requests use the UI-independent streaming core. Neither path
     introduces LangGraph or desktop UI ownership into normal Companion chat.
+
+    Stage 6C/6D can additionally enrich a matching reading request through the
+    unified ``ReadingSelectionResolver``. Explicit frozen request fields always
+    win; resolver metadata only fills missing values for the same selected text.
     """
 
     def __init__(
@@ -40,10 +45,12 @@ class CompanionChatService:
         text_service: AITextService | Any | None = None,
         chat_service: AIChatService | Any | None = None,
         stream_service: ProviderStreamingAIChatService | Any | None = None,
+        reading_resolver: Any | None = None,
     ) -> None:
         self._text_service = text_service
         self._chat_service = chat_service
         self._stream_service = stream_service
+        self._reading_resolver = reading_resolver
 
     def _ensure_text_service(self) -> AITextService | Any:
         if self._text_service is None:
@@ -77,6 +84,38 @@ class CompanionChatService:
             return True, self.provider_name, self.model, ""
         except AIConfigurationError as exc:
             return False, "deepseek", "", str(exc)
+
+    def _with_resolved_reading(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        payload = dict(kwargs)
+        if str(payload.get("context_mode", "reading")).strip().lower() != "reading":
+            return payload
+        resolver = self._reading_resolver
+        resolve_for_text = getattr(resolver, "resolve_for_text", None)
+        if not callable(resolve_for_text):
+            return payload
+
+        source_text = str(payload.get("source_text", "") or "")
+        try:
+            selection = resolve_for_text(source_text)
+        except Exception:
+            selection = None
+        if selection is None:
+            return payload
+
+        if not source_text.strip():
+            payload["source_text"] = selection.text
+        reading = to_reading_context(selection)
+        for key, value in (
+            ("resource_url", reading.resource_url),
+            ("resource_title", reading.resource_title),
+            ("section_heading", reading.section_heading),
+            ("context_before", reading.context_before),
+            ("context_after", reading.context_after),
+            ("source_kind", reading.source_kind),
+        ):
+            if value and not str(payload.get(key, "") or "").strip():
+                payload[key] = value
+        return payload
 
     @staticmethod
     def _build_request(
@@ -133,7 +172,7 @@ class CompanionChatService:
         )
 
     def send(self, **kwargs: Any) -> CompanionChatResult:
-        request = self._build_request(**kwargs)
+        request = self._build_request(**self._with_resolved_reading(kwargs))
         result = self._ensure_chat_service().execute(request)
         return CompanionChatResult(
             session_id=result.session_id,
@@ -145,7 +184,7 @@ class CompanionChatService:
         )
 
     def stream(self, **kwargs: Any) -> Iterator[str]:
-        request = self._build_request(**kwargs)
+        request = self._build_request(**self._with_resolved_reading(kwargs))
         yield from self._ensure_stream_service().stream(request)
 
     def close(self) -> None:

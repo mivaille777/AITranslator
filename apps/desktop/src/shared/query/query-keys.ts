@@ -8,6 +8,9 @@ export const queryKeys = {
     selection: ["browser", "selection"] as const,
     page: ["browser", "page"] as const,
   },
+  reading: {
+    selection: ["reading", "selection"] as const,
+  },
   overlay: {
     state: ["overlay", "state"] as const,
   },
@@ -36,6 +39,7 @@ export const queryPolling = {
   browserStatus: 2_000,
   browserSelection: 500,
   browserPage: 2_000,
+  readingSelection: 500,
   overlayState: 250,
   companionHandoff: 650,
   companionChatStatus: 30_000,

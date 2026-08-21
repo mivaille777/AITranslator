@@ -1,5 +1,5 @@
-import { getCachedBrowserSelection } from "./browser"
 import { apiGet, apiPost } from "./client"
+import { getCachedReadingSelection } from "./reading"
 import type {
   OverlayErrorRequest,
   OverlayLoadingRequest,
@@ -14,20 +14,20 @@ const emptyReadingContext: ReadingContextFields = {
   section_heading: "",
   context_before: "",
   context_after: "",
-  source_kind: "browser_selection",
+  source_kind: "",
 }
 
 function readingContextFor(contextId: string): ReadingContextFields {
-  const selection = getCachedBrowserSelection()
+  const selection = getCachedReadingSelection()
   if (!selection || selection.selection_id !== contextId) return emptyReadingContext
 
   return {
-    resource_url: selection.url,
-    resource_title: selection.title,
-    section_heading: selection.heading,
+    resource_url: selection.resource_url,
+    resource_title: selection.resource_title,
+    section_heading: selection.section_heading,
     context_before: selection.context_before,
     context_after: selection.context_after,
-    source_kind: "browser_selection",
+    source_kind: selection.source_kind,
   }
 }
 

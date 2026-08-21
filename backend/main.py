@@ -15,12 +15,14 @@ from backend.api.dependencies import (
     close_companion_chat_service,
     close_conversation_store_service,
     close_quick_action_service,
+    close_reading_selection_resolver,
     close_translation_service,
     get_browser_context_service,
 )
 from backend.api.health import router as health_router
 from backend.api.overlay import router as overlay_router
 from backend.api.quick_actions import router as quick_actions_router
+from backend.api.reading import router as reading_router
 from backend.api.research import router as research_router
 from backend.api.translation import router as translation_router
 
@@ -42,6 +44,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        close_reading_selection_resolver()
         close_browser_context_service()
         close_companion_chat_service()
         close_conversation_store_service()
@@ -52,7 +55,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.11.0",
+        version="0.12.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
         lifespan=lifespan,
     )
@@ -66,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(translation_router)
     app.include_router(browser_context_router)
+    app.include_router(reading_router)
     app.include_router(overlay_router)
     app.include_router(quick_actions_router)
     app.include_router(research_router)

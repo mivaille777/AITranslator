@@ -6,15 +6,29 @@ export default function ReadingWorkspace({
 }: {
   workspace: TranslationWorkspaceController
 }) {
-  const selection = workspace.browserSelection
-  const page = workspace.browserPage
+  const selection = workspace.readingSelection
+  const browserPage = workspace.browserPage
+  const isBrowserSelection = selection?.source_kind === "browser"
+  const title =
+    selection?.resource_title ||
+    (isBrowserSelection ? browserPage?.title : "") ||
+    "—"
+  const section =
+    selection?.section_heading ||
+    (isBrowserSelection ? browserPage?.heading : "") ||
+    "—"
+  const locator =
+    selection?.resource_url ||
+    selection?.local_locator ||
+    (isBrowserSelection ? browserPage?.url : "") ||
+    "—"
 
   return (
     <div className="space-y-5">
       <BrowserReadingContextPanel
         browserStatus={workspace.browserStatus}
-        browserSelection={selection}
-        browserPage={page}
+        readingSelection={selection}
+        browserPage={browserPage}
         followBrowserSelection={workspace.followBrowserSelection}
         autoTranslateSelection={workspace.autoTranslateSelection}
         autoTranslating={workspace.autoTranslating}
@@ -35,14 +49,14 @@ export default function ReadingWorkspace({
             </div>
             {selection && (
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-                Frozen DOM context
+                {selection.source_kind || "reading"} · {selection.provider}
               </span>
             )}
           </div>
 
           <div className="mt-5 min-h-48 rounded-xl border border-slate-200 bg-slate-50 p-4">
             <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
-              {selection?.text || "Select text in Chrome/Edge to inspect its bounded reading context here."}
+              {selection?.text || "Select text in a browser, PDF, Word document, or another native app to inspect its bounded reading context here."}
             </p>
           </div>
 
@@ -56,14 +70,20 @@ export default function ReadingWorkspace({
 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-            Page metadata
+            Document metadata
           </p>
           <dl className="mt-4 space-y-4 text-sm">
-            <MetadataRow label="Title" value={page?.title || selection?.title || "—"} />
-            <MetadataRow label="Section" value={selection?.heading || page?.heading || "—"} />
-            <MetadataRow label="URL" value={page?.url || selection?.url || "—"} mono />
+            <MetadataRow label="Title" value={title} />
+            <MetadataRow label="Section" value={section} />
+            <MetadataRow label="Source" value={selection?.source_kind || "—"} />
+            <MetadataRow label="Application" value={selection?.application || "—"} />
             <MetadataRow
-              label="Extension"
+              label="Page"
+              value={selection?.page_number ? String(selection.page_number) : "—"}
+            />
+            <MetadataRow label="Locator" value={locator} mono />
+            <MetadataRow
+              label="Browser bridge"
               value={workspace.browserStatus?.has_extension_activity ? "Active" : "Waiting"}
             />
           </dl>

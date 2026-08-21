@@ -4,6 +4,7 @@ from typing import Any
 
 from app.ai.chat.models import ChatContext, ReadingContext
 from app.research.notes import ResearchNote, ResearchNoteSaveResult, ResearchNoteStore
+from backend.services.reading_context_adapter import to_reading_context
 from backend.services.research_source_profile import (
     ResearchSourceProfile,
     ResearchSourceSummary,
@@ -13,15 +14,83 @@ from backend.services.research_source_profile import (
 
 
 class ResearchNoteService:
-    """Application boundary around the existing SQLite research-note store."""
+    """Application boundary around the existing SQLite research-note store.
 
-    def __init__(self, store: ResearchNoteStore | Any | None = None) -> None:
+    When the supplied text still matches the unified reading resolver, missing
+    source metadata is filled from that frozen selection. This lets Browser DOM,
+    PDF/UIA, Word COM and generic UIA evidence enter the same Research Note path
+    without teaching the note store about capture-provider details.
+    """
+
+    def __init__(
+        self,
+        store: ResearchNoteStore | Any | None = None,
+        *,
+        reading_resolver: Any | None = None,
+    ) -> None:
         self._store = store or ResearchNoteStore()
+        self._reading_resolver = reading_resolver
+
+    def _resolved_fields(
+        self,
+        *,
+        source_text: str,
+        resource_url: str,
+        resource_title: str,
+        section_heading: str,
+        context_before: str,
+        context_after: str,
+        source_kind: str,
+    ) -> tuple[str, str, str, str, str, str, str]:
+        resolver = self._reading_resolver
+        resolve_for_text = getattr(resolver, "resolve_for_text", None)
+        if not callable(resolve_for_text):
+            return (
+                source_text,
+                resource_url,
+                resource_title,
+                section_heading,
+                context_before,
+                context_after,
+                source_kind,
+            )
+
+        try:
+            selection = resolve_for_text(source_text)
+        except Exception:
+            selection = None
+        if selection is None:
+            return (
+                source_text,
+                resource_url,
+                resource_title,
+                section_heading,
+                context_before,
+                context_after,
+                source_kind,
+            )
+
+        reading = to_reading_context(selection)
+        resolved_source_kind = source_kind
+        if reading.source_kind and (
+            not str(source_kind or "").strip()
+            or str(source_kind).strip() == "browser_selection"
+        ):
+            resolved_source_kind = reading.source_kind
+        return (
+            source_text or selection.text,
+            resource_url or reading.resource_url,
+            resource_title or reading.resource_title,
+            section_heading or reading.section_heading,
+            context_before or reading.context_before,
+            context_after or reading.context_after,
+            resolved_source_kind,
+        )
 
     def save(
         self,
         *,
-        source_text: str,
+        source_text: str = "",
         translated_text: str = "",
         source_language: str = "auto",
         target_language: str = "zh-CN",
@@ -40,6 +109,26 @@ class ResearchNoteService:
         # ResearchNoteStore does not persist them independently because the
         # selected source/translation already carry the relevant language data.
         _ = (source_language, target_language)
+        (
+            source_text,
+            resource_url,
+            resource_title,
+            section_heading,
+            context_before,
+            context_after,
+            source_kind,
+        ) = self._resolved_fields(
+            source_text=source_text,
+            resource_url=resource_url,
+            resource_title=resource_title,
+            section_heading=section_heading,
+            context_before=context_before,
+            context_after=context_after,
+            source_kind=source_kind,
+        )
+        if not source_text.strip():
+            raise ValueError("Research note requires selected source text.")
+
         context = ChatContext(
             source_text=source_text,
             translated_text=translated_text,

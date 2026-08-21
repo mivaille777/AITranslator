@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import type { CompanionHandoff } from "../../api/types"
-import { companionHandoffPath } from "./companion-handoff-navigation"
+import {
+  companionConversationPath,
+  companionHandoffPath,
+} from "./companion-handoff-navigation"
 
 function handoff(conversationId = ""): CompanionHandoff {
   return {
@@ -25,15 +28,22 @@ function handoff(conversationId = ""): CompanionHandoff {
   }
 }
 
-describe("companionHandoffPath", () => {
+describe("companion handoff navigation", () => {
   it("opens an existing overlay conversation directly in the main chat", () => {
     expect(companionHandoffPath(handoff("conversation overlay/7"))).toBe(
       "/chat?conversation=conversation%20overlay%2F7",
     )
   })
 
+  it("uses the same encoded route for native conversation navigation", () => {
+    expect(companionConversationPath(" conversation overlay/7 ")).toBe(
+      "/chat?conversation=conversation%20overlay%2F7",
+    )
+  })
+
   it("keeps context-only handoffs on the normal chat route", () => {
     expect(companionHandoffPath(handoff())).toBe("/chat")
+    expect(companionConversationPath("  ")).toBe("/chat")
     expect(companionHandoffPath(null)).toBe("")
   })
 })

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -58,15 +59,19 @@ export default function OverlayView() {
   const overlayVisible = state?.visible ?? false
   const overlayContextId = state?.context_id ?? ""
   const overlayRevision = state?.revision ?? 0
-  const overlaySize = state
-    ? computeOverlayWindowSize({
-        phase: state.phase,
-        translatedText: state.translated_text,
-        sourceText: state.source_text,
-        message: state.message,
-        menuOpen: Boolean(menuPosition),
-      })
-    : null
+  const menuOpen = menuPosition !== null
+  const overlaySize = useMemo(
+    () => state
+      ? computeOverlayWindowSize({
+          phase: state.phase,
+          translatedText: state.translated_text,
+          sourceText: state.source_text,
+          message: state.message,
+          menuOpen,
+        })
+      : null,
+    [menuOpen, state?.message, state?.phase, state?.source_text, state?.translated_text],
+  )
   const overlaySizeKey = overlaySize ? `${overlaySize.width}x${overlaySize.height}` : ""
 
   useEffect(() => subscribeOverlayPreferences(setPreferences), [])
@@ -294,7 +299,7 @@ export default function OverlayView() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className={`min-h-0 flex-1 overflow-y-auto px-4 py-4 ${state.phase === "ready" ? "pb-24" : ""}`}>
           {state.phase === "loading" && (
             <div key={`loading:${overlayRevision}`} className="ait-overlay-state-enter flex min-h-16 items-center gap-3 rounded-[18px] bg-white/[0.035] px-4 py-3 text-sm text-slate-300">
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />

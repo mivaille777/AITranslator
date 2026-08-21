@@ -19,6 +19,7 @@ import type {
 import { computeOverlayPosition } from "../overlay-positioning"
 
 const OVERLAY_STATE_CHANGED_EVENT = "aitrans-overlay-state-changed"
+const OVERLAY_INTERACTIVE_DATASET_KEY = "aitOverlayInteractive"
 
 let overlayResizeGeneration = 0
 
@@ -40,6 +41,10 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
+}
+
+function overlayRequiresPointerInteraction(): boolean {
+  return document.documentElement.dataset[OVERLAY_INTERACTIVE_DATASET_KEY] === "true"
 }
 
 async function cancelOverlayMotion(): Promise<void> {
@@ -209,7 +214,8 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     },
     async setClickThrough(enabled: boolean) {
       const overlay = await getOverlayWindow()
-      await overlay?.setIgnoreCursorEvents(enabled)
+      const effectiveClickThrough = enabled && !overlayRequiresPointerInteraction()
+      await overlay?.setIgnoreCursorEvents(effectiveClickThrough)
     },
     async onMoved(callback) {
       const overlay = await getOverlayWindow()

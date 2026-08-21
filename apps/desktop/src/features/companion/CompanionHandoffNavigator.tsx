@@ -38,6 +38,7 @@ export default function CompanionHandoffNavigator() {
   ) => {
     const normalizedConversationId = nextConversationId.trim()
     if (!normalizedConversationId) return
+    if (nextHandoffId && nextHandoffId === lastNavigatedHandoff.current) return
 
     if (nextHandoffId) {
       lastNavigatedHandoff.current = nextHandoffId

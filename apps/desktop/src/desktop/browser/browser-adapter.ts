@@ -44,5 +44,11 @@ export const browserDesktopAdapter: DesktopAdapter = {
     async onMoved() {
       return () => undefined
     },
+    async notifyStateChanged() {
+      // Polling remains the browser-development fallback.
+    },
+    async onStateChanged() {
+      return () => undefined
+    },
   },
 }

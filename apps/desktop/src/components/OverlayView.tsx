@@ -1,6 +1,6 @@
 import {
+  useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -65,7 +65,7 @@ export default function OverlayView() {
     staleTime: 0,
   })
 
-  const dismissMutation = useMutation({
+  const { mutate: dismiss } = useMutation({
     mutationFn: dismissOverlay,
     onSuccess: () => {
       void desktop.overlay.hide()
@@ -81,48 +81,50 @@ export default function OverlayView() {
     actionPresentationState.contextId === overlayContextId
       ? actionPresentationState.presentation
       : "compact"
-  const overlaySize = useMemo(
-    () => state
-      ? computeOverlayWindowSize({
-          phase: state.phase,
-          translatedText: state.translated_text,
-          sourceText: state.source_text,
-          message: state.message,
-          menuOpen,
-          actionPresentation,
-        })
-      : null,
-    [
-      actionPresentation,
-      menuOpen,
-      state?.message,
-      state?.phase,
-      state?.source_text,
-      state?.translated_text,
-    ],
-  )
+  const overlaySize = state
+    ? computeOverlayWindowSize({
+        phase: state.phase,
+        translatedText: state.translated_text,
+        sourceText: state.source_text,
+        message: state.message,
+        menuOpen,
+        actionPresentation,
+      })
+    : null
   const overlaySizeKey = overlaySize ? `${overlaySize.width}x${overlaySize.height}` : ""
 
-  function cancelAutoDismiss() {
+  const cancelAutoDismiss = useCallback(() => {
     if (autoDismissTimerRef.current !== null) {
       window.clearTimeout(autoDismissTimerRef.current)
       autoDismissTimerRef.current = null
     }
-  }
+  }, [])
 
-  function scheduleAutoDismiss(delay: number) {
+  const scheduleAutoDismiss = useCallback((delay: number) => {
     cancelAutoDismiss()
     if (!readOverlayPreferences().smartAutoDismiss) return
 
     autoDismissTimerRef.current = window.setTimeout(() => {
       autoDismissTimerRef.current = null
-      dismissMutation.mutate()
+      dismiss()
     }, delay)
-  }
+  }, [cancelAutoDismiss, dismiss])
+
+  const handleCopy = useCallback(async () => {
+    if (!state?.translated_text) return
+    try {
+      await navigator.clipboard.writeText(state.translated_text)
+      setCopied(true)
+      scheduleAutoDismiss(1400)
+      window.setTimeout(() => setCopied(false), 900)
+    } catch {
+      setCopied(false)
+    }
+  }, [scheduleAutoDismiss, state?.translated_text])
 
   useEffect(() => subscribeOverlayPreferences(setPreferences), [])
 
-  useEffect(() => () => cancelAutoDismiss(), [])
+  useEffect(() => () => cancelAutoDismiss(), [cancelAutoDismiss])
 
   useEffect(() => {
     let disposed = false
@@ -208,7 +210,14 @@ export default function OverlayView() {
     return () => {
       cancelled = true
     }
-  }, [overlayContextId, overlayRevision, overlaySize, overlaySizeKey, overlayVisible])
+  }, [
+    cancelAutoDismiss,
+    overlayContextId,
+    overlayRevision,
+    overlaySize,
+    overlaySizeKey,
+    overlayVisible,
+  ])
 
   useEffect(() => {
     if (!overlayVisible) return
@@ -226,7 +235,7 @@ export default function OverlayView() {
         } else if (actionPresentation !== "compact") {
           dispatchOverlayCommand("escape")
         } else {
-          dismissMutation.mutate()
+          dismiss()
         }
         return
       }
@@ -258,19 +267,15 @@ export default function OverlayView() {
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [actionPresentation, menuOpen, overlayVisible, state?.phase, state?.translated_text])
-
-  async function handleCopy() {
-    if (!state?.translated_text) return
-    try {
-      await navigator.clipboard.writeText(state.translated_text)
-      setCopied(true)
-      scheduleAutoDismiss(1400)
-      window.setTimeout(() => setCopied(false), 900)
-    } catch {
-      setCopied(false)
-    }
-  }
+  }, [
+    actionPresentation,
+    cancelAutoDismiss,
+    dismiss,
+    handleCopy,
+    menuOpen,
+    overlayVisible,
+    state?.phase,
+  ])
 
   function handleCompletedInteraction(interaction: OverlayCompletedInteraction) {
     if (interaction === "handoff") {
@@ -428,7 +433,7 @@ export default function OverlayView() {
               title="关闭 · Esc"
               className="ait-overlay-quiet-button flex h-7 w-7 items-center justify-center rounded-full text-sm text-slate-400"
               onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => dismissMutation.mutate()}
+              onClick={() => dismiss()}
             >
               ×
             </button>
@@ -570,7 +575,7 @@ export default function OverlayView() {
           <MenuShortcut label="More actions" keys="M" />
 
           <div className="my-1 border-t border-white/10" />
-          <MenuItem label="Hide overlay" danger onClick={() => dismissMutation.mutate()} />
+          <MenuItem label="Hide overlay" danger onClick={() => dismiss()} />
         </div>
       )}
     </main>

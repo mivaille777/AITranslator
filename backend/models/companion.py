@@ -59,3 +59,13 @@ class CompanionChatStatusResponse(BaseModel):
     provider: str = ""
     model: str = ""
     detail: str = ""
+
+
+class CompanionChatStreamStart(BaseModel):
+    type: Literal["start"]
+    request: CompanionChatRequest
+
+
+class CompanionChatStreamCancel(BaseModel):
+    type: Literal["cancel"]
+    request_id: int = Field(ge=0)

@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { useMutation } from "@tanstack/react-query"
 import ReactMarkdown from "react-markdown"
 
@@ -8,6 +9,7 @@ import type {
   QuickActionResponse,
 } from "../api/types"
 import { desktop } from "../desktop"
+import { readOverlayPreferences } from "../desktop/overlay-preferences"
 import {
   type CompanionContextSnapshot,
 } from "../features/companion/companion-runtime"
@@ -75,6 +77,19 @@ export default function OverlayCompactChat({
     initialSessionId: `overlay-${state.context_id}`,
     initialScopeId: `overlay:${state.context_id}`,
   })
+
+  useEffect(() => {
+    // Compact Chat is an explicit interactive mode. Temporarily override a
+    // persistent click-through preference without changing the saved setting.
+    document.documentElement.dataset.aitOverlayInteractive = "true"
+    void desktop.overlay.setClickThrough(false)
+    void desktop.overlay.focus()
+
+    return () => {
+      delete document.documentElement.dataset.aitOverlayInteractive
+      void desktop.overlay.setClickThrough(readOverlayPreferences().clickThrough)
+    }
+  }, [])
 
   const handoffMutation = useMutation({
     mutationFn: (payload: CompanionHandoffRequest) => createCompanionHandoff(payload),

@@ -36,7 +36,21 @@ describe("computeOverlayWindowSize", () => {
 
     expect(shortReady.height).toBeGreaterThanOrEqual(286)
     expect(longReady.height).toBeGreaterThan(shortReady.height)
-    expect(longReady.height).toBe(540)
+    expect(longReady.height).toBe(600)
+  })
+
+  it("allocates more native height as contextual actions morph", () => {
+    const base = {
+      phase: "ready" as const,
+      translatedText: "A compact result.",
+      sourceText: "Source.",
+    }
+    const compact = computeOverlayWindowSize({ ...base, actionPresentation: "compact" })
+    const expanded = computeOverlayWindowSize({ ...base, actionPresentation: "expanded" })
+    const result = computeOverlayWindowSize({ ...base, actionPresentation: "result" })
+
+    expect(expanded.height).toBeGreaterThan(compact.height)
+    expect(result.height).toBeGreaterThan(expanded.height)
   })
 
   it("temporarily expands compact states while the context menu is open", () => {

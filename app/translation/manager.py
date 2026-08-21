@@ -47,9 +47,6 @@ class TranslationManager:
         self.config_manager = resolved_config
         self._provider_managed = provider is None
 
-        # Managed web providers are lazy: constructing the manager performs no
-        # network request. Tests and offline callers can continue to inject a
-        # fake provider explicitly.
         if provider is None:
             self.provider = self._build_managed_provider()
         else:
@@ -112,9 +109,6 @@ class TranslationManager:
             configured_sqlite_enabled = bool(
                 getattr(resolved_config, "translation_sqlite_cache_enabled", True)
             )
-            # Explicitly injected providers are normally test/offline
-            # providers. Keep their default isolated from the application's
-            # persistent database unless the caller opts in explicitly.
             persistent_enabled = (
                 sqlite_enabled
                 if sqlite_enabled is not None
@@ -163,8 +157,6 @@ class TranslationManager:
         source_language: str | None = None,
         target_language: str | None = None,
     ) -> None:
-        """Apply language defaults for subsequent translation requests."""
-
         if source_language is not None and str(source_language).strip():
             self.default_source_language = str(source_language).strip()
         if target_language is not None and str(target_language).strip():
@@ -179,37 +171,23 @@ class TranslationManager:
         sqlite_path: str | Path | None = None,
         history_enabled: bool | None = None,
     ) -> None:
-        """Apply cache settings without exposing cache implementation details."""
-
         next_enabled = self.cache.enabled if enabled is None else bool(enabled)
         next_size = self.cache.max_size if max_size is None else int(max_size)
         if next_size < 1:
             next_size = 1
         if next_size != self.cache.max_size:
             next_sqlite_enabled = (
-                getattr(
-                    self.cache,
-                    "sqlite_enabled",
-                    False,
-                )
+                getattr(self.cache, "sqlite_enabled", False)
                 if sqlite_enabled is None
                 else bool(sqlite_enabled)
             )
             next_sqlite_path = (
-                getattr(
-                    self.cache,
-                    "sqlite_path",
-                    None,
-                )
+                getattr(self.cache, "sqlite_path", None)
                 if sqlite_path is None
                 else sqlite_path
             )
             next_history_enabled = (
-                getattr(
-                    self.cache,
-                    "history_enabled",
-                    False,
-                )
+                getattr(self.cache, "history_enabled", False)
                 if history_enabled is None
                 else bool(history_enabled)
             )
@@ -227,11 +205,7 @@ class TranslationManager:
                 close_cache()
         else:
             self.cache.enabled = next_enabled
-            configure_persistence = getattr(
-                self.cache,
-                "configure_persistence",
-                None,
-            )
+            configure_persistence = getattr(self.cache, "configure_persistence", None)
             if callable(configure_persistence):
                 configure_persistence(
                     sqlite_enabled=sqlite_enabled,
@@ -241,13 +215,9 @@ class TranslationManager:
 
     @property
     def provider_name(self) -> str:
-        """Return the active provider label without exposing implementation data."""
-
         return self._provider_name(self.provider)
 
     def close(self) -> None:
-        """Release resources owned by the provider and both cache levels."""
-
         close = getattr(self.provider, "close", None)
         try:
             if callable(close):
@@ -263,8 +233,6 @@ class TranslationManager:
         *,
         truncate: bool = False,
     ) -> str:
-        """Normalize source text for a caller that needs explicit preparation."""
-
         return self.text_normalizer.normalize(source_text, truncate=truncate)
 
     @staticmethod
@@ -325,15 +293,13 @@ class TranslationManager:
         )
 
     def _read_provider_signature(self) -> tuple[object, ...]:
-        """Return config values whose change requires rebuilding the provider."""
-
         return (
             self._configured_provider_name(),
             getattr(self.config_manager, "google_web_enabled", True),
             getattr(
                 self.config_manager,
                 "google_web_endpoint",
-                "https://translate.google.com/translate_a/single",
+                "https://translate.googleapis.com/translate_a/single",
             ),
             getattr(self.config_manager, "google_web_timeout_seconds", 8.0),
             getattr(self.config_manager, "google_web_max_retries", 0),
@@ -348,7 +314,7 @@ class TranslationManager:
                 self.config_manager,
                 "youdao_web",
                 "endpoint",
-                "https://fanyi.youdao.com/translate",
+                "https://dict.youdao.com/webtranslate",
             ),
             self._config_value(
                 self.config_manager,
@@ -371,12 +337,6 @@ class TranslationManager:
         )
 
     def configure_provider(self, *, force: bool = False) -> bool:
-        """Apply current provider configuration to future requests.
-
-        Changing provider, endpoint, or request policy clears both cache levels
-        so a result produced by an older provider policy is not reused.
-        """
-
         if not self._provider_managed and not force:
             return False
         signature = self._read_provider_signature()
@@ -408,8 +368,6 @@ class TranslationManager:
         sqlite_path: str | Path | None = None,
         history_enabled: bool | None = None,
     ) -> None:
-        """Apply common settings and then refresh the web provider."""
-
         self.configure_languages(source_language, target_language)
         self.configure_cache(
             enabled=cache_enabled,
@@ -427,8 +385,6 @@ class TranslationManager:
         target_language: str | None = None,
         request_id: int = 0,
     ) -> TranslationResult:
-        """Translate source text through the configured provider."""
-
         text = self.text_normalizer.normalize(source_text)
 
         request = TranslationRequest(
@@ -458,10 +414,6 @@ class TranslationManager:
                 request_id=request.request_id,
             )
         if cached_result is not None:
-            # Managed web providers share a legacy cache whose key predates
-            # provider selection. Treat another provider's result as a miss.
-            # Explicitly injected providers retain the historical cache
-            # semantics used by tests and offline callers.
             self.logger.info(
                 "CACHE_PROVIDER_MISS request_id=%s cached_provider=%s active_provider=%s",
                 request.request_id,
@@ -487,8 +439,6 @@ class TranslationManager:
             or not result.translated_text.strip()
         ):
             raise TranslationError("translated text is empty")
-        # The manager owns the request boundary. Providers may not know about
-        # the UI request version, so normalize the returned model here.
         if result.request_id != request.request_id:
             result = replace(result, request_id=request.request_id)
         self.cache.set(
@@ -500,8 +450,6 @@ class TranslationManager:
         return result
 
     def translate_request(self, request: TranslationRequest) -> TranslationResult:
-        """Translate an already-built request using the same validation path."""
-
         return self.translate(
             request.source_text,
             source_language=request.source_language,

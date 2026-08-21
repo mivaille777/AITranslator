@@ -5,10 +5,8 @@ from app.models.selection import ReadingSelection
 from app.selection.browser_bridge import BrowserBridgeStatus, BrowserSelectionSnapshot
 from app.selection.browser_page_bridge import BrowserPageSnapshot, BrowserReadingBridge
 from app.selection.errors import SelectionError
-from app.selection.reading_context import (
-    browser_snapshot_to_reading_selection,
-    reading_selection_to_context,
-)
+from app.selection.reading_context import browser_snapshot_to_reading_selection
+from backend.services.reading_context_adapter import to_reading_context
 
 
 class BrowserContextService:
@@ -66,7 +64,7 @@ class BrowserContextService:
         )
         if selection is None:
             return None
-        return reading_selection_to_context(selection)
+        return to_reading_context(selection)
 
     def latest_page(
         self,

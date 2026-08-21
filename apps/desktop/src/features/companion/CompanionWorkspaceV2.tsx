@@ -58,6 +58,9 @@ export default function CompanionWorkspaceV2() {
     staleTime: 0,
   })
   const handoff = handoffQuery.data?.handoff ?? null
+  const readingHandoff = handoff && !(handoff.conversation_id ?? "").trim()
+    ? handoff
+    : null
 
   useEffect(() => {
     if (!routedConversationId || runtimeConversationId === routedConversationId) return
@@ -72,6 +75,13 @@ export default function CompanionWorkspaceV2() {
     }
 
     const nextId = activeHandoff.handoff_id
+    if ((activeHandoff.conversation_id ?? "").trim()) {
+      // Existing-conversation handoffs are navigation signals owned by
+      // CompanionHandoffNavigator. Never reinterpret them as a fresh Reading
+      // seed here or an older /chat render could erase the routed conversation.
+      handoffIdRef.current = nextId
+      return
+    }
     if (routedConversationId) {
       handoffIdRef.current = nextId
       return
@@ -111,9 +121,9 @@ export default function CompanionWorkspaceV2() {
   })
 
   function selectCurrentReading() {
-    if (!handoff) return
+    if (!readingHandoff) return
     usingHandoffRef.current = true
-    runtime.reset(companionHandoffRuntimeSeed(handoff))
+    runtime.reset(companionHandoffRuntimeSeed(readingHandoff))
     setConversationRoute("")
   }
 
@@ -131,7 +141,7 @@ export default function CompanionWorkspaceV2() {
   }
 
   function handleDeletedActive() {
-    if (handoff) {
+    if (readingHandoff) {
       selectCurrentReading()
       return
     }
@@ -139,9 +149,9 @@ export default function CompanionWorkspaceV2() {
   }
 
   async function attachCurrentReading() {
-    if (!handoff) return
+    if (!readingHandoff) return
     usingHandoffRef.current = true
-    await runtime.attachReadingContext(companionContextSnapshot(handoff))
+    await runtime.attachReadingContext(companionContextSnapshot(readingHandoff))
   }
 
   async function rewriteFromUser(
@@ -213,17 +223,17 @@ export default function CompanionWorkspaceV2() {
   const canAttachSaved = Boolean(runtime.context.source_text)
   const branchBusy = Boolean(branchingMessageId) || runtime.activeRequestId !== null
   const showingHandoff = Boolean(
-    handoff &&
+    readingHandoff &&
       !runtime.conversationId &&
       runtime.contextMode === "reading" &&
-      runtime.context.source_text === handoff.source_text,
+      runtime.context.source_text === readingHandoff.source_text,
   )
 
   return (
     <section className="ait-chat-shell ait-surface grid min-h-[680px] overflow-hidden xl:grid-cols-[270px_340px_minmax(0,1fr)]">
       <ConversationHistoryPanel
         activeConversationId={runtime.conversationId}
-        hasCurrentReading={Boolean(handoff)}
+        hasCurrentReading={Boolean(readingHandoff)}
         onOpen={(conversationId) => {
           usingHandoffRef.current = false
           setConversationRoute(conversationId)
@@ -271,7 +281,7 @@ export default function CompanionWorkspaceV2() {
             disabled={
               runtime.contextUpdating ||
               runtime.activeRequestId !== null ||
-              (!canAttachSaved && !handoff)
+              (!canAttachSaved && !readingHandoff)
             }
             className={`relative z-10 rounded-[11px] px-2 py-2 text-xs font-medium disabled:opacity-40 ${
               runtime.contextMode === "reading" ? "text-slate-900" : "text-slate-500"
@@ -293,7 +303,7 @@ export default function CompanionWorkspaceV2() {
               <p className="mt-1 text-xs leading-5 text-slate-500">
                 Conversation history remains available. Attach the latest reading evidence whenever you need grounded analysis.
               </p>
-              {handoff && (
+              {readingHandoff && (
                 <Button
                   className="mt-3"
                   size="xs"
@@ -307,7 +317,7 @@ export default function CompanionWorkspaceV2() {
           ) : runtime.context.source_text ? (
             <>
               <ContextPreview context={runtime.context} />
-              {handoff && (
+              {readingHandoff && (
                 <Button
                   className="mt-3"
                   size="xs"
@@ -355,12 +365,12 @@ export default function CompanionWorkspaceV2() {
             </p>
           )}
 
-          {showingHandoff && handoff && (
+          {showingHandoff && readingHandoff && (
             <Button
               className="mt-4"
               size="xs"
               disabled={dismissMutation.isPending}
-              onClick={() => dismissMutation.mutate(handoff.handoff_id)}
+              onClick={() => dismissMutation.mutate(readingHandoff.handoff_id)}
             >
               Clear handoff
             </Button>

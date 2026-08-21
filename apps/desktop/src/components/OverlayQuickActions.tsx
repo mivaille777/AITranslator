@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { createCompanionHandoff } from "../api/companion"
@@ -16,6 +16,7 @@ import type {
   ResearchNoteSaveRequest,
 } from "../api/types"
 import { desktop } from "../desktop"
+import { subscribeOverlayCommands } from "../desktop/overlay-commands"
 import type { OverlayActionPresentation } from "../desktop/overlay-sizing"
 
 type ActionSpec = {
@@ -50,6 +51,7 @@ type FeedbackState = {
 }
 
 type ResultView = "translation" | "ai"
+export type OverlayCompletedInteraction = "copy" | "handoff"
 
 const actions: ActionSpec[] = [
   { key: "reading_context_translate", label: "译", title: "结合当前阅读上下文 AI 翻译" },
@@ -88,9 +90,11 @@ function baseContext(state: OverlayStateResponse) {
 export default function OverlayQuickActions({
   state,
   onPresentationChange,
+  onCompletedInteraction,
 }: {
   state: OverlayStateResponse
   onPresentationChange?: (presentation: OverlayActionPresentation) => void
+  onCompletedInteraction?: (interaction: OverlayCompletedInteraction) => void
 }) {
   const [resultState, setResultState] = useState<ResultState | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
@@ -182,6 +186,7 @@ export default function OverlayQuickActions({
       try {
         await desktop.window.show()
         await desktop.window.focus()
+        onCompletedInteraction?.("handoff")
       } catch {
         setFeedback({
           contextId: variables.contextId,
@@ -256,19 +261,47 @@ export default function OverlayQuickActions({
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
+      onCompletedInteraction?.("copy")
       window.setTimeout(() => setCopied(false), 900)
     } catch {
       setCopied(false)
     }
   }
 
-  if (state.phase !== "ready") return null
-
   const busy =
     actionMutation.isPending ||
     noteMutation.isPending ||
     handoffMutation.isPending
   const activeAction = activeResult?.action ?? null
+
+  useEffect(() => subscribeOverlayCommands((command) => {
+    if (command === "escape") {
+      if (resultOpen) {
+        closeResult()
+      } else if (moreOpen) {
+        setMoreOpen(false)
+        setPresentation("compact")
+      }
+      return
+    }
+
+    if (command === "copy") {
+      if (resultOpen && activeResult) void copyActiveView()
+      return
+    }
+
+    if (command === "more") {
+      if (!busy) toggleMore()
+      return
+    }
+
+    if (!aiAvailable || busy) return
+    const index = Number(command.slice(-1)) - 1
+    const action = primaryActions[index]
+    if (action) runAction(action.key)
+  }), [activeResult, aiAvailable, busy, moreOpen, resultOpen, resultView])
+
+  if (state.phase !== "ready") return null
 
   return (
     <section className={`ait-overlay-action-surface relative border-t border-white/10 ${resultOpen && activeResult ? "is-result-open" : ""} ${moreOpen ? "is-more-open" : ""}`}>
@@ -298,10 +331,11 @@ export default function OverlayQuickActions({
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    className="ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px]"
+                    aria-live="polite"
+                    className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] ${copied ? "is-copied" : ""}`}
                     onClick={() => void copyActiveView()}
                   >
-                    {copied ? "已复制" : "复制"}
+                    {copied ? "✓ 已复制" : "复制"}
                   </button>
                   <button
                     type="button"
@@ -348,17 +382,13 @@ export default function OverlayQuickActions({
 
       <div className="ait-overlay-action-bar flex items-center gap-1.5 px-3 py-2.5">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {primaryActions.map((action) => (
+          {primaryActions.map((action, index) => (
             <ActionButton
               key={action.key}
               active={activeAction === action.key && resultOpen}
               disabled={!aiAvailable || busy}
               label={action.label}
-              title={
-                aiAvailable
-                  ? action.title
-                  : statusQuery.data?.detail || "AI provider is not configured"
-              }
+              title={`${aiAvailable ? action.title : statusQuery.data?.detail || "AI provider is not configured"} · ${index + 1}`}
               onClick={() => runAction(action.key)}
             />
           ))}
@@ -370,6 +400,7 @@ export default function OverlayQuickActions({
           type="button"
           aria-label="More contextual actions"
           aria-expanded={moreOpen}
+          title="更多操作 · M"
           disabled={busy}
           className={`ait-overlay-action-button relative flex h-8 min-w-9 shrink-0 items-center justify-center rounded-full px-2 text-sm ${moreOpen ? "is-active" : ""}`}
           onClick={toggleMore}

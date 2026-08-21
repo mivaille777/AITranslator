@@ -1,8 +1,9 @@
 """Youdao web-compatible translation provider.
 
-This adapter uses the public web-compatible translation route exposed by
-fanyi.youdao.com. It intentionally does not require a Youdao Cloud app key and
-does not attempt to bypass CAPTCHA, login, or other access controls.
+The request shape follows the mature Zotero PDF Translate Youdao adapter:
+GET /translate?doctype=json&type=<PAIR>&i=<TEXT> and parse
+translateResult[*][*].tgt. AITrans keeps HTTPS as the default endpoint so
+selected source text is not deliberately sent over plaintext HTTP.
 """
 
 from __future__ import annotations
@@ -37,8 +38,6 @@ DEFAULT_USER_AGENT = (
 LOGGER_NAME = "desktop_translator"
 TRANSIENT_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
-# Language identifiers accepted by the simple fanyi.youdao.com/translate route.
-# For unsupported pairs the web endpoint's AUTO mode remains the safe fallback.
 YOUDAO_PAIR_MAP: dict[tuple[str, str], str] = {
     ("zh-CN", "en"): "ZH_CN2EN",
     ("zh-CN", "ja"): "ZH_CN2JA",
@@ -80,7 +79,7 @@ YoudaoRequester = Callable[
 
 
 class _RequestsRequester:
-    """Small persistent requests transport with explicit certifi verification."""
+    """Persistent GET transport with explicit certifi verification."""
 
     def __init__(self) -> None:
         self._session = requests.Session()
@@ -89,13 +88,13 @@ class _RequestsRequester:
         self,
         url: str,
         headers: Mapping[str, str],
-        form: Mapping[str, str],
+        query: Mapping[str, str],
         timeout: float,
     ) -> YoudaoWebResponse:
-        response = self._session.post(
+        response = self._session.get(
             url,
             headers=dict(headers),
-            data=dict(form),
+            params=dict(query),
             timeout=timeout,
             allow_redirects=True,
             verify=certifi.where(),
@@ -110,7 +109,7 @@ class _RequestsRequester:
 
 
 class YoudaoWebTranslationProvider(TranslationProvider):
-    """Translate through Youdao's unauthenticated web-compatible endpoint."""
+    """Translate through Youdao's unauthenticated web-compatible route."""
 
     def __init__(
         self,
@@ -199,7 +198,7 @@ class YoudaoWebTranslationProvider(TranslationProvider):
     def _safe_endpoint(value: object) -> str:
         endpoint = str(value).strip().rstrip("?")
         parsed = urlsplit(endpoint)
-        if parsed.scheme == "https" and parsed.hostname:
+        if parsed.scheme in {"https", "http"} and parsed.hostname:
             return endpoint
         return DEFAULT_YOUDAO_WEB_ENDPOINT
 
@@ -282,40 +281,31 @@ class YoudaoWebTranslationProvider(TranslationProvider):
         }
         return aliases.get(value.lower(), value)
 
-    def _build_form(self, request: TranslationRequest) -> dict[str, str]:
-        translation_type = self._translation_type(
-            request.source_language,
-            request.target_language,
-        )
+    def _build_query(self, request: TranslationRequest) -> dict[str, str]:
+        """Build the three query parameters used by Zotero PDF Translate."""
+
         return {
-            "i": request.source_text,
-            "from": "AUTO",
-            "to": "AUTO",
-            "smartresult": "dict",
-            "client": "fanyideskweb",
             "doctype": "json",
-            "version": "2.1",
-            "keyfrom": "fanyi.web",
-            "action": "FY_BY_CLICKBUTTON",
-            "typoResult": "true",
-            "type": translation_type,
+            "type": self._translation_type(
+                request.source_language,
+                request.target_language,
+            ),
+            "i": request.source_text,
         }
 
     def translate(self, request: TranslationRequest) -> TranslationResult:
-        """Send one bounded web request and parse Youdao's JSON response."""
+        """Send one bounded GET request and parse Youdao's JSON response."""
 
         if not self.enabled:
             raise WebTranslationError("Youdao web translation is disabled")
 
         headers = {
-            "Accept": "application/json,text/javascript,*/*;q=0.01",
+            "Accept": "application/json,text/plain,*/*",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "Origin": "https://fanyi.youdao.com",
             "Referer": "https://fanyi.youdao.com/",
             "User-Agent": self.user_agent,
         }
-        form = self._build_form(request)
+        query = self._build_query(request)
         last_status: int | None = None
 
         for attempt in range(self.max_retries + 1):
@@ -325,7 +315,7 @@ class YoudaoWebTranslationProvider(TranslationProvider):
                     self._requester(
                         self.endpoint,
                         headers,
-                        form,
+                        query,
                         self.timeout_seconds,
                     )
                 )
@@ -357,13 +347,22 @@ class YoudaoWebTranslationProvider(TranslationProvider):
                 self._log_http_failure(response.status_code, attempt + 1)
                 raise WebTranslationError("Youdao web translation request failed")
 
-            return self._parse_response(response.body, request)
+            try:
+                return self._parse_response(response.body, request)
+            except WebTranslationError:
+                self.logger.warning(
+                    "youdao_web_invalid_response status=%s host=%s attempts=%s",
+                    response.status_code,
+                    self.endpoint_host,
+                    attempt + 1,
+                )
+                raise
 
         self._log_http_failure(last_status, self.max_retries + 1)
         raise WebTranslationError("Youdao web translation request failed")
 
     def _log_http_failure(self, status: int | None, attempts: int) -> None:
-        # Never log form data because it contains the user's selected text.
+        # Never log the URL/query because the query contains the selected text.
         self.logger.warning(
             "youdao_web_http_failed status=%s host=%s attempts=%s",
             status,

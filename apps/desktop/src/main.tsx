@@ -13,6 +13,10 @@ import "./index.css"
 const queryClient = createAppQueryClient()
 
 const view = new URLSearchParams(window.location.search).get("view")
+if (view === "overlay") {
+  document.documentElement.dataset.aitView = "overlay"
+}
+
 const rootView = view === "overlay"
   ? (
       <>

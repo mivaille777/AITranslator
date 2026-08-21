@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && npm run bundle:report",
+    "bundle:report": "node scripts/report-bundle.mjs",
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview",

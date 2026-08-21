@@ -11,6 +11,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
+    manifest: true,
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("./index.html", import.meta.url)),

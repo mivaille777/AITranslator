@@ -65,4 +65,19 @@ describe("Batch 5 desktop entry isolation", () => {
     expect(content).toContain('from "react-markdown"')
     expect(content).toContain("useCompanionConversationRuntime")
   })
+
+  it("emits a Vite manifest and reports main versus overlay payloads after every production build", () => {
+    const viteConfig = read("../../vite.config.ts")
+    const packageJson = JSON.parse(read("../../package.json")) as {
+      scripts: Record<string, string>
+    }
+    const reportScript = read("../../scripts/report-bundle.mjs")
+
+    expect(viteConfig).toContain("manifest: true")
+    expect(packageJson.scripts.build).toContain("npm run bundle:report")
+    expect(packageJson.scripts["bundle:report"]).toBe("node scripts/report-bundle.mjs")
+    expect(reportScript).toContain("Main initial route")
+    expect(reportScript).toContain("Overlay initial surface")
+    expect(reportScript).toContain("Largest emitted JS chunks")
+  })
 })

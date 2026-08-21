@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from time import sleep
+from threading import Event
 
 from fastapi.testclient import TestClient
 
@@ -45,12 +45,17 @@ def _payload(
     }
 
 
-class SlowStreamingService:
+class BlockingStreamingService:
     provider_name = "stub-ai"
     model = "stub-model"
 
+    def __init__(self) -> None:
+        self.started = Event()
+        self.release = Event()
+
     def stream(self, **_kwargs):
-        sleep(0.15)
+        self.started.set()
+        self.release.wait(timeout=5.0)
         yield "answer"
 
 
@@ -107,7 +112,8 @@ def test_backend_allows_only_one_active_stream_per_conversation(tmp_path) -> Non
     app = create_app()
     store = ConversationStoreService(storage_path=tmp_path / "ownership.sqlite3")
     ownership = CompanionConversationOwnershipService()
-    app.dependency_overrides[get_companion_chat_service] = lambda: SlowStreamingService()
+    streaming = BlockingStreamingService()
+    app.dependency_overrides[get_companion_chat_service] = lambda: streaming
     app.dependency_overrides[get_conversation_store_service] = lambda: store
     app.dependency_overrides[get_companion_ownership_service] = lambda: ownership
 
@@ -116,6 +122,7 @@ def test_backend_allows_only_one_active_stream_per_conversation(tmp_path) -> Non
             main_socket.send_json({"type": "start", "request": _payload()})
             accepted = main_socket.receive_json()
             conversation_id = accepted["conversation_id"]
+            assert streaming.started.wait(timeout=1.0)
 
             owner = client.get(
                 f"/api/companion/chat/ownership/{conversation_id}"
@@ -148,12 +155,16 @@ def test_backend_allows_only_one_active_stream_per_conversation(tmp_path) -> Non
             main_socket.send_json({"type": "cancel", "request_id": 1})
             terminal = main_socket.receive_json()
             assert terminal["type"] == "cancelled"
+            streaming.release.set()
 
         idle = client.get(
             f"/api/companion/chat/ownership/{conversation_id}"
         ).json()
         assert idle["busy"] is False
 
+        retry_streaming = BlockingStreamingService()
+        retry_streaming.release.set()
+        app.dependency_overrides[get_companion_chat_service] = lambda: retry_streaming
         with client.websocket_connect("/ws/companion/chat") as overlay_retry:
             overlay_retry.send_json(
                 {
@@ -168,5 +179,5 @@ def test_backend_allows_only_one_active_stream_per_conversation(tmp_path) -> Non
             )
             retried = overlay_retry.receive_json()
             assert retried["type"] == "accepted"
-            overlay_retry.send_json({"type": "cancel", "request_id": 3})
-            assert overlay_retry.receive_json()["type"] == "cancelled"
+            assert overlay_retry.receive_json()["type"] == "delta"
+            assert overlay_retry.receive_json()["type"] == "done"

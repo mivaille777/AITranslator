@@ -22,4 +22,18 @@ describe("companion ownership request contract", () => {
       request_id: 12,
     })
   })
+
+  it("treats an unspecified desktop surface as the main chat", () => {
+    const request = buildCompanionChatRequest({
+      conversationId: "conversation-main",
+      sessionId: "session-main",
+      clientId: "main-client-1",
+      userMessage: "continue",
+      contextMode: "general",
+      messages: [],
+      requestId: 13,
+    })
+
+    expect(request.client_surface).toBe("main")
+  })
 })

@@ -12,7 +12,10 @@ export default function WindowFrame({ children }: { children: ReactNode }) {
       <header className="window-titlebar" data-tauri-drag-region>
         <div className="window-brand" data-tauri-drag-region>
           <span className="window-logo">A</span>
-          <span>AITranslator</span>
+          <div>
+            <span>AITranslator</span>
+            <small>Desktop Agent</small>
+          </div>
         </div>
 
         <div className="window-drag-space" data-tauri-drag-region />
@@ -22,14 +25,14 @@ export default function WindowFrame({ children }: { children: ReactNode }) {
         </div>
 
         <div className="window-controls">
-          <button aria-label="Minimize" onClick={() => window.minimize()}>
-            <Minus size={13} strokeWidth={2} />
+          <button title="Minimize" aria-label="Minimize" onClick={() => window.minimize()}>
+            <Minus size={12} strokeWidth={2.2} />
           </button>
-          <button aria-label="Maximize" onClick={() => window.toggleMaximize()}>
-            <Square size={12} strokeWidth={2} />
+          <button title="Maximize" aria-label="Maximize" onClick={() => window.toggleMaximize()}>
+            <Square size={11} strokeWidth={2.2} />
           </button>
-          <button className="close" aria-label="Close" onClick={() => window.close()}>
-            <X size={14} strokeWidth={2} />
+          <button title="Close" className="close" aria-label="Close" onClick={() => window.close()}>
+            <X size={13} strokeWidth={2.2} />
           </button>
         </div>
       </header>

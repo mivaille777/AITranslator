@@ -14,14 +14,18 @@ const HISTORY_LIMIT = 30
 export default function ConversationHistoryPanel({
   activeConversationId,
   hasCurrentReading,
+  canStartNewConversation,
   onOpen,
   onUseCurrentReading,
+  onNewConversation,
   onDeletedActive,
 }: {
   activeConversationId: string
   hasCurrentReading: boolean
+  canStartNewConversation: boolean
   onOpen: (conversationId: string) => void
   onUseCurrentReading: () => void
+  onNewConversation: () => void
   onDeletedActive: () => void
 }) {
   const queryClient = useQueryClient()
@@ -64,18 +68,21 @@ export default function ConversationHistoryPanel({
 
   return (
     <aside className="border-b border-slate-200 bg-slate-950 p-3 text-slate-200 xl:border-b-0 xl:border-r xl:border-slate-800">
-      <div className="flex items-center justify-between gap-2 px-1 py-2">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Conversations
-          </p>
-          <p className="mt-1 text-xs text-slate-400">Durable local history</p>
-        </div>
-        {hasCurrentReading && (
-          <Button size="xs" onClick={onUseCurrentReading}>
-            Current
+      <div className="px-1 py-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Conversations
+        </p>
+        <p className="mt-1 text-xs text-slate-400">Durable local history</p>
+        <div className="mt-3 flex gap-2">
+          <Button size="xs" variant="primary" disabled={!canStartNewConversation} onClick={onNewConversation}>
+            New
           </Button>
-        )}
+          {hasCurrentReading && (
+            <Button size="xs" onClick={onUseCurrentReading}>
+              Current
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="mt-2 max-h-[560px] space-y-1 overflow-y-auto pr-1">

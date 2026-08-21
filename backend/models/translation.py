@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
+
+TranslationProviderName = Literal["google_web", "youdao_web"]
 
 
 class TranslationApiRequest(BaseModel):
@@ -23,6 +27,10 @@ class TranslationApiResponse(BaseModel):
     target_language: str
     provider: str
     request_id: int
+
+
+class TranslationProviderSelectionRequest(BaseModel):
+    provider: TranslationProviderName
 
 
 class TranslationStatusResponse(BaseModel):

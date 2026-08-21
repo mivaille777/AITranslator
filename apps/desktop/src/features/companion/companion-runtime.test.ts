@@ -86,6 +86,7 @@ describe("companion runtime", () => {
       context_before: "before",
       context_after: "after",
       source_kind: "pdf_uia",
+      conversation_id: "",
       ai_content: "existing explanation",
       ai_action: "reading_explain",
       suggested_prompt: "continue from this context",

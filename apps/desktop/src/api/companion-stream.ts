@@ -40,6 +40,13 @@ export function streamCompanionChat(
 
   socket.addEventListener("open", () => {
     if (cancelRequested) {
+      terminal = true
+      handlers.onEvent({
+        type: "cancelled",
+        request_id: requestId,
+        conversation_id: payload.session_id,
+        message_id: "",
+      })
       socket.close(1000, "cancelled-before-start")
       return
     }
@@ -72,7 +79,7 @@ export function streamCompanionChat(
   })
 
   socket.addEventListener("close", (event) => {
-    if (terminal || cancelRequested || event.code === 1000) return
+    if (terminal || cancelRequested) return
     terminal = true
     handlers.onTransportError(
       new Error(`AI Chat stream closed unexpectedly (${event.code}).`),
@@ -86,9 +93,9 @@ export function streamCompanionChat(
       cancelRequested = true
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: "cancel", request_id: requestId }))
-        cancelRequested = false
       } else if (socket.readyState === WebSocket.CONNECTING) {
-        socket.close(1000, "cancelled-before-start")
+        // The open handler emits a local terminal event and closes without
+        // sending a start command to the backend.
       }
     },
     close() {

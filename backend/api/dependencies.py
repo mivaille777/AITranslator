@@ -5,6 +5,7 @@ from threading import Lock
 from backend.services.browser_context_service import BrowserContextService
 from backend.services.companion_chat_service import CompanionChatService
 from backend.services.companion_handoff_service import CompanionHandoffService
+from backend.services.conversation_lifecycle_service import ConversationLifecycleService
 from backend.services.conversation_store_service import ConversationStoreService
 from backend.services.overlay_state_service import OverlayStateService
 from backend.services.quick_action_service import QuickActionService
@@ -149,7 +150,7 @@ def get_conversation_store_service() -> ConversationStoreService:
 
     with _conversation_store_service_lock:
         if _conversation_store_service is None:
-            _conversation_store_service = ConversationStoreService()
+            _conversation_store_service = ConversationLifecycleService()
         return _conversation_store_service
 
 

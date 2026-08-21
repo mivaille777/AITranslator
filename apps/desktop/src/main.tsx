@@ -8,6 +8,7 @@ import OverlayView from "./components/OverlayView"
 import AppErrorBoundary from "./shared/errors/AppErrorBoundary"
 import { createAppQueryClient } from "./shared/query/query-client"
 import "./index.css"
+import "./overlay.css"
 
 const queryClient = createAppQueryClient()
 

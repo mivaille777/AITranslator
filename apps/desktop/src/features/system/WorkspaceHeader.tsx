@@ -23,16 +23,19 @@ export default function WorkspaceHeader({
     : backendState === "connected"
       ? backendService
       : `Offline · ${API_BASE_URL}`
+
   const bridgeValue = browserStatus?.running
     ? `Browser DOM :${browserStatus.port}`
     : browserStatusChecking
       ? "Checking…"
       : "Optional · unavailable"
+
   const systemLabel = backendState === "connected"
     ? "Ready"
     : backendState === "offline"
-      ? "Backend offline"
+      ? "Offline"
       : "Connecting"
+
   const systemDot = backendState === "connected"
     ? "bg-emerald-500"
     : backendState === "offline"
@@ -40,20 +43,18 @@ export default function WorkspaceHeader({
       : "bg-slate-300"
 
   return (
-    <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/[0.86] px-4 py-4 backdrop-blur-xl sm:px-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-[1500px] items-center justify-between gap-5">
+    <header className="workspace-header">
+      <div className="workspace-header-inner">
         <div className="min-w-0">
-          <div className="flex items-baseline gap-3">
-            <h1 className="text-[22px] font-semibold tracking-[-0.025em] text-slate-950">{title}</h1>
-            <p className="hidden truncate text-sm text-slate-500 lg:block">{description}</p>
-          </div>
+          <h1 className="workspace-title">{title}</h1>
+          <p className="workspace-description">{description}</p>
         </div>
 
         <details className="group relative shrink-0">
-          <summary className="ait-control-motion flex cursor-pointer list-none items-center gap-2 rounded-full border border-slate-200/80 bg-white/90 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-white [&::-webkit-details-marker]:hidden">
-            <span className={`h-1.5 w-1.5 rounded-full ${systemDot}`} />
+          <summary className="workspace-status">
+            <span className={`h-2 w-2 rounded-full ${systemDot}`} />
             <span>{systemLabel}</span>
-            <span className="text-[9px] text-slate-400 transition-transform duration-200 group-open:rotate-180">⌄</span>
+            <span className="text-[10px] text-slate-400">⌄</span>
           </summary>
 
           <div className="ait-system-popover absolute right-0 top-full mt-2 w-[300px] overflow-hidden rounded-[18px] border border-slate-200/80 bg-white/95 p-2.5 shadow-[0_20px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl">
@@ -63,9 +64,6 @@ export default function WorkspaceHeader({
             <StatusRow label="Backend" value={backendValue} healthy={backendState === "connected"} />
             <StatusRow label="Provider" value={providerName || "Not loaded"} />
             <StatusRow label="Browser bridge" value={bridgeValue} healthy={browserStatus?.running} />
-            <p className="px-2 pb-1 pt-2 text-[10px] leading-4 text-slate-400">
-              The browser bridge is optional for Word, PDF UIA, and other native reading sources.
-            </p>
           </div>
         </details>
       </div>
@@ -73,21 +71,11 @@ export default function WorkspaceHeader({
   )
 }
 
-function StatusRow({
-  label,
-  value,
-  healthy,
-}: {
-  label: string
-  value: string
-  healthy?: boolean
-}) {
+function StatusRow({ label, value, healthy }: { label: string; value: string; healthy?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-4 rounded-[12px] px-2 py-2 hover:bg-slate-50">
       <div className="flex items-center gap-2 text-xs text-slate-500">
-        {healthy !== undefined && (
-          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${healthy ? "bg-emerald-500" : "bg-slate-300"}`} />
-        )}
+        {healthy !== undefined && <span className={`h-1.5 w-1.5 rounded-full ${healthy ? "bg-emerald-500" : "bg-slate-300"}`} />}
         <span>{label}</span>
       </div>
       <span className="max-w-[170px] break-all text-right text-xs font-medium text-slate-700">{value}</span>

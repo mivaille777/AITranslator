@@ -42,6 +42,7 @@ def list_research_notes(
                 source_kind=note.source_kind,
                 ai_content=note.ai_content,
                 ai_action=note.ai_action,
+                conversation_id=getattr(note, "conversation_id", ""),
             )
             for note in notes
         ],
@@ -73,4 +74,5 @@ def save_research_note(
         display_title=note.display_title,
         excerpt=note.excerpt,
         updated_at=note.updated_at,
+        conversation_id=getattr(note, "conversation_id", ""),
     )

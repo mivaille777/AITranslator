@@ -2,6 +2,7 @@ export type WorkspaceRoutePath =
   | "/translation"
   | "/reading"
   | "/chat"
+  | "/agent"
   | "/research"
   | "/settings"
 
@@ -26,6 +27,11 @@ export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
     path: "/chat",
     label: "AI Chat",
     description: "Continue reasoning from a frozen reading or research context.",
+  },
+  {
+    path: "/agent",
+    label: "Agent Workspace",
+    description: "Manage context, execution trace, and AI agent interactions.",
   },
   {
     path: "/research",

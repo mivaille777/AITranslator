@@ -30,6 +30,31 @@ async function getOverlayWindow(): Promise<TauriWindow | null> {
   return TauriWindow.getByLabel("overlay")
 }
 
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(value, Math.max(minimum, maximum)))
+}
+
+async function keepOverlayInsideWorkArea(overlay: TauriWindow): Promise<void> {
+  const position = await overlay.outerPosition()
+  const size = await overlay.outerSize()
+  const monitor =
+    (await monitorFromPoint(position.x, position.y)) ??
+    (await primaryMonitor())
+  if (!monitor) return
+
+  const workArea = monitor.workArea
+  const minX = workArea.position.x
+  const minY = workArea.position.y
+  const maxX = minX + workArea.size.width - size.width
+  const maxY = minY + workArea.size.height - size.height
+  const nextX = clamp(position.x, minX, maxX)
+  const nextY = clamp(position.y, minY, maxY)
+
+  if (nextX !== position.x || nextY !== position.y) {
+    await overlay.setPosition(new PhysicalPosition(nextX, nextY))
+  }
+}
+
 async function placeOverlay(
   mode: OverlayPositionMode,
   customPosition?: DesktopPoint | null,
@@ -80,7 +105,10 @@ async function resizeOverlay(target: DesktopSize): Promise<void> {
   const deltaWidth = target.width - startWidth
   const deltaHeight = target.height - startHeight
 
-  if (Math.abs(deltaWidth) < 1 && Math.abs(deltaHeight) < 1) return
+  if (Math.abs(deltaWidth) < 1 && Math.abs(deltaHeight) < 1) {
+    await keepOverlayInsideWorkArea(overlay)
+    return
+  }
 
   const steps = 8
   const stepDelay = 18
@@ -99,6 +127,10 @@ async function resizeOverlay(target: DesktopSize): Promise<void> {
     if (step < steps) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, stepDelay))
     }
+  }
+
+  if (generation === overlayResizeGeneration) {
+    await keepOverlayInsideWorkArea(overlay)
   }
 }
 

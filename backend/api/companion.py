@@ -48,6 +48,7 @@ def _handoff_response(state: CompanionHandoffState) -> CompanionHandoffResponse:
         context_before=state.context_before,
         context_after=state.context_after,
         source_kind=state.source_kind,
+        conversation_id=state.conversation_id,
         ai_content=state.ai_content,
         ai_action=state.ai_action,
         suggested_prompt=state.suggested_prompt,

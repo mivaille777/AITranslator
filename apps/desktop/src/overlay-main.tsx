@@ -9,6 +9,7 @@ import { createAppQueryClient } from "./shared/query/query-client"
 import { queryKeys } from "./shared/query/query-keys"
 import "./index.css"
 import "./overlay.css"
+import "./overlay-fix.css"
 
 document.documentElement.dataset.aitView = "overlay"
 

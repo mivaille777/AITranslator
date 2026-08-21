@@ -239,3 +239,52 @@ export interface CompanionChatStatusResponse {
   model: string
   detail: string
 }
+
+export interface CompanionChatStreamAccepted {
+  type: "accepted"
+  request_id: number
+  conversation_id: string
+  message_id: string
+}
+
+export interface CompanionChatStreamDelta {
+  type: "delta"
+  request_id: number
+  conversation_id: string
+  message_id: string
+  delta: string
+  accumulated_text: string
+}
+
+export interface CompanionChatStreamDone {
+  type: "done"
+  request_id: number
+  conversation_id: string
+  message_id: string
+  output_text: string
+  provider: string
+  model: string
+}
+
+export interface CompanionChatStreamError {
+  type: "error"
+  request_id: number
+  conversation_id: string
+  message_id: string
+  code: string
+  message: string
+}
+
+export interface CompanionChatStreamCancelled {
+  type: "cancelled"
+  request_id: number
+  conversation_id: string
+  message_id: string
+}
+
+export type CompanionChatStreamEvent =
+  | CompanionChatStreamAccepted
+  | CompanionChatStreamDelta
+  | CompanionChatStreamDone
+  | CompanionChatStreamError
+  | CompanionChatStreamCancelled

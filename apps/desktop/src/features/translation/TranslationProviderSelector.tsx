@@ -9,7 +9,7 @@ export interface TranslationProviderSelectorProps {
   onChange: (value: TranslationProviderName) => void
 }
 
-export const translationProviderOptions: Array<{
+const translationProviderOptions: Array<{
   value: TranslationProviderName
   label: string
 }> = [

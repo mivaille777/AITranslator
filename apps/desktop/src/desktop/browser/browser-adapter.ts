@@ -56,5 +56,11 @@ export const browserDesktopAdapter: DesktopAdapter = {
     async onCompanionNavigation() {
       return () => undefined
     },
+    async notifyCompanionConversationChanged() {
+      // Browser development mode relies on normal query/refetch behavior.
+    },
+    async onCompanionConversationChanged() {
+      return () => undefined
+    },
   },
 }

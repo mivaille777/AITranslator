@@ -74,6 +74,31 @@ export default function CompanionHandoffNavigator() {
   }, [consumeConversationNavigation])
 
   useEffect(() => {
+    let disposed = false
+    let unlisten: () => void = () => undefined
+
+    void desktop.overlay.onCompanionConversationChanged((signal) => {
+      if (disposed || signal.kind !== "deleted") return
+      const activeConversationId = new URLSearchParams(location.search).get("conversation") ?? ""
+      if (activeConversationId !== signal.conversationId) return
+
+      navigate("/chat", { replace: true })
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] })
+    }).then((stopListening) => {
+      if (disposed) {
+        stopListening()
+        return
+      }
+      unlisten = stopListening
+    })
+
+    return () => {
+      disposed = true
+      unlisten()
+    }
+  }, [location.search, navigate, queryClient])
+
+  useEffect(() => {
     if (!handoffQuery.isSuccess) return
 
     if (!initialized.current) {

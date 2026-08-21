@@ -1,3 +1,4 @@
+import { desktop } from "../desktop"
 import { apiDelete, apiGet, apiPatch, apiPost } from "./client"
 import type {
   ConversationContextUpdate,
@@ -5,6 +6,32 @@ import type {
   ConversationDetail,
   ConversationListResponse,
 } from "./types"
+
+async function notifyConversationUpdated(conversationId: string): Promise<void> {
+  const normalized = conversationId.trim()
+  if (!normalized) return
+  try {
+    await desktop.overlay.notifyCompanionConversationChanged({
+      conversationId: normalized,
+      kind: "updated",
+    })
+  } catch {
+    // Persisted conversation state remains authoritative if native delivery fails.
+  }
+}
+
+async function notifyConversationDeleted(conversationId: string): Promise<void> {
+  const normalized = conversationId.trim()
+  if (!normalized) return
+  try {
+    await desktop.overlay.notifyCompanionConversationChanged({
+      conversationId: normalized,
+      kind: "deleted",
+    })
+  } catch {
+    // The other window will discover deletion on its next explicit refresh.
+  }
+}
 
 export function getConversations(limit = 30): Promise<ConversationListResponse> {
   return apiGet<ConversationListResponse>(`/api/conversations?limit=${limit}`)
@@ -14,40 +41,50 @@ export function getConversation(conversationId: string): Promise<ConversationDet
   return apiGet<ConversationDetail>(`/api/conversations/${encodeURIComponent(conversationId)}`)
 }
 
-export function renameConversation(
+export async function renameConversation(
   conversationId: string,
   title: string,
 ): Promise<ConversationDetail> {
-  return apiPatch<ConversationDetail, { title: string }>(
+  const response = await apiPatch<ConversationDetail, { title: string }>(
     `/api/conversations/${encodeURIComponent(conversationId)}`,
     { title },
   )
+  await notifyConversationUpdated(response.conversation_id)
+  return response
 }
 
-export function rewindConversation(
+export async function rewindConversation(
   conversationId: string,
   userMessageId: string,
 ): Promise<ConversationDetail> {
-  return apiPost<ConversationDetail, { user_message_id: string }>(
+  const response = await apiPost<ConversationDetail, { user_message_id: string }>(
     `/api/conversations/${encodeURIComponent(conversationId)}/rewind`,
     { user_message_id: userMessageId },
   )
+  await notifyConversationUpdated(response.conversation_id)
+  return response
 }
 
-export function updateConversationContext(
+export async function updateConversationContext(
   conversationId: string,
   payload: ConversationContextUpdate,
 ): Promise<ConversationDetail> {
-  return apiPatch<ConversationDetail, ConversationContextUpdate>(
+  const response = await apiPatch<ConversationDetail, ConversationContextUpdate>(
     `/api/conversations/${encodeURIComponent(conversationId)}/context`,
     payload,
   )
+  await notifyConversationUpdated(response.conversation_id)
+  return response
 }
 
-export function deleteConversation(
+export async function deleteConversation(
   conversationId: string,
 ): Promise<ConversationDeleteResponse> {
-  return apiDelete<ConversationDeleteResponse>(
+  const response = await apiDelete<ConversationDeleteResponse>(
     `/api/conversations/${encodeURIComponent(conversationId)}`,
   )
+  if (response.deleted) {
+    await notifyConversationDeleted(response.conversation_id)
+  }
+  return response
 }

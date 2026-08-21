@@ -22,6 +22,13 @@ export interface CompanionNavigationSignal {
   handoffId: string
 }
 
+export type CompanionConversationChangeKind = "updated" | "deleted"
+
+export interface CompanionConversationChangeSignal {
+  conversationId: string
+  kind: CompanionConversationChangeKind
+}
+
 export interface WindowAdapter {
   show(): Promise<void>
   hide(): Promise<void>
@@ -44,6 +51,12 @@ export interface OverlayWindowAdapter extends WindowAdapter {
   notifyCompanionNavigation(signal: CompanionNavigationSignal): Promise<void>
   onCompanionNavigation(
     callback: (signal: CompanionNavigationSignal) => void,
+  ): Promise<() => void>
+  notifyCompanionConversationChanged(
+    signal: CompanionConversationChangeSignal,
+  ): Promise<void>
+  onCompanionConversationChanged(
+    callback: (signal: CompanionConversationChangeSignal) => void,
   ): Promise<() => void>
 }
 

@@ -11,6 +11,7 @@ import {
 } from "@tauri-apps/api/window"
 
 import type {
+  CompanionConversationChangeSignal,
   CompanionNavigationSignal,
   DesktopAdapter,
   DesktopPoint,
@@ -21,6 +22,7 @@ import { computeOverlayPosition } from "../overlay-positioning"
 
 const OVERLAY_STATE_CHANGED_EVENT = "aitrans-overlay-state-changed"
 const COMPANION_NAVIGATION_EVENT = "aitrans-companion-navigation"
+const COMPANION_CONVERSATION_CHANGED_EVENT = "aitrans-companion-conversation-changed"
 const OVERLAY_INTERACTIVE_DATASET_KEY = "aitOverlayInteractive"
 
 let overlayResizeGeneration = 0
@@ -165,6 +167,28 @@ async function resizeOverlay(target: DesktopSize): Promise<void> {
   }
 }
 
+async function emitCompanionConversationChange(
+  signal: CompanionConversationChangeSignal,
+): Promise<void> {
+  const currentLabel = getCurrentWindow().label
+  const targets = currentLabel === "main"
+    ? ["overlay"]
+    : currentLabel === "overlay"
+      ? ["main"]
+      : ["main", "overlay"]
+
+  await Promise.all(
+    targets.map(async (target) => {
+      try {
+        await emitTo(target, COMPANION_CONVERSATION_CHANGED_EVENT, signal)
+      } catch {
+        // Cross-window synchronization is best-effort; persisted conversation
+        // state remains the source of truth when a target window is unavailable.
+      }
+    }),
+  )
+}
+
 export const tauriDesktopAdapter: DesktopAdapter = {
   runtime: "tauri",
   window: {
@@ -244,6 +268,20 @@ export const tauriDesktopAdapter: DesktopAdapter = {
         if (!conversationId) return
         callback({ conversationId, handoffId })
       })
+    },
+    async notifyCompanionConversationChanged(signal) {
+      await emitCompanionConversationChange(signal)
+    },
+    async onCompanionConversationChanged(callback) {
+      return listen<CompanionConversationChangeSignal>(
+        COMPANION_CONVERSATION_CHANGED_EVENT,
+        (event) => {
+          const conversationId = String(event.payload?.conversationId ?? "").trim()
+          const kind = event.payload?.kind === "deleted" ? "deleted" : "updated"
+          if (!conversationId) return
+          callback({ conversationId, kind })
+        },
+      )
     },
   },
 }

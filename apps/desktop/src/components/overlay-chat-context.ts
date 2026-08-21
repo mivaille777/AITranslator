@@ -29,6 +29,7 @@ export function buildOverlayChatHandoff(
   state: OverlayStateResponse,
   aiResult: QuickActionResponse | null,
   latestAssistantText: string,
+  conversationId = "",
 ): CompanionHandoffRequest {
   return {
     source_text: state.source_text,
@@ -41,6 +42,7 @@ export function buildOverlayChatHandoff(
     context_before: state.context_before,
     context_after: state.context_after,
     source_kind: state.source_kind || "desktop",
+    conversation_id: conversationId.trim(),
     ai_content: latestAssistantText || aiResult?.output_text || "",
     ai_action: latestAssistantText ? "conversation_answer" : aiResult?.action || "",
     suggested_prompt: latestAssistantText

@@ -22,6 +22,7 @@ class OverlayState:
     context_before: str = ""
     context_after: str = ""
     source_kind: str = "browser_selection"
+    companion_conversation_id: str = ""
 
 
 class OverlayStateService:
@@ -50,8 +51,14 @@ class OverlayStateService:
         source_kind: str = "browser_selection",
     ) -> OverlayState:
         with self._lock:
+            current = self._state
+            companion_conversation_id = (
+                current.companion_conversation_id
+                if current.context_id == context_id
+                else ""
+            )
             self._state = OverlayState(
-                revision=self._state.revision + 1,
+                revision=current.revision + 1,
                 visible=True,
                 phase="loading",
                 context_id=context_id,
@@ -65,6 +72,7 @@ class OverlayStateService:
                 context_before=context_before,
                 context_after=context_after,
                 source_kind=source_kind,
+                companion_conversation_id=companion_conversation_id,
             )
             return self._state
 
@@ -104,6 +112,7 @@ class OverlayStateService:
                 context_before=context_before or current.context_before,
                 context_after=context_after or current.context_after,
                 source_kind=source_kind or current.source_kind,
+                companion_conversation_id=current.companion_conversation_id,
             )
             return self._state
 
@@ -141,6 +150,30 @@ class OverlayStateService:
                 context_before=context_before or current.context_before,
                 context_after=context_after or current.context_after,
                 source_kind=source_kind or current.source_kind,
+                companion_conversation_id=current.companion_conversation_id,
+            )
+            return self._state
+
+    def bind_companion_conversation(
+        self,
+        *,
+        context_id: str,
+        conversation_id: str,
+    ) -> OverlayState:
+        normalized_context_id = str(context_id or "").strip()
+        normalized_conversation_id = str(conversation_id or "").strip()
+        if not normalized_context_id or not normalized_conversation_id:
+            raise ValueError("Overlay companion binding requires context and conversation IDs.")
+
+        with self._lock:
+            if normalized_context_id != self._state.context_id:
+                raise ValueError("Overlay context changed before companion conversation binding.")
+            if self._state.companion_conversation_id == normalized_conversation_id:
+                return self._state
+            self._state = replace(
+                self._state,
+                revision=self._state.revision + 1,
+                companion_conversation_id=normalized_conversation_id,
             )
             return self._state
 

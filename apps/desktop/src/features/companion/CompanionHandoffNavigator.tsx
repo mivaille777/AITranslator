@@ -1,13 +1,18 @@
 import { useEffect, useRef } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "react-router-dom"
 
-import { getCompanionHandoff } from "../../api/companion"
+import {
+  dismissCompanionHandoff,
+  getCompanionHandoff,
+} from "../../api/companion"
 import { queryKeys, queryPolling } from "../../shared/query/query-keys"
+import { companionHandoffPath } from "./companion-handoff-navigation"
 
 export default function CompanionHandoffNavigator() {
   const navigate = useNavigate()
   const location = useLocation()
+  const queryClient = useQueryClient()
   const initialized = useRef(false)
   const lastNavigatedHandoff = useRef("")
 
@@ -18,7 +23,10 @@ export default function CompanionHandoffNavigator() {
     staleTime: 0,
   })
 
-  const handoffId = handoffQuery.data?.handoff?.handoff_id ?? ""
+  const handoff = handoffQuery.data?.handoff ?? null
+  const handoffId = handoff?.handoff_id ?? ""
+  const conversationId = (handoff?.conversation_id ?? "").trim()
+  const destination = companionHandoffPath(handoff)
 
   useEffect(() => {
     if (!handoffQuery.isSuccess) return
@@ -31,10 +39,30 @@ export default function CompanionHandoffNavigator() {
 
     if (!handoffId || handoffId === lastNavigatedHandoff.current) return
     lastNavigatedHandoff.current = handoffId
-    if (location.pathname !== "/chat" || location.search) {
-      navigate("/chat")
+
+    const currentPath = `${location.pathname}${location.search}`
+    if (destination && currentPath !== destination) {
+      navigate(destination)
     }
-  }, [handoffId, handoffQuery.isSuccess, location.pathname, location.search, navigate])
+
+    if (conversationId) {
+      // Conversation-aware handoffs are transient cross-window navigation
+      // signals. The persisted conversation is the source of truth after route
+      // selection, so clear the signal instead of leaving stale reading state.
+      void dismissCompanionHandoff(handoffId).finally(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.companion.handoff })
+      })
+    }
+  }, [
+    conversationId,
+    destination,
+    handoffId,
+    handoffQuery.isSuccess,
+    location.pathname,
+    location.search,
+    navigate,
+    queryClient,
+  ])
 
   return null
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useLocation, useNavigate } from "react-router-dom"
 
@@ -6,8 +6,12 @@ import {
   dismissCompanionHandoff,
   getCompanionHandoff,
 } from "../../api/companion"
+import { desktop } from "../../desktop"
 import { queryKeys, queryPolling } from "../../shared/query/query-keys"
-import { companionHandoffPath } from "./companion-handoff-navigation"
+import {
+  companionConversationPath,
+  companionHandoffPath,
+} from "./companion-handoff-navigation"
 
 export default function CompanionHandoffNavigator() {
   const navigate = useNavigate()
@@ -28,6 +32,46 @@ export default function CompanionHandoffNavigator() {
   const conversationId = (handoff?.conversation_id ?? "").trim()
   const destination = companionHandoffPath(handoff)
 
+  const consumeConversationNavigation = useCallback((
+    nextConversationId: string,
+    nextHandoffId: string,
+  ) => {
+    const normalizedConversationId = nextConversationId.trim()
+    if (!normalizedConversationId) return
+
+    if (nextHandoffId) {
+      lastNavigatedHandoff.current = nextHandoffId
+    }
+    navigate(companionConversationPath(normalizedConversationId))
+
+    if (nextHandoffId) {
+      void dismissCompanionHandoff(nextHandoffId).finally(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.companion.handoff })
+      })
+    }
+  }, [navigate, queryClient])
+
+  useEffect(() => {
+    let disposed = false
+    let unlisten = () => undefined
+
+    void desktop.overlay.onCompanionNavigation((signal) => {
+      if (disposed) return
+      consumeConversationNavigation(signal.conversationId, signal.handoffId)
+    }).then((stopListening) => {
+      if (disposed) {
+        stopListening()
+        return
+      }
+      unlisten = stopListening
+    })
+
+    return () => {
+      disposed = true
+      unlisten()
+    }
+  }, [consumeConversationNavigation])
+
   useEffect(() => {
     if (!handoffQuery.isSuccess) return
 
@@ -43,22 +87,19 @@ export default function CompanionHandoffNavigator() {
     }
 
     if (!handoffId || handoffId === lastNavigatedHandoff.current) return
-    lastNavigatedHandoff.current = handoffId
 
+    if (conversationId) {
+      consumeConversationNavigation(conversationId, handoffId)
+      return
+    }
+
+    lastNavigatedHandoff.current = handoffId
     const currentPath = `${location.pathname}${location.search}`
     if (destination && currentPath !== destination) {
       navigate(destination)
     }
-
-    if (conversationId) {
-      // Conversation-aware handoffs are transient cross-window navigation
-      // signals. The persisted conversation is the source of truth after route
-      // selection, so clear the signal instead of leaving stale reading state.
-      void dismissCompanionHandoff(handoffId).finally(() => {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.companion.handoff })
-      })
-    }
   }, [
+    consumeConversationNavigation,
     conversationId,
     destination,
     handoffId,
@@ -66,7 +107,6 @@ export default function CompanionHandoffNavigator() {
     location.pathname,
     location.search,
     navigate,
-    queryClient,
   ])
 
   return null

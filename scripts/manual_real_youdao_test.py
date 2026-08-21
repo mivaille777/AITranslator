@@ -11,6 +11,15 @@ entry cannot hide a real network/provider problem.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
+import sys
+
+# When Python executes ``scripts/foo.py`` directly, ``scripts`` becomes
+# sys.path[0] rather than the repository root. Add the root explicitly so the
+# top-level ``app`` package is importable without requiring PYTHONPATH changes.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from app.models.translation import TranslationRequest
 from app.translation.youdao_web_provider import YoudaoWebTranslationProvider

@@ -1,4 +1,4 @@
-"""Offline tests for the Google Translate web-compatible provider."""
+"""Offline tests for the Google Translate browser-web provider."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from app.translation.google_web_provider import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_MIN_INTERVAL_SECONDS,
     DEFAULT_WEB_ENDPOINT,
-    GOOGLE_WEB_ENDPOINT,
     GoogleWebTranslationProvider,
     WEB_TRANSLATION_TYPES,
     WebResponse,
@@ -36,21 +35,20 @@ def _request() -> TranslationRequest:
 def test_live_translation_defaults_include_bounded_retry_and_spacing() -> None:
     assert DEFAULT_MAX_RETRIES == 1
     assert DEFAULT_MIN_INTERVAL_SECONDS >= 0.1
-    assert urlparse(DEFAULT_WEB_ENDPOINT).hostname == "translate.googleapis.com"
+    assert urlparse(DEFAULT_WEB_ENDPOINT).hostname == "translate.google.com"
 
 
-def test_plain_http_google_endpoint_is_upgraded_without_collapsing_https_modes() -> None:
-    google = GoogleWebTranslationProvider(
-        endpoint="http://translate.google.com/translate_a/single",
-        requester=lambda *_args: WebResponse(200, "[]"),
-    )
-    google_api = GoogleWebTranslationProvider(
-        endpoint="https://translate.googleapis.com/translate_a/single",
-        requester=lambda *_args: WebResponse(200, "[]"),
-    )
-
-    assert google.endpoint == GOOGLE_WEB_ENDPOINT
-    assert google_api.endpoint == DEFAULT_WEB_ENDPOINT
+def test_legacy_google_endpoints_are_migrated_to_browser_web_route() -> None:
+    for legacy_endpoint in (
+        "http://translate.google.com/translate_a/single",
+        "http://translate.googleapis.com/translate_a/single",
+        "https://translate.googleapis.com/translate_a/single",
+    ):
+        provider = GoogleWebTranslationProvider(
+            endpoint=legacy_endpoint,
+            requester=lambda *_args: WebResponse(200, "[]"),
+        )
+        assert provider.endpoint == DEFAULT_WEB_ENDPOINT
 
 
 def test_google_token_matches_browser_algorithm_for_utf8_text() -> None:
@@ -238,7 +236,7 @@ target_language = "zh-CN"
 
 [google_web]
 enabled = true
-endpoint = "https://translate.googleapis.com/translate_a/single"
+endpoint = "https://translate.google.com/translate_a/single"
 timeout_ms = 8000
 max_retries = 0
 min_interval_ms = 0
@@ -262,4 +260,5 @@ min_interval_ms = 0
     assert manager.configure_provider()
 
     assert isinstance(manager.provider, GoogleWebTranslationProvider)
+    assert manager.provider.endpoint == DEFAULT_WEB_ENDPOINT
     assert manager.cache.size == 0

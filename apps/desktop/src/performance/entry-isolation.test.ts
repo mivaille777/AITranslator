@@ -54,4 +54,15 @@ describe("Batch 5 desktop entry isolation", () => {
     }
     expect(source).toContain("<Suspense")
   })
+
+  it("defers the heavy Compact Chat implementation until the user opens AI Chat", () => {
+    const wrapper = read("../components/OverlayCompactChat.tsx")
+    const content = read("../components/OverlayCompactChatContent.tsx")
+
+    expect(wrapper).toContain('lazy(() => import("./OverlayCompactChatContent"))')
+    expect(wrapper).not.toContain("react-markdown")
+    expect(wrapper).not.toContain("useCompanionConversationRuntime")
+    expect(content).toContain('from "react-markdown"')
+    expect(content).toContain("useCompanionConversationRuntime")
+  })
 })

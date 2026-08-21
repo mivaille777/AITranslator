@@ -4,7 +4,10 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from backend.api.dependencies import get_conversation_store_service
+from backend.api.dependencies import (
+    get_companion_ownership_service,
+    get_conversation_store_service,
+)
 from backend.models.conversations import (
     ConversationContextUpdateRequest,
     ConversationDeleteResponse,
@@ -14,6 +17,9 @@ from backend.models.conversations import (
     ConversationRenameRequest,
     ConversationRewindRequest,
     ConversationSummaryResponse,
+)
+from backend.services.companion_ownership_service import (
+    CompanionConversationOwnershipService,
 )
 from backend.services.conversation_store_service import (
     ConversationStoreService,
@@ -25,6 +31,10 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 ConversationStoreDependency = Annotated[
     ConversationStoreService,
     Depends(get_conversation_store_service),
+]
+CompanionOwnershipDependency = Annotated[
+    CompanionConversationOwnershipService,
+    Depends(get_companion_ownership_service),
 ]
 
 
@@ -89,6 +99,20 @@ def _detail_response(
     )
 
 
+def _assert_conversation_idle(
+    ownership: CompanionConversationOwnershipService,
+    conversation_id: str,
+) -> None:
+    lease = ownership.snapshot(conversation_id)
+    if lease is None:
+        return
+    surface = lease.owner_surface if lease.owner_surface != "unknown" else "another window"
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"Conversation is currently replying in {surface}.",
+    )
+
+
 @router.get("", response_model=ConversationListResponse)
 def list_conversations(
     service: ConversationStoreDependency,
@@ -145,7 +169,9 @@ def rewind_conversation(
     conversation_id: str,
     payload: ConversationRewindRequest,
     service: ConversationStoreDependency,
+    ownership: CompanionOwnershipDependency,
 ) -> ConversationDetailResponse:
+    _assert_conversation_idle(ownership, conversation_id)
     rewind = getattr(service, "rewind_from_user_message", None)
     if not callable(rewind):
         raise HTTPException(
@@ -175,7 +201,9 @@ def update_conversation_context(
     conversation_id: str,
     payload: ConversationContextUpdateRequest,
     service: ConversationStoreDependency,
+    ownership: CompanionOwnershipDependency,
 ) -> ConversationDetailResponse:
+    _assert_conversation_idle(ownership, conversation_id)
     update_context = getattr(service, "update_context", None)
     if not callable(update_context):
         raise HTTPException(
@@ -207,7 +235,9 @@ def update_conversation_context(
 def delete_conversation(
     conversation_id: str,
     service: ConversationStoreDependency,
+    ownership: CompanionOwnershipDependency,
 ) -> ConversationDeleteResponse:
+    _assert_conversation_idle(ownership, conversation_id)
     return ConversationDeleteResponse(
         deleted=service.delete(conversation_id),
         conversation_id=conversation_id,

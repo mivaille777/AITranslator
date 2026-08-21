@@ -34,6 +34,7 @@ class CompanionDismissRequest(BaseModel):
 
 CompanionChatRole = Literal["user", "assistant"]
 CompanionChatContextMode = Literal["general", "reading"]
+CompanionClientSurface = Literal["main", "overlay", "unknown"]
 
 
 class CompanionChatMessage(BaseModel):
@@ -44,6 +45,8 @@ class CompanionChatMessage(BaseModel):
 class CompanionChatRequest(BaseModel):
     conversation_id: str = Field(default="", max_length=128)
     session_id: str = Field(min_length=1, max_length=128)
+    client_id: str = Field(default="", max_length=128)
+    client_surface: CompanionClientSurface = "unknown"
     user_message: str = Field(min_length=1, max_length=20_000)
     history: list[CompanionChatMessage] = Field(default_factory=list, max_length=32)
     request_id: int = Field(default=0, ge=0)
@@ -89,6 +92,15 @@ class CompanionChatStatusResponse(BaseModel):
     provider: str = ""
     model: str = ""
     detail: str = ""
+
+
+class CompanionChatOwnershipResponse(BaseModel):
+    conversation_id: str
+    busy: bool
+    owner_id: str = ""
+    owner_surface: CompanionClientSurface = "unknown"
+    request_id: int = 0
+    stale_after_seconds: float = 0.0
 
 
 class CompanionChatStreamStart(BaseModel):

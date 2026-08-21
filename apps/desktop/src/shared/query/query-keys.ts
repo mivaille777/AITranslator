@@ -20,6 +20,7 @@ export const queryKeys = {
   companion: {
     handoff: ["companion", "handoff"] as const,
     chatStatus: ["companion", "chat-status"] as const,
+    ownership: (conversationId: string) => ["companion", "ownership", conversationId] as const,
   },
   conversations: {
     list: (limit: number) => ["conversations", "list", limit] as const,
@@ -43,6 +44,7 @@ export const queryPolling = {
   overlayState: 1_000,
   companionHandoff: 650,
   companionChatStatus: 30_000,
+  companionOwnership: 500,
   conversationList: 5_000,
   researchNotes: 5_000,
   researchWorkspace: 5_000,

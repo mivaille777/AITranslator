@@ -6,8 +6,10 @@ from app.ai.errors import AIConfigurationError, AIError
 from backend.api.dependencies import (
     get_companion_chat_service,
     get_companion_handoff_service,
+    get_companion_ownership_service,
 )
 from backend.models.companion import (
+    CompanionChatOwnershipResponse,
     CompanionChatRequest,
     CompanionChatResponse,
     CompanionChatStatusResponse,
@@ -21,6 +23,9 @@ from backend.services.companion_handoff_service import (
     CompanionHandoffService,
     CompanionHandoffState,
 )
+from backend.services.companion_ownership_service import (
+    CompanionConversationOwnershipService,
+)
 
 router = APIRouter(prefix="/api/companion", tags=["companion"])
 CompanionHandoffServiceDependency = Annotated[
@@ -30,6 +35,10 @@ CompanionHandoffServiceDependency = Annotated[
 CompanionChatServiceDependency = Annotated[
     CompanionChatService,
     Depends(get_companion_chat_service),
+]
+CompanionOwnershipServiceDependency = Annotated[
+    CompanionConversationOwnershipService,
+    Depends(get_companion_ownership_service),
 ]
 
 
@@ -101,6 +110,31 @@ def companion_chat_status(
         provider=provider,
         model=model,
         detail=detail,
+    )
+
+
+@router.get(
+    "/chat/ownership/{conversation_id}",
+    response_model=CompanionChatOwnershipResponse,
+)
+def companion_chat_ownership(
+    conversation_id: str,
+    service: CompanionOwnershipServiceDependency,
+) -> CompanionChatOwnershipResponse:
+    lease = service.snapshot(conversation_id)
+    if lease is None:
+        return CompanionChatOwnershipResponse(
+            conversation_id=conversation_id,
+            busy=False,
+            stale_after_seconds=service.stale_after_seconds,
+        )
+    return CompanionChatOwnershipResponse(
+        conversation_id=lease.conversation_id,
+        busy=True,
+        owner_id=lease.owner_id,
+        owner_surface=lease.owner_surface,
+        request_id=lease.request_id,
+        stale_after_seconds=service.stale_after_seconds,
     )
 
 

@@ -1,3 +1,4 @@
+import type { CompanionClientSurface } from "../../api/companion"
 import type {
   ChatContextMode,
   CompanionChatMessage,
@@ -125,9 +126,16 @@ export function createCompanionScope(prefix: string): string {
   return `${prefix}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`
 }
 
+export interface CompanionChatRequestWithClient extends CompanionChatRequest {
+  client_id: string
+  client_surface: CompanionClientSurface
+}
+
 export interface CompanionRequestInput {
   conversationId?: string
   sessionId: string
+  clientId?: string
+  clientSurface?: CompanionClientSurface
   userMessage: string
   contextMode: ChatContextMode
   context?: CompanionContextSnapshot | null
@@ -138,16 +146,20 @@ export interface CompanionRequestInput {
 export function buildCompanionChatRequest({
   conversationId = "",
   sessionId,
+  clientId = "",
+  clientSurface = "unknown",
   userMessage,
   contextMode,
   context = EMPTY_COMPANION_CONTEXT,
   messages,
   requestId,
-}: CompanionRequestInput): CompanionChatRequest {
+}: CompanionRequestInput): CompanionChatRequestWithClient {
   const resolvedContext = context ?? EMPTY_COMPANION_CONTEXT
   return {
     conversation_id: conversationId,
     session_id: sessionId,
+    client_id: clientId,
+    client_surface: clientSurface,
     user_message: userMessage.trim(),
     context_mode: contextMode,
     source_text: resolvedContext.source_text,

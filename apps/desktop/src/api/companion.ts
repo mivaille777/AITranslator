@@ -8,6 +8,17 @@ import type {
   CompanionHandoffRequest,
 } from "./types"
 
+export type CompanionClientSurface = "main" | "overlay" | "unknown"
+
+export interface CompanionChatOwnershipResponse {
+  conversation_id: string
+  busy: boolean
+  owner_id: string
+  owner_surface: CompanionClientSurface
+  request_id: number
+  stale_after_seconds: number
+}
+
 export function getCompanionHandoff(): Promise<CompanionHandoffEnvelope> {
   return apiGet<CompanionHandoffEnvelope>("/api/companion/handoff")
 }
@@ -32,6 +43,14 @@ export function dismissCompanionHandoff(
 
 export function getCompanionChatStatus(): Promise<CompanionChatStatusResponse> {
   return apiGet<CompanionChatStatusResponse>("/api/companion/chat/status")
+}
+
+export function getCompanionChatOwnership(
+  conversationId: string,
+): Promise<CompanionChatOwnershipResponse> {
+  return apiGet<CompanionChatOwnershipResponse>(
+    `/api/companion/chat/ownership/${encodeURIComponent(conversationId)}`,
+  )
 }
 
 export function sendCompanionChat(

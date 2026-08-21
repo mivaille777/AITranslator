@@ -5,6 +5,7 @@ from threading import Lock
 from backend.services.browser_context_service import BrowserContextService
 from backend.services.companion_chat_service import CompanionChatService
 from backend.services.companion_handoff_service import CompanionHandoffService
+from backend.services.companion_ownership_service import CompanionConversationOwnershipService
 from backend.services.conversation_lifecycle_service import ConversationLifecycleService
 from backend.services.conversation_store_service import ConversationStoreService
 from backend.services.overlay_state_service import OverlayStateService
@@ -31,6 +32,8 @@ _companion_chat_service: CompanionChatService | None = None
 _companion_chat_service_lock = Lock()
 _conversation_store_service: ConversationStoreService | None = None
 _conversation_store_service_lock = Lock()
+_companion_ownership_service: CompanionConversationOwnershipService | None = None
+_companion_ownership_service_lock = Lock()
 
 
 def get_translation_service() -> TranslationService:
@@ -189,3 +192,23 @@ def close_conversation_store_service() -> None:
     global _conversation_store_service
     with _conversation_store_service_lock:
         _conversation_store_service = None
+
+
+def get_companion_ownership_service() -> CompanionConversationOwnershipService:
+    global _companion_ownership_service
+    if _companion_ownership_service is not None:
+        return _companion_ownership_service
+
+    with _companion_ownership_service_lock:
+        if _companion_ownership_service is None:
+            _companion_ownership_service = CompanionConversationOwnershipService()
+        return _companion_ownership_service
+
+
+def close_companion_ownership_service() -> None:
+    global _companion_ownership_service
+    with _companion_ownership_service_lock:
+        service = _companion_ownership_service
+        _companion_ownership_service = None
+    if service is not None:
+        service.clear()

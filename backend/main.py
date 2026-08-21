@@ -13,6 +13,7 @@ from backend.api.conversations import router as conversations_router
 from backend.api.dependencies import (
     close_browser_context_service,
     close_companion_chat_service,
+    close_companion_ownership_service,
     close_conversation_store_service,
     close_quick_action_service,
     close_reading_selection_resolver,
@@ -47,6 +48,7 @@ async def lifespan(_: FastAPI):
         close_reading_selection_resolver()
         close_browser_context_service()
         close_companion_chat_service()
+        close_companion_ownership_service()
         close_conversation_store_service()
         close_quick_action_service()
         close_translation_service()

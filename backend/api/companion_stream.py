@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from app.ai.errors import AIConfigurationError, AIError
 from backend.api.dependencies import (
     get_companion_chat_service,
+    get_companion_ownership_service,
     get_conversation_store_service,
 )
 from backend.models.companion import (
@@ -19,6 +20,10 @@ from backend.models.companion import (
     CompanionChatStreamStart,
 )
 from backend.services.companion_chat_service import CompanionChatService
+from backend.services.companion_ownership_service import (
+    CompanionConversationOwnershipService,
+    CompanionOwnershipClaim,
+)
 from backend.services.conversation_store_service import ConversationStoreService
 
 router = APIRouter(tags=["companion-stream"])
@@ -29,6 +34,10 @@ CompanionChatServiceDependency = Annotated[
 ConversationStoreDependency = Annotated[
     ConversationStoreService,
     Depends(get_conversation_store_service),
+]
+CompanionOwnershipDependency = Annotated[
+    CompanionConversationOwnershipService,
+    Depends(get_companion_ownership_service),
 ]
 
 _TERMINAL_EVENT_TYPES = frozenset({"done", "error", "cancelled"})
@@ -112,11 +121,27 @@ def _consume_background_task(task: asyncio.Task[None]) -> None:
         task.result()
 
 
+def _effective_owner_id(payload: Any) -> str:
+    explicit = str(getattr(payload, "client_id", "") or "").strip()
+    return explicit or f"session:{payload.session_id}"
+
+
+def _claim_message(claim: CompanionOwnershipClaim) -> str:
+    lease = claim.lease
+    if claim.reason == "conversation_busy" and lease is not None:
+        surface = lease.owner_surface if lease.owner_surface != "unknown" else "another window"
+        return f"This conversation is already replying in {surface}."
+    if claim.reason in {"duplicate_request", "duplicate_active_request"}:
+        return "Duplicate chat request ignored."
+    return "Unable to acquire conversation execution ownership."
+
+
 @router.websocket("/ws/companion/chat")
 async def stream_companion_chat(
     websocket: WebSocket,
     service: CompanionChatServiceDependency,
     store: ConversationStoreDependency,
+    ownership: CompanionOwnershipDependency,
 ) -> None:
     await websocket.accept()
     cancel_event = Event()
@@ -126,6 +151,8 @@ async def stream_companion_chat(
     assistant_message_id = ""
     conversation_id = ""
     request_id = 0
+    owner_id = ""
+    ownership_acquired = False
     terminal_lock = Lock()
     terminal_committed = False
     latest_text_lock = Lock()
@@ -187,6 +214,31 @@ async def stream_companion_chat(
 
         payload = start.request
         request_id = payload.request_id
+        owner_id = _effective_owner_id(payload)
+        requested_conversation_id = str(payload.conversation_id or "").strip()
+
+        if requested_conversation_id:
+            claim = ownership.acquire(
+                requested_conversation_id,
+                owner_id=owner_id,
+                owner_surface=payload.client_surface,
+                request_id=request_id,
+            )
+            if not claim.acquired:
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "request_id": request_id,
+                        "conversation_id": requested_conversation_id,
+                        "message_id": "",
+                        "code": claim.reason,
+                        "message": _claim_message(claim),
+                    }
+                )
+                return
+            ownership_acquired = True
+            conversation_id = requested_conversation_id
+
         try:
             exchange = _begin_exchange(store, payload, request_id)
         except (OSError, ValueError) as exc:
@@ -204,6 +256,35 @@ async def stream_companion_chat(
 
         conversation_id = exchange.conversation_id
         assistant_message_id = exchange.assistant_message_id
+
+        if not ownership_acquired:
+            claim = ownership.acquire(
+                conversation_id,
+                owner_id=owner_id,
+                owner_surface=payload.client_surface,
+                request_id=request_id,
+            )
+            if not claim.acquired:
+                store.finalize_message(
+                    assistant_message_id,
+                    status="error",
+                    content="",
+                    error_code=claim.reason,
+                )
+                terminal_committed = True
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "request_id": request_id,
+                        "conversation_id": conversation_id,
+                        "message_id": assistant_message_id,
+                        "code": claim.reason,
+                        "message": _claim_message(claim),
+                    }
+                )
+                return
+            ownership_acquired = True
+
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
@@ -228,6 +309,11 @@ async def stream_companion_chat(
                 for delta in service.stream(**_stream_kwargs(payload)):
                     if cancel_event.is_set():
                         return
+                    ownership.touch(
+                        conversation_id,
+                        owner_id=owner_id,
+                        request_id=request_id,
+                    )
                     accumulated.append(delta)
                     text = "".join(accumulated)
                     update_latest(text)
@@ -354,6 +440,12 @@ async def stream_companion_chat(
     finally:
         cancel_event.set()
         commit_terminal("cancelled", error_code="transport_closed")
+        if ownership_acquired and conversation_id and owner_id:
+            ownership.release(
+                conversation_id,
+                owner_id=owner_id,
+                request_id=request_id,
+            )
         for task in (sender_task, receiver_task):
             if task is not None and not task.done():
                 task.cancel()

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { getCompanionChatStatus } from "../../api/companion"
+import {
+  getCompanionChatOwnership,
+  getCompanionChatStatus,
+  type CompanionClientSurface,
+} from "../../api/companion"
 import {
   streamCompanionChat,
   type CompanionChatStreamHandle,
@@ -38,6 +42,12 @@ type StreamEventContext = {
   localAssistantId: string
 }
 
+const OWNERSHIP_REJECTION_CODES = new Set([
+  "conversation_busy",
+  "duplicate_request",
+  "duplicate_active_request",
+])
+
 export interface CompanionRuntimeResetOptions {
   context?: CompanionContextSnapshot | null
   contextMode?: ChatContextMode
@@ -52,6 +62,7 @@ export interface UseCompanionConversationRuntimeOptions {
   initialDraft?: string
   initialSessionId?: string
   initialScopeId?: string
+  clientSurface?: CompanionClientSurface
   onConversationAccepted?: (conversationId: string) => void
 }
 
@@ -70,6 +81,8 @@ export interface CompanionConversationRuntime {
   chatStatusLoaded: boolean
   openingConversation: boolean
   contextUpdating: boolean
+  conversationBusyElsewhere: boolean
+  ownerSurface: CompanionClientSurface
   reset: (options?: CompanionRuntimeResetOptions) => void
   openConversation: (conversationId: string) => Promise<ConversationDetail | null>
   sendMessage: (message?: string, baseMessages?: CompanionRuntimeMessage[]) => boolean
@@ -111,6 +124,8 @@ export function useCompanionConversationRuntime(
   const scopeRef = useRef(
     options.initialScopeId ?? createCompanionScope("companion"),
   )
+  const clientSurfaceRef = useRef<CompanionClientSurface>(options.clientSurface ?? "unknown")
+  const clientIdRef = useRef(createCompanionScope(`client-${clientSurfaceRef.current}`))
   const requestCounterRef = useRef(0)
   const activeRequestRef = useRef<number | null>(null)
   const streamHandleRef = useRef<CompanionChatStreamHandle | null>(null)
@@ -128,6 +143,20 @@ export function useCompanionConversationRuntime(
     refetchInterval: queryPolling.companionChatStatus,
     retry: 0,
   })
+
+  const ownershipQuery = useQuery({
+    queryKey: queryKeys.companion.ownership(conversationId),
+    queryFn: () => getCompanionChatOwnership(conversationId),
+    enabled: Boolean(conversationId),
+    refetchInterval: queryPolling.companionOwnership,
+    retry: 0,
+  })
+  const ownerSurface = ownershipQuery.data?.owner_surface ?? "unknown"
+  const conversationBusyElsewhere = Boolean(
+    conversationId &&
+      ownershipQuery.data?.busy &&
+      ownershipQuery.data.owner_id !== clientIdRef.current,
+  )
 
   const applyConversationId = useCallback((next: string) => {
     conversationIdRef.current = next
@@ -343,12 +372,18 @@ export function useCompanionConversationRuntime(
     }
   }, [applyConversation, queryClient])
 
-  const finishRequest = useCallback((requestId: number) => {
+  const finishRequest = useCallback((requestId: number, nextConversationId = "") => {
     if (activeRequestRef.current !== requestId) return
     activeRequestRef.current = null
     streamHandleRef.current = null
     setActiveRequestId(null)
     void queryClient.invalidateQueries({ queryKey: ["conversations"] })
+    const ownershipConversationId = nextConversationId || conversationIdRef.current
+    if (ownershipConversationId) {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.companion.ownership(ownershipConversationId),
+      })
+    }
   }, [queryClient])
 
   const handleStreamEvent = useCallback((
@@ -377,6 +412,9 @@ export function useCompanionConversationRuntime(
         onConversationAcceptedRef.current?.(event.conversation_id)
       }
       void queryClient.invalidateQueries({ queryKey: ["conversations"] })
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.companion.ownership(event.conversation_id),
+      })
       return
     }
 
@@ -411,7 +449,7 @@ export function useCompanionConversationRuntime(
             : message,
         ),
       )
-      finishRequest(requestId)
+      finishRequest(requestId, event.conversation_id)
       notifyConversationUpdated(event.conversation_id)
       return
     }
@@ -429,8 +467,17 @@ export function useCompanionConversationRuntime(
             : message,
         ),
       )
-      finishRequest(requestId)
+      finishRequest(requestId, event.conversation_id)
       notifyConversationUpdated(event.conversation_id)
+      return
+    }
+
+    if (OWNERSHIP_REJECTION_CODES.has(event.code)) {
+      setMessages((current) =>
+        current.filter((message) => message.id !== localUserId && message.id !== localAssistantId),
+      )
+      setErrorMessage(event.message || "This conversation is already replying in another window.")
+      finishRequest(requestId, event.conversation_id)
       return
     }
 
@@ -447,7 +494,7 @@ export function useCompanionConversationRuntime(
       ),
     )
     setErrorMessage(event.message || "AI Chat streaming failed.")
-    finishRequest(requestId)
+    finishRequest(requestId, event.conversation_id)
     notifyConversationUpdated(event.conversation_id)
   }, [applyConversationId, finishRequest, notifyConversationUpdated, queryClient])
 
@@ -456,6 +503,11 @@ export function useCompanionConversationRuntime(
     baseMessages = messages,
   ) => {
     if (activeRequestRef.current !== null) return false
+    if (conversationBusyElsewhere) {
+      const surface = ownerSurface === "unknown" ? "another window" : ownerSurface
+      setErrorMessage(`This conversation is already replying in ${surface}.`)
+      return false
+    }
 
     const normalized = message.trim()
     if (!normalized) return false
@@ -502,6 +554,8 @@ export function useCompanionConversationRuntime(
     const payload = buildCompanionChatRequest({
       conversationId: conversationIdRef.current,
       sessionId: sessionIdRef.current,
+      clientId: clientIdRef.current,
+      clientSurface: clientSurfaceRef.current,
       userMessage: normalized,
       contextMode: contextModeRef.current,
       context: currentContext,
@@ -528,7 +582,7 @@ export function useCompanionConversationRuntime(
         )
         setErrorMessage(`${error.message} Recovering persisted stream state…`)
         const persistedConversationId = conversationIdRef.current
-        finishRequest(requestId)
+        finishRequest(requestId, persistedConversationId)
         if (persistedConversationId) {
           window.setTimeout(
             () => void recoverConversation(persistedConversationId, scopeId),
@@ -538,23 +592,31 @@ export function useCompanionConversationRuntime(
       },
     })
     return true
-  }, [draft, finishRequest, handleStreamEvent, messages, recoverConversation])
+  }, [
+    conversationBusyElsewhere,
+    draft,
+    finishRequest,
+    handleStreamEvent,
+    messages,
+    ownerSurface,
+    recoverConversation,
+  ])
 
   const persistContextUpdate = useCallback(async (
     payload: ConversationContextUpdate,
   ) => {
     const currentConversationId = conversationIdRef.current
-    if (!currentConversationId) return null
+    if (!currentConversationId || conversationBusyElsewhere) return null
     const updated = await updateConversationContext(currentConversationId, payload)
     applyConversation(updated)
     void queryClient.invalidateQueries({ queryKey: ["conversations"] })
     return updated
-  }, [applyConversation, queryClient])
+  }, [applyConversation, conversationBusyElsewhere, queryClient])
 
   const attachReadingContext = useCallback(async (
     nextContext: CompanionContextSnapshot,
   ) => {
-    if (activeRequestRef.current !== null || contextUpdating) return
+    if (activeRequestRef.current !== null || contextUpdating || conversationBusyElsewhere) return
     setContextUpdating(true)
     setErrorMessage("")
     try {
@@ -583,7 +645,13 @@ export function useCompanionConversationRuntime(
     } finally {
       setContextUpdating(false)
     }
-  }, [applyContext, applyContextMode, contextUpdating, persistContextUpdate])
+  }, [
+    applyContext,
+    applyContextMode,
+    contextUpdating,
+    conversationBusyElsewhere,
+    persistContextUpdate,
+  ])
 
   const attachSavedContext = useCallback(async () => {
     if (!contextRef.current.source_text.trim()) return
@@ -591,7 +659,7 @@ export function useCompanionConversationRuntime(
   }, [attachReadingContext])
 
   const detachReadingContext = useCallback(async () => {
-    if (activeRequestRef.current !== null || contextUpdating) return
+    if (activeRequestRef.current !== null || contextUpdating || conversationBusyElsewhere) return
     setContextUpdating(true)
     setErrorMessage("")
     try {
@@ -607,7 +675,7 @@ export function useCompanionConversationRuntime(
     } finally {
       setContextUpdating(false)
     }
-  }, [applyContextMode, contextUpdating, persistContextUpdate])
+  }, [applyContextMode, contextUpdating, conversationBusyElsewhere, persistContextUpdate])
 
   const rewriteFromUser = useCallback(async (
     userMessage: CompanionRuntimeMessage,
@@ -619,7 +687,8 @@ export function useCompanionConversationRuntime(
       !currentConversationId ||
       !userMessageId ||
       userMessageId.startsWith("user-local-") ||
-      activeRequestRef.current !== null
+      activeRequestRef.current !== null ||
+      conversationBusyElsewhere
     ) {
       return false
     }
@@ -640,7 +709,12 @@ export function useCompanionConversationRuntime(
       )
       return false
     }
-  }, [applyConversation, closeActiveStream, sendMessage])
+  }, [
+    applyConversation,
+    closeActiveStream,
+    conversationBusyElsewhere,
+    sendMessage,
+  ])
 
   return {
     messages,
@@ -657,6 +731,8 @@ export function useCompanionConversationRuntime(
     chatStatusLoaded: chatStatusQuery.isSuccess,
     openingConversation,
     contextUpdating,
+    conversationBusyElsewhere,
+    ownerSurface,
     reset,
     openConversation,
     sendMessage,

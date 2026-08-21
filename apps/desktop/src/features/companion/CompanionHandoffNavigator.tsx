@@ -33,8 +33,13 @@ export default function CompanionHandoffNavigator() {
 
     if (!initialized.current) {
       initialized.current = true
-      lastNavigatedHandoff.current = handoffId
-      return
+      if (!conversationId) {
+        // Preserve the old startup behavior for context-only handoffs: they may
+        // be stale state from before the workspace mounted. Conversation-aware
+        // handoffs are transient navigation signals and must never be dropped.
+        lastNavigatedHandoff.current = handoffId
+        return
+      }
     }
 
     if (!handoffId || handoffId === lastNavigatedHandoff.current) return

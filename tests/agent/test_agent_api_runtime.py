@@ -198,6 +198,23 @@ def test_agent_trace_response_keeps_run_contract_and_orders_events() -> None:
     assert response.events[-1].payload["ui_mode"] == "translation"
 
 
+def test_agent_trace_confirmation_has_no_tool_result_event() -> None:
+    runtime = FakeRuntime(confirmation_required=True)
+
+    response = run_product_agent_trace(_request(), runtime)
+
+    assert response.run.status == "confirmation_required"
+    assert response.run.plan.tool_name == "save_research_note"
+    assert response.run.tool_result is None
+    assert [event.event_type for event in response.events] == [
+        "agent_start",
+        "context_ready",
+        "tool_call",
+        "agent_end",
+    ]
+    assert "tool_result" not in {event.event_type for event in response.events}
+
+
 def test_agent_trace_http_endpoint_is_additive_to_existing_run_api() -> None:
     runtime = FakeRuntime()
     app = create_app()

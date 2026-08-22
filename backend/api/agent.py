@@ -14,10 +14,12 @@ from backend.models.agent_tools import (
     AgentPlan,
     AgentRunRequest,
     AgentRunResponse,
+    AgentRunTraceResponse,
     AgentToolCatalogResponse,
     AgentToolDefinition,
     AgentToolExecuteRequest,
     AgentToolExecuteResponse,
+    AgentTraceEvent,
 )
 from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolRegistry
 
@@ -82,6 +84,40 @@ def _run_response(state: AgentState) -> AgentRunResponse:
     )
 
 
+def _execute_runtime(payload: AgentRunRequest, runtime: AgentRuntime) -> AgentState:
+    try:
+        return runtime.execute(_state_from_run_request(payload))
+    except AIConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except AIError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+def _trace_response(state: AgentState, runtime: AgentRuntime) -> AgentRunTraceResponse:
+    return AgentRunTraceResponse(
+        session_id=state.session_id,
+        ui_mode=state.ui_mode,
+        run=_run_response(state),
+        events=[
+            AgentTraceEvent(
+                sequence=index,
+                event_type=event.event_type.value,
+                timestamp=event.timestamp,
+                payload=event.payload,
+            )
+            for index, event in enumerate(runtime.events)
+        ],
+    )
+
+
 @router.get("/tools", response_model=AgentToolCatalogResponse)
 def list_agent_tools(registry: AgentToolRegistryDependency) -> AgentToolCatalogResponse:
     return AgentToolCatalogResponse(
@@ -120,19 +156,13 @@ def run_product_agent(
     payload: AgentRunRequest,
     runtime: AgentRuntimeDependency,
 ) -> AgentRunResponse:
-    try:
-        state = runtime.execute(_state_from_run_request(payload))
-    except AIConfigurationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except AIError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+    return _run_response(_execute_runtime(payload, runtime))
 
-    return _run_response(state)
+
+@router.post("/run/trace", response_model=AgentRunTraceResponse)
+def run_product_agent_trace(
+    payload: AgentRunRequest,
+    runtime: AgentRuntimeDependency,
+) -> AgentRunTraceResponse:
+    state = _execute_runtime(payload, runtime)
+    return _trace_response(state, runtime)

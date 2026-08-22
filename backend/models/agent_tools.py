@@ -9,6 +9,13 @@ from backend.models.quick_actions import ReadingContextPayload
 AgentToolEffect = Literal["read", "compute", "write"]
 AgentRunStatus = Literal["completed", "confirmation_required"]
 AgentPlanAction = Literal["answer", "tool"]
+AgentTraceEventType = Literal[
+    "agent_start",
+    "context_ready",
+    "tool_call",
+    "tool_result",
+    "agent_end",
+]
 
 
 class AgentToolDefinition(BaseModel):
@@ -78,3 +85,17 @@ class AgentRunResponse(BaseModel):
     model: str = ""
     request_id: int = 0
     tool_result: AgentToolExecuteResponse | None = None
+
+
+class AgentTraceEvent(BaseModel):
+    sequence: int = Field(ge=0)
+    event_type: AgentTraceEventType
+    timestamp: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentRunTraceResponse(BaseModel):
+    session_id: str
+    ui_mode: str = "idle"
+    run: AgentRunResponse
+    events: list[AgentTraceEvent] = Field(default_factory=list)

@@ -39,6 +39,7 @@ export default function OverlayCompactChat({
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const followTailRef = useRef(true)
   const syncedTranslationRef = useRef("")
+  const activeReadingContextRef = useRef(state.context_id)
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [translationHandoffBusy, setTranslationHandoffBusy] = useState(false)
   const context = contextFromOverlay(state, aiResult)
@@ -46,9 +47,9 @@ export default function OverlayCompactChat({
   const runtime = useCompanionConversationRuntime({
     initialContext: context,
     initialContextMode: "reading",
-    // A fresh external selection replaces the composer wholesale. Because the
-    // parent is keyed by context_id, every new selection creates a new runtime
-    // seed instead of appending to a stale user draft.
+    // Selection changes update this runtime in place. The first mount still
+    // starts with the selected text in the composer, while later selections
+    // replace the draft without creating a new conversation.
     initialDraft: state.source_text,
     initialSessionId: `overlay-${state.context_id}`,
     initialScopeId: `overlay:${state.context_id}`,
@@ -63,6 +64,35 @@ export default function OverlayCompactChat({
   const runtimeConversationId = runtime.conversationId
   const openRuntimeConversation = runtime.openConversation
   const draftTranslationIntent = resolveExplicitOverlayTranslationIntent(runtime.draft)
+
+  useEffect(() => {
+    const nextContextId = state.context_id.trim()
+    if (!nextContextId || activeReadingContextRef.current === nextContextId) return
+
+    activeReadingContextRef.current = nextContextId
+    syncedTranslationRef.current = ""
+    followTailRef.current = true
+    setShowJumpToLatest(false)
+
+    // A new external selection is a reading-context update, not a conversation
+    // boundary. Stop any stale generation, preserve the existing message
+    // history/conversation id, attach the new reading context, and replace the
+    // composer wholesale with the latest selection.
+    runtime.closeActiveStream()
+    runtime.setDraft(state.source_text)
+
+    void runtime.attachReadingContext(context).finally(() => {
+      if (activeReadingContextRef.current !== nextContextId) return
+      runtime.setDraft(state.source_text)
+    })
+  }, [
+    context,
+    runtime.attachReadingContext,
+    runtime.closeActiveStream,
+    runtime.setDraft,
+    state.context_id,
+    state.source_text,
+  ])
 
   useEffect(() => {
     if (!persistedConversationId || runtimeConversationId === persistedConversationId) return

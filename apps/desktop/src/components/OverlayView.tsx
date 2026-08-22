@@ -391,70 +391,78 @@ export default function OverlayView() {
           onClose={() => dismiss()}
         />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" data-ait-selection-scope="internal">
-          {state.phase === "loading" && (
-            <div key={`loading:${overlayRevision}`} className="ait-overlay-state-enter flex min-h-16 items-center gap-3 rounded-[18px] bg-white/[0.035] px-4 py-3 text-sm text-slate-300">
-              <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />
-              <div>
-                <p className="font-medium text-slate-200">Translating</p>
-                <p className="mt-0.5 text-xs text-slate-500">Preparing the latest reading selection…</p>
-              </div>
-            </div>
-          )}
-
-          {state.phase === "ready" && overlayMode === "assistant" && (
-            <div key={`assistant:${overlayRevision}`} className="ait-overlay-state-enter rounded-[16px] border border-cyan-300/10 bg-cyan-300/[0.045] px-3.5 py-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-200/55">Selected context</p>
-              <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-400">{state.source_text}</p>
-            </div>
-          )}
-
-          {state.phase === "ready" && overlayMode === "translation" && (
-            <div key={`translation:${overlayRevision}`} className="ait-overlay-state-enter">
-              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{state.translated_text}</p>
-              {state.source_text && (
-                <p className="mt-4 line-clamp-3 border-t border-white/10 pt-3 text-xs leading-5 text-slate-500">{state.source_text}</p>
-              )}
-            </div>
-          )}
-
-          {state.phase === "error" && (
-            <div key={`error:${overlayRevision}`} className="ait-overlay-state-enter rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3.5">
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-300/10 text-sm font-semibold text-rose-200">!</span>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-rose-100">Translation unavailable</p>
-                  <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">{state.message || "Translation failed"}</p>
+        {overlayMode === "translation" && (
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" data-ait-selection-scope="internal">
+            {state.phase === "loading" && (
+              <div key={`loading:${overlayRevision}`} className="ait-overlay-state-enter flex min-h-16 items-center gap-3 rounded-[18px] bg-white/[0.035] px-4 py-3 text-sm text-slate-300">
+                <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />
+                <div>
+                  <p className="font-medium text-slate-200">Translating</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Preparing the latest reading selection…</p>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+
+            {state.phase === "ready" && state.translated_text && (
+              <div key={`translation:${overlayRevision}`} className="ait-overlay-state-enter">
+                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{state.translated_text}</p>
+                {state.source_text && (
+                  <p className="mt-4 line-clamp-3 border-t border-white/10 pt-3 text-xs leading-5 text-slate-500">{state.source_text}</p>
+                )}
+              </div>
+            )}
+
+            {state.phase === "ready" && !state.translated_text && state.message && (
+              <div key={`translation-failure:${overlayRevision}`} className="ait-overlay-state-enter rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3.5">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-300/10 text-sm font-semibold text-rose-200">!</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-rose-100">Translation unavailable</p>
+                    <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">{state.message}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {state.phase === "error" && (
+              <div key={`error:${overlayRevision}`} className="ait-overlay-state-enter rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3.5">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-300/10 text-sm font-semibold text-rose-200">!</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-rose-100">Translation unavailable</p>
+                    <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">{state.message || "Translation failed"}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {state.phase === "ready" && (
           <OverlayQuickActions
-            key={state.context_id}
             state={state}
             onPresentationChange={handleActionPresentationChange}
             onCompletedInteraction={handleCompletedInteraction}
           />
         )}
 
-        <footer className="flex items-center justify-between border-t border-white/10 px-4 py-3">
-          <span className="truncate text-[10px] text-slate-600">{positionLabels[preferences.positionMode]} · Esc close · right-click</span>
-          {state.phase === "ready" && overlayMode === "translation" && state.translated_text && (
-            <button
-              type="button"
-              data-tauri-drag-region="false"
-              aria-live="polite"
-              title="复制当前译文 · Ctrl/Cmd+C"
-              className={`ait-overlay-copy-button ait-control-motion rounded-full px-3 py-1.5 text-xs font-medium ${copied ? "is-copied" : ""}`}
-              onClick={() => void handleCopy()}
-            >
-              {copied ? "✓ Copied" : "Copy"}
-            </button>
-          )}
-        </footer>
+        {overlayMode === "translation" && (
+          <footer className="flex items-center justify-between border-t border-white/10 px-4 py-3">
+            <span className="truncate text-[10px] text-slate-600">{positionLabels[preferences.positionMode]} · Esc close · right-click</span>
+            {state.phase === "ready" && state.translated_text && (
+              <button
+                type="button"
+                data-tauri-drag-region="false"
+                aria-live="polite"
+                title="复制当前译文 · Ctrl/Cmd+C"
+                className={`ait-overlay-copy-button ait-control-motion rounded-full px-3 py-1.5 text-xs font-medium ${copied ? "is-copied" : ""}`}
+                onClick={() => void handleCopy()}
+              >
+                {copied ? "✓ Copied" : "Copy"}
+              </button>
+            )}
+          </footer>
+        )}
     </OverlayWindowShell>
   )
 }

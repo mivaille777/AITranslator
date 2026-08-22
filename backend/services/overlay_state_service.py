@@ -85,15 +85,15 @@ class OverlayStateService:
         context_after: str = "",
         source_kind: str = "browser_selection",
     ) -> OverlayState:
-        """Open a fresh external selection in AI Assistant mode.
+        """Open the latest external selection in AI Assistant mode.
 
-        A new selection is a new interaction boundary: stale translation output,
-        provider notices and previous conversation bindings are deliberately
-        cleared. The selected text remains the frozen reading source for tools.
+        A new external selection replaces the reading context and any stale
+        translation output, but it is not a conversation boundary. Preserve the
+        bound companion conversation so the discussion continues while the user
+        moves through a document.
         """
         with self._lock:
             current = self._state
-            same_context = current.context_id == context_id
             self._state = OverlayState(
                 revision=current.revision + 1,
                 visible=True,
@@ -109,9 +109,7 @@ class OverlayStateService:
                 context_before=context_before,
                 context_after=context_after,
                 source_kind=source_kind,
-                companion_conversation_id=(
-                    current.companion_conversation_id if same_context else ""
-                ),
+                companion_conversation_id=current.companion_conversation_id,
             )
             return self._state
 

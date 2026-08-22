@@ -98,7 +98,7 @@ def test_google_runs_only_after_youdao_is_unavailable(monkeypatch):
     assert calls == ["youdao_web", "google_web"]
     assert result.provider == "google_web"
     assert result.fallback_level == 1
-    assert "Youdao" in result.notice
+    assert "有道翻译当前不可用" in result.notice
 
 
 def test_ai_runs_only_after_both_web_providers_are_unavailable(monkeypatch):
@@ -111,7 +111,7 @@ def test_ai_runs_only_after_both_web_providers_are_unavailable(monkeypatch):
     assert calls == ["youdao_web", "google_web", "ai"]
     assert result.provider == "ai"
     assert result.fallback_level == 2
-    assert "Youdao and Google" in result.notice
+    assert "有道和 Google 翻译当前不可用" in result.notice
 
 
 def test_invalid_source_does_not_call_any_provider(monkeypatch):

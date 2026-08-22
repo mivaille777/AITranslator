@@ -42,9 +42,6 @@ def _duration_ms(started: float) -> int:
 
 
 def _retryable_tool_error(exc: Exception) -> bool:
-    # Cancellation/budget/configuration failures are terminal. A hard timeout is
-    # also terminal because the timed-out provider call may still be executing
-    # in its daemon worker; immediately retrying could duplicate API usage/cost.
     if isinstance(
         exc,
         (
@@ -59,17 +56,7 @@ def _retryable_tool_error(exc: Exception) -> bool:
 
 
 class ProductAgentService:
-    """Bounded Plan -> Validate -> Execute -> Synthesize agent loop.
-
-    Tool execution is always delegated to AgentToolRegistry. Planner output can
-    select only registered tools and can override only a small allow-list of
-    non-sensitive arguments. Write tools stop at a confirmation gate unless the
-    caller explicitly confirms that tool for the current request.
-
-    ``event_sink`` is observational only. ``control`` supplies cooperative
-    cancellation and execution budgets without transferring policy ownership to
-    the transport layer.
-    """
+    """Bounded Plan -> Validate -> Execute -> Synthesize agent loop."""
 
     def __init__(
         self,
@@ -143,6 +130,9 @@ class ProductAgentService:
                 "arguments": dict(plan.arguments),
                 "request_id": request_id,
                 "duration_ms": _duration_ms(planner_started),
+                "provider": str(getattr(self._planner, "provider_name", "") or ""),
+                "model": str(getattr(self._planner, "model", "") or ""),
+                "prompt_id": str(getattr(self._planner, "prompt_id", "") or ""),
             },
         )
 
@@ -165,6 +155,7 @@ class ProductAgentService:
                     "model": answer.model,
                     "request_id": answer.request_id,
                     "duration_ms": _duration_ms(synthesis_started),
+                    "prompt_id": str(getattr(self._chat_service, "prompt_id", "") or ""),
                 },
             )
             return ProductAgentRunResult(
@@ -216,9 +207,6 @@ class ProductAgentService:
 
         tool_started = monotonic()
         if spec.effect == "write":
-            # A confirmed write is deliberately synchronous and never retried.
-            # Once it starts, reporting the real result is safer than pretending
-            # an in-flight side effect was cancelled.
             control.checkpoint(f"write_tool:{spec.name}")
             tool_result = self._registry.execute(spec.name, **execution_payload)
         else:
@@ -320,6 +308,7 @@ class ProductAgentService:
                 "model": answer.model,
                 "request_id": answer.request_id,
                 "duration_ms": _duration_ms(synthesis_started),
+                "prompt_id": str(getattr(self._chat_service, "prompt_id", "") or ""),
             },
         )
         return ProductAgentRunResult(
@@ -333,6 +322,9 @@ class ProductAgentService:
         )
 
     def close(self) -> None:
-        close = getattr(self._planner, "close", None)
-        if callable(close):
-            close()
+        planner_close = getattr(self._planner, "close", None)
+        if callable(planner_close):
+            planner_close()
+        chat_close = getattr(self._chat_service, "close", None)
+        if callable(chat_close):
+            chat_close()

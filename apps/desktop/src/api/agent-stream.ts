@@ -5,37 +5,48 @@ import type {
   AgentTraceEvent,
 } from "./agent"
 
-export interface AgentStreamAcceptedEvent {
-  type: "accepted"
+interface AgentStreamIdentity {
   request_id: number
   session_id: string
+  run_id: string
+  trace_id: string
 }
 
-export interface AgentStreamActivityEvent {
+export interface AgentStreamAcceptedEvent extends AgentStreamIdentity {
+  type: "accepted"
+}
+
+export interface AgentStreamActivityEvent extends AgentStreamIdentity {
   type: "activity"
-  request_id: number
-  session_id: string
   event: AgentTraceEvent
 }
 
-export interface AgentStreamDoneEvent {
+export interface AgentStreamCancelRequestedEvent extends AgentStreamIdentity {
+  type: "cancel_requested"
+}
+
+export interface AgentStreamCancelledEvent extends AgentStreamIdentity {
+  type: "cancelled"
+  message: string
+}
+
+export interface AgentStreamDoneEvent extends AgentStreamIdentity {
   type: "done"
-  request_id: number
-  session_id: string
   trace: AgentRunTraceResponse
 }
 
-export interface AgentStreamErrorEvent {
+export interface AgentStreamErrorEvent extends AgentStreamIdentity {
   type: "error"
-  request_id: number
-  session_id: string
   code: string
+  fallback_reason?: string
   message: string
 }
 
 export type AgentStreamEvent =
   | AgentStreamAcceptedEvent
   | AgentStreamActivityEvent
+  | AgentStreamCancelRequestedEvent
+  | AgentStreamCancelledEvent
   | AgentStreamDoneEvent
   | AgentStreamErrorEvent
 
@@ -46,10 +57,11 @@ export interface AgentStreamHandlers {
 
 export interface AgentStreamHandle {
   requestId: number
+  cancel: () => void
   close: () => void
 }
 
-const terminalTypes = new Set<AgentStreamEvent["type"]>(["done", "error"])
+const terminalTypes = new Set<AgentStreamEvent["type"]>(["done", "error", "cancelled"])
 
 function parseEvent(raw: string): AgentStreamEvent {
   const parsed = JSON.parse(raw) as Partial<AgentStreamEvent>
@@ -66,8 +78,14 @@ export function streamAgentRun(
   const requestId = payload.request_id ?? 0
   const socket = new WebSocket(apiWebSocketUrl("/api/agent/stream"))
   let terminal = false
+  let cancelRequested = false
 
   socket.addEventListener("open", () => {
+    if (cancelRequested) {
+      terminal = true
+      socket.close(1000, "cancelled-before-start")
+      return
+    }
     socket.send(JSON.stringify({ type: "start", request: payload }))
   })
 
@@ -91,13 +109,13 @@ export function streamAgentRun(
   })
 
   socket.addEventListener("error", () => {
-    if (terminal) return
+    if (terminal || cancelRequested) return
     terminal = true
     handlers.onTransportError(new Error("Unable to connect to the Agent stream."))
   })
 
   socket.addEventListener("close", (event) => {
-    if (terminal) return
+    if (terminal || cancelRequested) return
     terminal = true
     handlers.onTransportError(
       new Error(`Agent stream closed unexpectedly (${event.code}).`),
@@ -106,6 +124,15 @@ export function streamAgentRun(
 
   return {
     requestId,
+    cancel() {
+      if (terminal || cancelRequested) return
+      cancelRequested = true
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "cancel", request_id: requestId }))
+      } else if (socket.readyState === WebSocket.CONNECTING) {
+        socket.close(1000, "cancelled-before-start")
+      }
+    },
     close() {
       terminal = true
       if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {

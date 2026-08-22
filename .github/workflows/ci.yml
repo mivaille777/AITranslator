@@ -14,12 +14,11 @@ on:
 permissions:
   contents: read
 
-# Keep only the newest CI for a source branch. This is especially important
-# for WebReBuild, where one development batch may update several files in
-# rapid succession. Push and pull_request runs for the same source branch use
-# the same group, so they do not duplicate work.
+# Keep only the newest CI for each event/source pair. Push and pull_request
+# workflows must not share the same concurrency group because a branch push
+# can otherwise cancel the PR check that is required before merging to main.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:

@@ -94,7 +94,7 @@ def run_safe_tool_with_timeout(
     def worker() -> None:
         try:
             queue.put((True, operation()))
-        except BaseException as exc:  # propagate provider failures to caller
+        except Exception as exc:
             queue.put((False, exc))
 
     Thread(target=worker, name=f"agent-tool-{tool_name}", daemon=True).start()
@@ -113,7 +113,7 @@ def run_safe_tool_with_timeout(
             continue
         if ok:
             return value  # type: ignore[return-value]
-        if isinstance(value, BaseException):
+        if isinstance(value, Exception):
             raise value
         raise RuntimeError(f"Agent tool {tool_name} failed without an exception.")
 

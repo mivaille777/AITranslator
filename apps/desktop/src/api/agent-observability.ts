@@ -29,6 +29,7 @@ export interface AgentObservabilitySummary {
   cancelled_runs: number
   confirmation_required_runs: number
   success_rate: number
+  schema_valid_rate: number
   retry_rate: number
   failure_rate: number
   timeout_rate: number

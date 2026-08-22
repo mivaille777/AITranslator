@@ -51,6 +51,17 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
         detail: text(payload.resource_title) || text(payload.section_heading) || "Reading context attached.",
         tone: "success",
       }
+    case "plan_ready": {
+      const action = text(payload.action)
+      const toolName = text(payload.tool_name)
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: toolName ? `Plan ready: ${toolName}` : "Plan ready",
+        detail: text(payload.user_visible_reason) || (action === "answer" ? "The Agent will answer directly." : "The Agent selected its next action."),
+        tone: "neutral",
+      }
+    }
     case "tool_call": {
       const toolName = text(payload.name) || "tool"
       return {
@@ -85,15 +96,28 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
   }
 }
 
+function activitySource(
+  trace: AgentRunTraceResponse | null,
+  liveEvents: AgentTraceEvent[],
+  pending: boolean,
+): AgentTraceEvent[] {
+  if (pending && liveEvents.length > 0) return liveEvents
+  return trace?.events ?? liveEvents
+}
+
 export function deriveAgentWorkspaceState({
   trace,
+  liveEvents = [],
   pending = false,
   errorMessage = "",
 }: {
   trace: AgentRunTraceResponse | null
+  liveEvents?: AgentTraceEvent[]
   pending?: boolean
   errorMessage?: string
 }): AgentWorkspaceViewState {
+  const activities = activitySource(trace, liveEvents, pending).map(eventToActivity)
+
   if (errorMessage) {
     return {
       phase: "error",
@@ -102,7 +126,7 @@ export function deriveAgentWorkspaceState({
       provider: trace?.run.provider ?? "",
       model: trace?.run.model ?? "",
       confirmationTool: "",
-      activities: trace?.events.map(eventToActivity) ?? [],
+      activities,
       errorMessage,
     }
   }
@@ -115,7 +139,7 @@ export function deriveAgentWorkspaceState({
       provider: trace?.run.provider ?? "",
       model: trace?.run.model ?? "",
       confirmationTool: "",
-      activities: trace?.events.map(eventToActivity) ?? [],
+      activities,
       errorMessage: "",
     }
   }
@@ -128,7 +152,7 @@ export function deriveAgentWorkspaceState({
       provider: "",
       model: "",
       confirmationTool: "",
-      activities: [],
+      activities,
       errorMessage: "",
     }
   }
@@ -141,7 +165,7 @@ export function deriveAgentWorkspaceState({
     provider: trace.run.provider,
     model: trace.run.model,
     confirmationTool: confirmationRequired ? trace.run.plan.tool_name : "",
-    activities: trace.events.map(eventToActivity),
+    activities,
     errorMessage: "",
   }
 }

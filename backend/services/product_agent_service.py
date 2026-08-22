@@ -11,6 +11,7 @@ from backend.agent_core.exceptions import (
     AgentCancelledError,
     AgentRuntimeError,
     AgentToolError,
+    AgentToolTimeoutError,
 )
 from backend.agent_core.reliability import AgentRunControl, run_safe_tool_with_timeout
 from backend.models.agent_tools import AgentPlan
@@ -41,7 +42,18 @@ def _duration_ms(started: float) -> int:
 
 
 def _retryable_tool_error(exc: Exception) -> bool:
-    if isinstance(exc, (AIConfigurationError, AgentCancelledError, AgentBudgetExceededError)):
+    # Cancellation/budget/configuration failures are terminal. A hard timeout is
+    # also terminal because the timed-out provider call may still be executing
+    # in its daemon worker; immediately retrying could duplicate API usage/cost.
+    if isinstance(
+        exc,
+        (
+            AIConfigurationError,
+            AgentCancelledError,
+            AgentBudgetExceededError,
+            AgentToolTimeoutError,
+        ),
+    ):
         return False
     return isinstance(exc, (AIError, OSError, TimeoutError, AgentRuntimeError))
 

@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
+
+
+def _run_id() -> str:
+    return f"run-{uuid4().hex}"
+
+
+def _trace_id() -> str:
+    return f"trace-{uuid4().hex}"
 
 
 class AgentState(BaseModel):
     """Shared state passed through the agent execution lifecycle."""
 
+    run_id: str = Field(default_factory=_run_id)
+    trace_id: str = Field(default_factory=_trace_id)
     session_id: str | None = None
     user_input: str = ""
     selected_text: str = ""

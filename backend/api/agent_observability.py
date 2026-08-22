@@ -44,7 +44,13 @@ def get_agent_observability_summary(
     store: AgentTraceStoreDependency,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> AgentObservabilitySummaryResponse:
-    return AgentObservabilitySummaryResponse(**asdict(store.summary(limit=limit)))
+    summary = asdict(store.summary(limit=limit))
+    runs = store.list_recent(limit=limit)
+    schema_valid_count = sum(bool(run.intent.strip()) for run in runs)
+    summary["schema_valid_rate"] = (
+        round(schema_valid_count / len(runs), 4) if runs else 0.0
+    )
+    return AgentObservabilitySummaryResponse(**summary)
 
 
 @router.post(

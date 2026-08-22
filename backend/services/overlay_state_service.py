@@ -8,6 +8,7 @@ from threading import RLock
 class OverlayState:
     revision: int = 0
     visible: bool = False
+    mode: str = "assistant"
     phase: str = "hidden"
     context_id: str = ""
     source_text: str = ""
@@ -16,6 +17,7 @@ class OverlayState:
     target_language: str = "zh-CN"
     provider: str = ""
     message: str = ""
+    translation_notice: str = ""
     resource_url: str = ""
     resource_title: str = ""
     section_heading: str = ""
@@ -34,6 +36,50 @@ class OverlayStateService:
 
     def snapshot(self) -> OverlayState:
         with self._lock:
+            return self._state
+
+    def show_assistant(
+        self,
+        *,
+        context_id: str,
+        source_text: str,
+        source_language: str,
+        target_language: str,
+        resource_url: str = "",
+        resource_title: str = "",
+        section_heading: str = "",
+        context_before: str = "",
+        context_after: str = "",
+        source_kind: str = "browser_selection",
+    ) -> OverlayState:
+        """Open a fresh external selection in AI Assistant mode.
+
+        A new selection is a new interaction boundary: stale translation output,
+        provider notices and previous conversation bindings are deliberately
+        cleared. The selected text remains the frozen reading source for tools.
+        """
+        with self._lock:
+            current = self._state
+            same_context = current.context_id == context_id
+            self._state = OverlayState(
+                revision=current.revision + 1,
+                visible=True,
+                mode="assistant",
+                phase="ready",
+                context_id=context_id,
+                source_text=source_text,
+                source_language=source_language,
+                target_language=target_language,
+                resource_url=resource_url,
+                resource_title=resource_title,
+                section_heading=section_heading,
+                context_before=context_before,
+                context_after=context_after,
+                source_kind=source_kind,
+                companion_conversation_id=(
+                    current.companion_conversation_id if same_context else ""
+                ),
+            )
             return self._state
 
     def show_loading(
@@ -60,6 +106,7 @@ class OverlayStateService:
             self._state = OverlayState(
                 revision=current.revision + 1,
                 visible=True,
+                mode="translation",
                 phase="loading",
                 context_id=context_id,
                 source_text=source_text,
@@ -85,6 +132,7 @@ class OverlayStateService:
         source_language: str,
         target_language: str,
         provider: str,
+        translation_notice: str = "",
         resource_url: str = "",
         resource_title: str = "",
         section_heading: str = "",
@@ -99,6 +147,7 @@ class OverlayStateService:
             self._state = OverlayState(
                 revision=current.revision + 1,
                 visible=True,
+                mode="translation",
                 phase="ready",
                 context_id=context_id,
                 source_text=source_text,
@@ -106,6 +155,7 @@ class OverlayStateService:
                 source_language=source_language,
                 target_language=target_language,
                 provider=provider,
+                translation_notice=translation_notice,
                 resource_url=resource_url or current.resource_url,
                 resource_title=resource_title or current.resource_title,
                 section_heading=section_heading or current.section_heading,
@@ -138,6 +188,7 @@ class OverlayStateService:
             self._state = OverlayState(
                 revision=current.revision + 1,
                 visible=True,
+                mode="translation",
                 phase="error",
                 context_id=context_id,
                 source_text=source_text,

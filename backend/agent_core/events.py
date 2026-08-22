@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class AgentEventType(str, Enum):
     AGENT_START = "agent_start"
     CONTEXT_READY = "context_ready"
+    PLAN_READY = "plan_ready"
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     AGENT_END = "agent_end"

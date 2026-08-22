@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.api.dependencies import get_overlay_state_service
 from backend.models.overlay import (
+    OverlayAssistantRequest,
     OverlayCompanionBindingRequest,
     OverlayErrorRequest,
     OverlayLoadingRequest,
@@ -23,6 +24,7 @@ def _response(state: OverlayState) -> OverlayStateResponse:
     return OverlayStateResponse(
         revision=state.revision,
         visible=state.visible,
+        mode=state.mode,
         phase=state.phase,
         context_id=state.context_id,
         source_text=state.source_text,
@@ -31,6 +33,7 @@ def _response(state: OverlayState) -> OverlayStateResponse:
         target_language=state.target_language,
         provider=state.provider,
         message=state.message,
+        translation_notice=state.translation_notice,
         resource_url=state.resource_url,
         resource_title=state.resource_title,
         section_heading=state.section_heading,
@@ -41,7 +44,7 @@ def _response(state: OverlayState) -> OverlayStateResponse:
     )
 
 
-def _reading_kwargs(payload: OverlayLoadingRequest | OverlayPresentRequest | OverlayErrorRequest) -> dict[str, str]:
+def _reading_kwargs(payload: OverlayAssistantRequest | OverlayLoadingRequest | OverlayPresentRequest | OverlayErrorRequest) -> dict[str, str]:
     return {
         "resource_url": payload.resource_url,
         "resource_title": payload.resource_title,
@@ -55,6 +58,22 @@ def _reading_kwargs(payload: OverlayLoadingRequest | OverlayPresentRequest | Ove
 @router.get("", response_model=OverlayStateResponse)
 def overlay_state(service: OverlayStateServiceDependency) -> OverlayStateResponse:
     return _response(service.snapshot())
+
+
+@router.post("/assistant", response_model=OverlayStateResponse)
+def overlay_assistant(
+    payload: OverlayAssistantRequest,
+    service: OverlayStateServiceDependency,
+) -> OverlayStateResponse:
+    return _response(
+        service.show_assistant(
+            context_id=payload.context_id,
+            source_text=payload.source_text,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
+            **_reading_kwargs(payload),
+        )
+    )
 
 
 @router.post("/loading", response_model=OverlayStateResponse)
@@ -86,6 +105,7 @@ def overlay_present(
             source_language=payload.source_language,
             target_language=payload.target_language,
             provider=payload.provider,
+            translation_notice=payload.translation_notice,
             **_reading_kwargs(payload),
         )
     )

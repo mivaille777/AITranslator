@@ -1,22 +1,25 @@
-/* Batch 9.5 — unified overlay mode navigation. */
-
-html[data-ait-view="overlay"] .ait-overlay-inline-actions {
-  min-height: 42px;
-  background: rgba(255, 255, 255, 0.012);
-}
+/* Batch 9.6.3 — source-first overlay chrome. */
 
 html[data-ait-view="overlay"] .ait-overlay-chat-panel {
   min-height: 0;
   background: transparent;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] {
+html[data-ait-view="overlay"] .ait-overlay-source-context {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+/* The outer AITranslator header + compact source strip are the only chrome.
+ * Keep the legacy compact-chat header out of the visual tree while the
+ * conversation runtime itself stays mounted.
+ */
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child {
   background: transparent !important;
   border-bottom: 0 !important;
 }
 
-/* The outer AITranslator header + mode tabs are the only chrome. */
-html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div:first-child {
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div:first-child {
   display: none !important;
 }
 
@@ -37,25 +40,25 @@ html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .
   flex-direction: column;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] {
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.relative {
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.relative {
   min-height: 0;
   flex: 1 1 auto;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.relative > div:first-child {
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.relative > div:first-child {
   height: 104px !important;
   min-height: 72px;
   max-height: 128px;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.relative > div:first-child {
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.relative > div:first-child {
   height: 142px !important;
   min-height: 112px;
   max-height: 156px;
@@ -71,7 +74,7 @@ html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary
 }
 
 /* Keep the composer and its shortcut row pinned inside the native window. */
-html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.border-t {
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.border-t {
   flex: 0 0 auto;
   background: rgba(12, 12, 14, 0.18);
 }
@@ -80,11 +83,6 @@ html[data-ait-view="overlay"] .ait-overlay-action-surface .ait-overlay-action-bu
   min-height: 28px;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-inline-actions {
-  border-top: 0;
-}
-
-/* Existing assistant-first rules hide the legacy body/footer through :has(). */
 html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > header {
   flex: 0 0 auto;
 }

@@ -12,7 +12,7 @@ export default function OverlaySourceContext({ state }: { state: OverlayStateRes
 
   return (
     <div
-      className="border-b border-white/[0.065] px-4 py-2.5"
+      className="ait-overlay-source-context border-b border-white/[0.065] px-4 py-2.5"
       data-ait-selection-scope="internal"
       title={identity.tooltip || undefined}
     >

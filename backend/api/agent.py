@@ -10,6 +10,13 @@ from pydantic import ValidationError
 
 from app.ai.errors import AIConfigurationError, AIError
 from backend.agent_core.events import AgentEvent
+from backend.agent_core.exceptions import (
+    AgentBudgetExceededError,
+    AgentCancelledError,
+    AgentRuntimeError,
+    AgentToolTimeoutError,
+)
+from backend.agent_core.reliability import AgentRunControl
 from backend.agent_core.runtime import AgentRuntime
 from backend.agent_core.state import AgentState
 from backend.api.agent_dependencies import get_agent_runtime
@@ -60,16 +67,20 @@ def _state_from_run_request(payload: AgentRunRequest) -> AgentState:
     context = payload.model_dump(
         exclude={
             "session_id",
+            "trace_id",
             "user_message",
             "source_text",
         }
     )
-    return AgentState(
-        session_id=payload.session_id,
-        user_input=payload.user_message,
-        selected_text=payload.source_text,
-        browser_context=context,
-    )
+    kwargs: dict[str, Any] = {
+        "session_id": payload.session_id,
+        "user_input": payload.user_message,
+        "selected_text": payload.source_text,
+        "browser_context": context,
+    }
+    if payload.trace_id.strip():
+        kwargs["trace_id"] = payload.trace_id.strip()
+    return AgentState(**kwargs)
 
 
 def _run_response(state: AgentState) -> AgentRunResponse:
@@ -96,6 +107,10 @@ def _execute_runtime(payload: AgentRunRequest, runtime: AgentRuntime) -> AgentSt
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+    except (AgentBudgetExceededError, AgentToolTimeoutError) as exc:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(exc)) from exc
+    except AgentRuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except AIError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     except ValueError as exc:
@@ -110,24 +125,37 @@ def _trace_event(sequence: int, event: AgentEvent) -> AgentTraceEvent:
         sequence=sequence,
         event_type=event.event_type.value,
         timestamp=event.timestamp,
+        run_id=event.run_id,
+        trace_id=event.trace_id,
+        elapsed_ms=event.elapsed_ms,
         payload=event.payload,
     )
 
 
 def _trace_response(state: AgentState, runtime: AgentRuntime) -> AgentRunTraceResponse:
+    total_duration_ms = runtime.events[-1].elapsed_ms if runtime.events else 0
     return AgentRunTraceResponse(
-        session_id=state.session_id,
+        run_id=state.run_id,
+        trace_id=state.trace_id,
+        session_id=state.session_id or "",
         ui_mode=state.ui_mode,
+        total_duration_ms=total_duration_ms,
         run=_run_response(state),
         events=[_trace_event(index, event) for index, event in enumerate(runtime.events)],
     )
 
 
 def _stream_error_code(exc: Exception) -> str:
+    if isinstance(exc, AgentCancelledError):
+        return "cancelled"
+    if isinstance(exc, AgentBudgetExceededError):
+        return "budget_exceeded"
+    if isinstance(exc, AgentToolTimeoutError):
+        return "tool_timeout"
     if isinstance(exc, AIConfigurationError):
         return "configuration"
-    if isinstance(exc, AIError):
-        return "provider"
+    if isinstance(exc, (AIError, AgentRuntimeError)):
+        return "provider_or_runtime"
     if isinstance(exc, ValueError):
         return "invalid_request"
     return "internal"
@@ -193,14 +221,13 @@ async def stream_product_agent(
     websocket: WebSocket,
     runtime: AgentRuntimeDependency,
 ) -> None:
-    """Stream Agent Core lifecycle events while the synchronous agent executes.
-
-    The transport is observational: planning, confirmation policy and tool side
-    effects remain owned by ProductAgentService and AgentToolRegistry.
-    """
+    """Stream bounded Agent lifecycle events with cooperative cancellation."""
 
     await websocket.accept()
     producer_task: asyncio.Task[None] | None = None
+    sender_task: asyncio.Task[str] | None = None
+    receiver_task: asyncio.Task[str] | None = None
+    control = AgentRunControl()
 
     try:
         try:
@@ -214,6 +241,8 @@ async def stream_product_agent(
                     "type": "error",
                     "request_id": 0,
                     "session_id": "",
+                    "run_id": "",
+                    "trace_id": "",
                     "code": "invalid_request",
                     "message": "Expected an Agent stream start request.",
                 }
@@ -228,6 +257,8 @@ async def stream_product_agent(
                     "type": "error",
                     "request_id": 0,
                     "session_id": "",
+                    "run_id": "",
+                    "trace_id": "",
                     "code": "invalid_request",
                     "message": str(exc.errors()[0].get("msg") if exc.errors() else "Invalid Agent request."),
                 }
@@ -236,6 +267,7 @@ async def stream_product_agent(
 
         request_id = payload.request_id
         session_id = payload.session_id
+        state = _state_from_run_request(payload)
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
@@ -244,6 +276,8 @@ async def stream_product_agent(
                 "type": "accepted",
                 "request_id": request_id,
                 "session_id": session_id,
+                "run_id": state.run_id,
+                "trace_id": state.trace_id,
             }
         )
 
@@ -257,23 +291,39 @@ async def stream_product_agent(
                     "type": "activity",
                     "request_id": request_id,
                     "session_id": session_id,
+                    "run_id": state.run_id,
+                    "trace_id": state.trace_id,
                     "event": _trace_event(sequence, event).model_dump(mode="json"),
                 }
             )
 
         def produce() -> None:
             try:
-                state = runtime.execute(
-                    _state_from_run_request(payload),
+                result_state = runtime.execute(
+                    state,
                     event_sink=observe,
+                    control=control,
                 )
-                trace = _trace_response(state, runtime)
+                trace = _trace_response(result_state, runtime)
                 enqueue(
                     {
                         "type": "done",
                         "request_id": request_id,
                         "session_id": session_id,
+                        "run_id": result_state.run_id,
+                        "trace_id": result_state.trace_id,
                         "trace": trace.model_dump(mode="json"),
+                    }
+                )
+            except AgentCancelledError as exc:
+                enqueue(
+                    {
+                        "type": "cancelled",
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "run_id": state.run_id,
+                        "trace_id": state.trace_id,
+                        "message": str(exc) or "Agent run cancelled.",
                     }
                 )
             except Exception as exc:
@@ -282,18 +332,69 @@ async def stream_product_agent(
                         "type": "error",
                         "request_id": request_id,
                         "session_id": session_id,
+                        "run_id": state.run_id,
+                        "trace_id": state.trace_id,
                         "code": _stream_error_code(exc),
+                        "fallback_reason": str(
+                            getattr(exc, "fallback_reason", "") or "no_safe_fallback"
+                        ),
                         "message": str(exc) or "Agent execution failed.",
                     }
                 )
 
+        async def send_events() -> str:
+            while True:
+                event = await queue.get()
+                await websocket.send_json(event)
+                if event.get("type") in {"done", "error", "cancelled"}:
+                    return str(event.get("type"))
+
+        async def receive_control() -> str:
+            while True:
+                try:
+                    message = await websocket.receive_json()
+                except WebSocketDisconnect:
+                    control.cancel()
+                    return "disconnect"
+                if not isinstance(message, dict) or message.get("type") != "cancel":
+                    continue
+                incoming_request_id = message.get("request_id", -1)
+                if incoming_request_id != request_id:
+                    continue
+                control.cancel()
+                await queue.put(
+                    {
+                        "type": "cancel_requested",
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "run_id": state.run_id,
+                        "trace_id": state.trace_id,
+                    }
+                )
+                return "cancel_requested"
+
         producer_task = asyncio.create_task(asyncio.to_thread(produce))
         producer_task.add_done_callback(_consume_background_task)
+        sender_task = asyncio.create_task(send_events())
+        receiver_task = asyncio.create_task(receive_control())
 
-        while True:
-            event = await queue.get()
-            await websocket.send_json(event)
-            if event.get("type") in {"done", "error"}:
+        done, _pending = await asyncio.wait(
+            {sender_task, receiver_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if receiver_task in done:
+            control_result = receiver_task.result()
+            if control_result == "disconnect":
+                sender_task.cancel()
                 return
-    except WebSocketDisconnect:
-        return
+            # Cancellation was requested. Keep the sender alive until Runtime
+            # reaches a safe checkpoint or completes an already-started write.
+            with suppress(WebSocketDisconnect):
+                await sender_task
+        else:
+            receiver_task.cancel()
+    finally:
+        control.cancel()
+        for task in (sender_task, receiver_task):
+            if task is not None and not task.done():
+                task.cancel()

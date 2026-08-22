@@ -55,7 +55,12 @@ class AgentRuntime:
         )
         self.events.append(event)
         if self._event_sink is not None:
-            self._event_sink(event)
+            try:
+                self._event_sink(event)
+            except Exception:
+                # Observability/transport is deliberately best-effort. A closed
+                # WebSocket or broken debug sink must not change Agent behavior.
+                pass
 
     def execute(
         self,

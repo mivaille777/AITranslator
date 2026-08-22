@@ -99,10 +99,9 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
 function activitySource(
   trace: AgentRunTraceResponse | null,
   liveEvents: AgentTraceEvent[],
-  pending: boolean,
 ): AgentTraceEvent[] {
-  if (pending && liveEvents.length > 0) return liveEvents
-  return trace?.events ?? liveEvents
+  if (liveEvents.length > 0) return liveEvents
+  return trace?.events ?? []
 }
 
 export function deriveAgentWorkspaceState({
@@ -116,7 +115,7 @@ export function deriveAgentWorkspaceState({
   pending?: boolean
   errorMessage?: string
 }): AgentWorkspaceViewState {
-  const activities = activitySource(trace, liveEvents, pending).map(eventToActivity)
+  const activities = activitySource(trace, liveEvents).map(eventToActivity)
 
   if (errorMessage) {
     return {

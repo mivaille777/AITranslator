@@ -1,3 +1,4 @@
+from backend.agent_core.events import AgentEventType
 from backend.agent_core.runtime import AgentRuntime
 from backend.agent_core.state import AgentState
 
@@ -14,4 +15,11 @@ def test_agent_runtime_flow():
     assert result.browser_context["source"] == "browser"
     assert result.intent == "translate"
     assert result.tool_results[0]["translation"] == "ok"
-    assert len(runtime.events) == 3
+    assert [event.event_type for event in runtime.events] == [
+        AgentEventType.AGENT_START,
+        AgentEventType.CONTEXT_READY,
+        AgentEventType.PLAN_READY,
+        AgentEventType.TOOL_CALL,
+        AgentEventType.TOOL_RESULT,
+        AgentEventType.AGENT_END,
+    ]

@@ -6,6 +6,7 @@ import type {
 } from "./types"
 
 export type TranslationProviderName = "google_web" | "youdao_web"
+export type TranslationProviderMode = "auto" | "youdao_web" | "google_web" | "ai"
 export type TranslationCascadeAttempt = {
   provider: "youdao_web" | "google_web" | "ai" | string
   status: "success" | "unavailable"
@@ -15,6 +16,9 @@ export type TranslationCascadeResponse = TranslationResponse & {
   fallback_level: 0 | 1 | 2
   notice: string
   attempts: TranslationCascadeAttempt[]
+}
+export type TranslationInteractiveRequest = TranslationRequest & {
+  provider_mode?: TranslationProviderMode
 }
 
 export function getTranslationStatus(): Promise<TranslationStatusResponse> {
@@ -35,9 +39,9 @@ export function translateText(request: TranslationRequest): Promise<TranslationR
 }
 
 export function translateTextWithFallback(
-  request: TranslationRequest,
+  request: TranslationInteractiveRequest,
 ): Promise<TranslationCascadeResponse> {
-  return apiPost<TranslationCascadeResponse, TranslationRequest>(
+  return apiPost<TranslationCascadeResponse, TranslationInteractiveRequest>(
     "/api/translation/cascade",
     request,
   )

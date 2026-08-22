@@ -17,6 +17,12 @@ class AgentEvaluationBatchResult:
     passed_cases: int
     pass_rate: float
     average_score: float
+    intent_accuracy: float
+    tool_accuracy: float
+    status_accuracy: float
+    latency_pass_rate: float
+    retry_pass_rate: float
+    failure_pass_rate: float
     results: tuple[AgentEvaluationResult, ...]
 
 
@@ -50,15 +56,24 @@ def evaluate_agent_batch(
 
     total = len(results)
     passed = sum(result.passed for result in results)
-    average_score = round(
-        sum(result.score for result in results) / total,
-        4,
-    ) if total else 0.0
+
+    def rate(predicate: Callable[[AgentEvaluationResult], bool]) -> float:
+        return round(sum(predicate(result) for result in results) / total, 4) if total else 0.0
+
+    average_score = (
+        round(sum(result.score for result in results) / total, 4) if total else 0.0
+    )
     return AgentEvaluationBatchResult(
         total_cases=total,
         passed_cases=passed,
         pass_rate=round(passed / total, 4) if total else 0.0,
         average_score=average_score,
+        intent_accuracy=rate(lambda result: result.intent_match),
+        tool_accuracy=rate(lambda result: result.tool_match),
+        status_accuracy=rate(lambda result: result.status_match),
+        latency_pass_rate=rate(lambda result: result.latency_pass),
+        retry_pass_rate=rate(lambda result: result.retry_pass),
+        failure_pass_rate=rate(lambda result: result.failure_pass),
         results=tuple(results),
     )
 

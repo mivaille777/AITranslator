@@ -12,6 +12,7 @@ AgentPlanAction = Literal["answer", "tool"]
 AgentTraceEventType = Literal[
     "agent_start",
     "context_ready",
+    "plan_ready",
     "tool_call",
     "tool_result",
     "agent_end",

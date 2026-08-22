@@ -115,6 +115,7 @@ export default function OverlayTranslationWorkspace({ state }: { state: OverlayS
         setProviderLabel(providerDisplayName(result.provider, result.model))
         setNotice(result.notice)
         setErrorMessage("")
+        setBusy(false)
 
         // The editable translation source is a working copy. Persist only the
         // result/settings while preserving the original captured reading text.
@@ -145,7 +146,21 @@ export default function OverlayTranslationWorkspace({ state }: { state: OverlayS
     }, DEBOUNCE_MS)
 
     return () => window.clearTimeout(timer)
-  }, [providerMode, sourceLanguage, sourceText, state, targetLanguage])
+  }, [
+    providerMode,
+    sourceLanguage,
+    sourceText,
+    state.application,
+    state.context_after,
+    state.context_before,
+    state.context_id,
+    state.resource_title,
+    state.resource_url,
+    state.section_heading,
+    state.source_kind,
+    state.source_text,
+    targetLanguage,
+  ])
 
   const canSwap = sourceLanguage !== "auto"
 

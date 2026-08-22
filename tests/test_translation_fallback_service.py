@@ -114,6 +114,43 @@ def test_ai_runs_only_after_both_web_providers_are_unavailable(monkeypatch):
     assert "有道和 Google 翻译当前不可用" in result.notice
 
 
+def test_manual_google_never_calls_youdao_or_ai(monkeypatch):
+    calls: list[str] = []
+    install_providers(monkeypatch, calls, youdao_fail=False, google_fail=False)
+    service = TranslationFallbackService(llm_gateway=StubGateway(calls))
+
+    result = service.translate("hello", provider_mode="google_web")
+
+    assert calls == ["google_web"]
+    assert result.provider == "google_web"
+    assert result.fallback_level == 0
+    assert result.notice == ""
+
+
+def test_manual_youdao_failure_does_not_fallback(monkeypatch):
+    calls: list[str] = []
+    install_providers(monkeypatch, calls, youdao_fail=True, google_fail=False)
+    service = TranslationFallbackService(llm_gateway=StubGateway(calls))
+
+    with pytest.raises(TranslationError, match="Youdao"):
+        service.translate("hello", provider_mode="youdao_web")
+
+    assert calls == ["youdao_web"]
+
+
+def test_manual_ai_calls_only_ai(monkeypatch):
+    calls: list[str] = []
+    install_providers(monkeypatch, calls, youdao_fail=False, google_fail=False)
+    service = TranslationFallbackService(llm_gateway=StubGateway(calls))
+
+    result = service.translate("hello", provider_mode="ai")
+
+    assert calls == ["ai"]
+    assert result.provider == "ai"
+    assert result.fallback_level == 0
+    assert result.notice == ""
+
+
 def test_invalid_source_does_not_call_any_provider(monkeypatch):
     calls: list[str] = []
     install_providers(monkeypatch, calls, youdao_fail=False, google_fail=False)

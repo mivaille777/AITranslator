@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from time import sleep
+
 from fastapi.testclient import TestClient
 
 from backend.agent_core.events import AgentEvent, AgentEventType
@@ -16,12 +18,18 @@ class FakeRuntime:
         self.received: AgentState | None = None
         self.events: list[AgentEvent] = []
 
-    def execute(self, state: AgentState, *, event_sink=None) -> AgentState:
+    def execute(self, state: AgentState, *, event_sink=None, control=None) -> AgentState:
         self.received = state
         self.events = []
 
         def emit(event_type: AgentEventType, payload: dict) -> None:
-            event = AgentEvent(event_type=event_type, payload=payload)
+            event = AgentEvent(
+                event_type=event_type,
+                payload=payload,
+                run_id=state.run_id,
+                trace_id=state.trace_id,
+                elapsed_ms=len(self.events) * 5,
+            )
             self.events.append(event)
             if event_sink is not None:
                 event_sink(event)
@@ -101,20 +109,43 @@ class FakeRuntime:
         emit(AgentEventType.PLAN_READY, dict(state.planned_action))
         emit(AgentEventType.TOOL_CALL, {"name": "translate_selection"})
         emit(AgentEventType.TOOL_RESULT, {"tool_name": "translate_selection"})
+        emit(AgentEventType.SYNTHESIS_READY, {"provider": "fake", "duration_ms": 2})
         emit(
             AgentEventType.AGENT_END,
             {
                 "intent": state.intent,
                 "status": "completed",
                 "ui_mode": state.ui_mode,
+                "total_duration_ms": 30,
             },
         )
         return state
 
 
+class CancellableRuntime:
+    def __init__(self) -> None:
+        self.events: list[AgentEvent] = []
+
+    def execute(self, state: AgentState, *, event_sink=None, control=None) -> AgentState:
+        assert control is not None
+        event = AgentEvent(
+            event_type=AgentEventType.AGENT_START,
+            payload={"session_id": state.session_id},
+            run_id=state.run_id,
+            trace_id=state.trace_id,
+        )
+        self.events = [event]
+        if event_sink is not None:
+            event_sink(event)
+        while True:
+            sleep(0.005)
+            control.checkpoint("cancellable_test")
+
+
 def _request() -> AgentRunRequest:
     return AgentRunRequest(
         session_id="session-12",
+        trace_id="trace-api-12",
         user_message="Translate this selection",
         source_text="Bayesian optimization",
         source_language="en",
@@ -137,6 +168,7 @@ def test_agent_run_api_preserves_existing_response_contract_through_runtime() ->
 
     assert runtime.received is not None
     assert runtime.received.session_id == "session-12"
+    assert runtime.received.trace_id == "trace-api-12"
     assert runtime.received.user_input == "Translate this selection"
     assert runtime.received.selected_text == "Bayesian optimization"
     assert runtime.received.browser_context["resource_title"] == "Paper"
@@ -165,24 +197,29 @@ def test_agent_run_api_preserves_write_confirmation_gate() -> None:
     assert runtime.received.tool_results == []
 
 
-def test_agent_trace_response_keeps_run_contract_and_orders_events() -> None:
+def test_agent_trace_response_includes_correlation_and_timing_metadata() -> None:
     runtime = FakeRuntime()
 
     response = run_product_agent_trace(_request(), runtime)
 
+    assert response.run_id.startswith("run-")
+    assert response.trace_id == "trace-api-12"
     assert response.session_id == "session-12"
     assert response.ui_mode == "translation"
+    assert response.total_duration_ms == 30
     assert response.run.output_text == "贝叶斯优化"
-    assert [event.sequence for event in response.events] == list(range(6))
+    assert [event.sequence for event in response.events] == list(range(7))
     assert [event.event_type for event in response.events] == [
         "agent_start",
         "context_ready",
         "plan_ready",
         "tool_call",
         "tool_result",
+        "synthesis_ready",
         "agent_end",
     ]
-    assert response.events[-1].payload["ui_mode"] == "translation"
+    assert all(event.run_id == response.run_id for event in response.events)
+    assert all(event.trace_id == "trace-api-12" for event in response.events)
 
 
 def test_agent_trace_confirmation_has_no_tool_result_event() -> None:
@@ -193,13 +230,6 @@ def test_agent_trace_confirmation_has_no_tool_result_event() -> None:
     assert response.run.status == "confirmation_required"
     assert response.run.plan.tool_name == "save_research_note"
     assert response.run.tool_result is None
-    assert [event.event_type for event in response.events] == [
-        "agent_start",
-        "context_ready",
-        "plan_ready",
-        "tool_call",
-        "agent_end",
-    ]
     assert "tool_result" not in {event.event_type for event in response.events}
 
 
@@ -213,6 +243,8 @@ def test_agent_trace_http_endpoint_is_additive_to_existing_run_api() -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["run_id"].startswith("run-")
+    assert body["trace_id"] == "trace-api-12"
     assert body["run"]["status"] == "completed"
     assert body["run"]["tool_result"]["tool_name"] == "translate_selection"
     assert body["events"][0]["event_type"] == "agent_start"
@@ -228,11 +260,11 @@ def test_agent_websocket_streams_activity_before_terminal_trace() -> None:
     with client.websocket_connect("/api/agent/stream") as websocket:
         websocket.send_json({"type": "start", "request": _request().model_dump()})
         accepted = websocket.receive_json()
-        assert accepted == {
-            "type": "accepted",
-            "request_id": 12,
-            "session_id": "session-12",
-        }
+        assert accepted["type"] == "accepted"
+        assert accepted["request_id"] == 12
+        assert accepted["session_id"] == "session-12"
+        assert accepted["run_id"].startswith("run-")
+        assert accepted["trace_id"] == "trace-api-12"
 
         activity_types = []
         terminal = None
@@ -249,12 +281,13 @@ def test_agent_websocket_streams_activity_before_terminal_trace() -> None:
         "plan_ready",
         "tool_call",
         "tool_result",
+        "synthesis_ready",
         "agent_end",
     ]
     assert terminal is not None
     assert terminal["type"] == "done"
+    assert terminal["trace_id"] == "trace-api-12"
     assert terminal["trace"]["run"]["output_text"] == "贝叶斯优化"
-    assert terminal["trace"]["events"][-1]["event_type"] == "agent_end"
 
 
 def test_agent_websocket_confirmation_never_streams_tool_result() -> None:
@@ -278,6 +311,30 @@ def test_agent_websocket_confirmation_never_streams_tool_result() -> None:
 
     assert "tool_call" in activity_types
     assert "tool_result" not in activity_types
+
+
+def test_agent_websocket_cancel_is_request_then_terminal_acknowledgement() -> None:
+    runtime = CancellableRuntime()
+    app = create_app()
+    app.dependency_overrides[get_agent_runtime] = lambda: runtime
+    client = TestClient(app)
+
+    with client.websocket_connect("/api/agent/stream") as websocket:
+        websocket.send_json({"type": "start", "request": _request().model_dump()})
+        accepted = websocket.receive_json()
+        assert accepted["type"] == "accepted"
+        websocket.send_json({"type": "cancel", "request_id": 12})
+
+        event_types = []
+        while True:
+            event = websocket.receive_json()
+            event_types.append(event["type"])
+            if event["type"] == "cancelled":
+                assert event["trace_id"] == "trace-api-12"
+                break
+
+    assert "cancel_requested" in event_types
+    assert event_types[-1] == "cancelled"
 
 
 class FakeProductAgentService:

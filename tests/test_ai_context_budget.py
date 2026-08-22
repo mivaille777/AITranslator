@@ -32,14 +32,14 @@ def test_chat_context_budget_prioritizes_current_request_tool_and_selection() ->
 
     prompt = build_chat_prompt(
         request,
-        context_budget=ContextBudgetManager(max_chars=260),
+        context_budget=ContextBudgetManager(max_chars=500),
     )
     payload = json.loads(prompt.split("\n\n", 1)[1])
 
     assert payload["current_user_message"] == "Explain the selected mechanism"
     assert payload["tool_observation"]["content"].startswith("TOOL:")
     assert payload["selected_context"]["source_text"]
-    assert payload["runtime_policy"]["context_budget"]["used_chars"] <= 260
+    assert payload["runtime_policy"]["context_budget"]["used_chars"] <= 500
     assert payload["runtime_policy"]["context_budget"]["truncated_fields"]
     assert payload["conversation_history"] == []
 

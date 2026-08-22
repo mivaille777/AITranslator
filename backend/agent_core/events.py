@@ -14,6 +14,7 @@ class AgentEventType(str, Enum):
     TOOL_CALL = "tool_call"
     RETRY = "retry"
     TOOL_RESULT = "tool_result"
+    SYNTHESIS_READY = "synthesis_ready"
     FAILURE = "failure"
     CANCELLED = "cancelled"
     AGENT_END = "agent_end"

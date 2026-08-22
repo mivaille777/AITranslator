@@ -23,6 +23,16 @@ from backend.services.browser_context_service import BrowserContextService
 
 DEFAULT_BROWSER_SELECTION_MAX_AGE_SECONDS = 2.0
 DEFAULT_READING_SELECTION_CACHE_SECONDS = 45.0
+INTERNAL_SELECTION_PROCESS_NAMES = frozenset(
+    {
+        "aitrans-desktop.exe",
+        "aitrans-desktop",
+        "aitranslator.exe",
+        "aitranslator",
+        "desktop_translator.exe",
+        "desktop_translator",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,21 +95,9 @@ def _context_richness(selection: ReadingSelection) -> int:
 class ReadingSelectionResolver:
     """Resolve the best current reading selection across all capture tiers.
 
-    Resolution order is intentionally source-aware:
-
-    * Browser foreground: a fresh Browser DOM snapshot first, then the existing
-      native manager. The native manager provides browser/PDF UIA retry and
-      generic UIA fallback.
-    * Non-browser foreground: the native manager keeps its existing Word COM ->
-      generic UIA ordering.
-
-    DOM precedence is deliberately short-lived. If accessibility later returns
-    the same text, the richer cached DOM metadata is retained; if it returns
-    different text, that is treated as a new selection (for example a PDF UIA
-    selection) and replaces the cache.
-
-    The last successful value is cached briefly so a Word/UIA selection remains
-    usable after the user switches focus back to the AITranslator window.
+    AITranslator's own main/overlay processes are explicit exclusion zones.
+    Selecting user messages, AI output, source text or translated text inside
+    the product must never become a new reading selection.
     """
 
     def __init__(
@@ -143,6 +141,10 @@ class ReadingSelectionResolver:
     def _is_browser(context: SelectionContext) -> bool:
         return _normalized_process_name(context.process_name) in BROWSER_PDF_PROCESS_NAMES
 
+    @staticmethod
+    def _is_internal_surface(context: SelectionContext) -> bool:
+        return _normalized_process_name(context.process_name) in INTERNAL_SELECTION_PROCESS_NAMES
+
     def _remember(self, selection: ReadingSelection) -> ResolvedReadingSelection:
         resolved = ResolvedReadingSelection(
             selection_id=_selection_fingerprint(selection),
@@ -177,9 +179,15 @@ class ReadingSelectionResolver:
         return self._remember(selection)
 
     def resolve(self, *, allow_cached: bool = True) -> ResolvedReadingSelection | None:
-        """Return the best live selection, or a short-lived last successful value."""
+        """Return the best live external selection, or a short-lived cached one."""
 
         context = self._foreground_context()
+
+        if self._is_internal_surface(context):
+            # Internal selections are visual/clipboard interactions only. Never
+            # query UIA for AITranslator itself, because that would feed chat or
+            # translation output back into the reading pipeline.
+            return self._cached_if_fresh() if allow_cached else None
 
         if self._is_browser(context):
             try:
@@ -206,12 +214,7 @@ class ReadingSelectionResolver:
         return None
 
     def resolve_for_text(self, source_text: str = "") -> ReadingSelection | None:
-        """Resolve context only when it safely belongs to the supplied text.
-
-        Application services use this helper to enrich a request without ever
-        attaching metadata from a different selection. An empty ``source_text``
-        explicitly asks for the current selection text as well.
-        """
+        """Resolve context only when it safely belongs to the supplied text."""
 
         resolved = self.resolve()
         if resolved is None:
@@ -230,6 +233,7 @@ class ReadingSelectionResolver:
 __all__ = [
     "DEFAULT_BROWSER_SELECTION_MAX_AGE_SECONDS",
     "DEFAULT_READING_SELECTION_CACHE_SECONDS",
+    "INTERNAL_SELECTION_PROCESS_NAMES",
     "ReadingSelectionResolver",
     "ResolvedReadingSelection",
 ]

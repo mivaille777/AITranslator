@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from dataclasses import asdict
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from pydantic import ValidationError
 
 from app.ai.errors import AIConfigurationError, AIError
+from backend.agent_core.events import AgentEvent
 from backend.agent_core.runtime import AgentRuntime
 from backend.agent_core.state import AgentState
 from backend.api.agent_dependencies import get_agent_runtime
@@ -101,21 +105,37 @@ def _execute_runtime(payload: AgentRunRequest, runtime: AgentRuntime) -> AgentSt
         ) from exc
 
 
+def _trace_event(sequence: int, event: AgentEvent) -> AgentTraceEvent:
+    return AgentTraceEvent(
+        sequence=sequence,
+        event_type=event.event_type.value,
+        timestamp=event.timestamp,
+        payload=event.payload,
+    )
+
+
 def _trace_response(state: AgentState, runtime: AgentRuntime) -> AgentRunTraceResponse:
     return AgentRunTraceResponse(
         session_id=state.session_id,
         ui_mode=state.ui_mode,
         run=_run_response(state),
-        events=[
-            AgentTraceEvent(
-                sequence=index,
-                event_type=event.event_type.value,
-                timestamp=event.timestamp,
-                payload=event.payload,
-            )
-            for index, event in enumerate(runtime.events)
-        ],
+        events=[_trace_event(index, event) for index, event in enumerate(runtime.events)],
     )
+
+
+def _stream_error_code(exc: Exception) -> str:
+    if isinstance(exc, AIConfigurationError):
+        return "configuration"
+    if isinstance(exc, AIError):
+        return "provider"
+    if isinstance(exc, ValueError):
+        return "invalid_request"
+    return "internal"
+
+
+def _consume_background_task(task: asyncio.Task[None]) -> None:
+    with suppress(asyncio.CancelledError, Exception):
+        task.result()
 
 
 @router.get("/tools", response_model=AgentToolCatalogResponse)
@@ -166,3 +186,114 @@ def run_product_agent_trace(
 ) -> AgentRunTraceResponse:
     state = _execute_runtime(payload, runtime)
     return _trace_response(state, runtime)
+
+
+@router.websocket("/stream")
+async def stream_product_agent(
+    websocket: WebSocket,
+    runtime: AgentRuntimeDependency,
+) -> None:
+    """Stream Agent Core lifecycle events while the synchronous agent executes.
+
+    The transport is observational: planning, confirmation policy and tool side
+    effects remain owned by ProductAgentService and AgentToolRegistry.
+    """
+
+    await websocket.accept()
+    producer_task: asyncio.Task[None] | None = None
+
+    try:
+        try:
+            incoming = await websocket.receive_json()
+        except WebSocketDisconnect:
+            return
+
+        if not isinstance(incoming, dict) or incoming.get("type") != "start":
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "request_id": 0,
+                    "session_id": "",
+                    "code": "invalid_request",
+                    "message": "Expected an Agent stream start request.",
+                }
+            )
+            return
+
+        try:
+            payload = AgentRunRequest.model_validate(incoming.get("request"))
+        except ValidationError as exc:
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "request_id": 0,
+                    "session_id": "",
+                    "code": "invalid_request",
+                    "message": str(exc.errors()[0].get("msg") if exc.errors() else "Invalid Agent request."),
+                }
+            )
+            return
+
+        request_id = payload.request_id
+        session_id = payload.session_id
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        await websocket.send_json(
+            {
+                "type": "accepted",
+                "request_id": request_id,
+                "session_id": session_id,
+            }
+        )
+
+        def enqueue(event: dict[str, Any]) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        def observe(event: AgentEvent) -> None:
+            sequence = max(0, len(runtime.events) - 1)
+            enqueue(
+                {
+                    "type": "activity",
+                    "request_id": request_id,
+                    "session_id": session_id,
+                    "event": _trace_event(sequence, event).model_dump(mode="json"),
+                }
+            )
+
+        def produce() -> None:
+            try:
+                state = runtime.execute(
+                    _state_from_run_request(payload),
+                    event_sink=observe,
+                )
+                trace = _trace_response(state, runtime)
+                enqueue(
+                    {
+                        "type": "done",
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "trace": trace.model_dump(mode="json"),
+                    }
+                )
+            except Exception as exc:
+                enqueue(
+                    {
+                        "type": "error",
+                        "request_id": request_id,
+                        "session_id": session_id,
+                        "code": _stream_error_code(exc),
+                        "message": str(exc) or "Agent execution failed.",
+                    }
+                )
+
+        producer_task = asyncio.create_task(asyncio.to_thread(produce))
+        producer_task.add_done_callback(_consume_background_task)
+
+        while True:
+            event = await queue.get()
+            await websocket.send_json(event)
+            if event.get("type") in {"done", "error"}:
+                return
+    except WebSocketDisconnect:
+        return

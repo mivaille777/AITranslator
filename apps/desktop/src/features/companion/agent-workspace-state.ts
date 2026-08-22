@@ -3,6 +3,8 @@ import type { AgentRunTraceResponse, AgentTraceEvent, AgentTraceEventType } from
 export type AgentWorkspacePhase =
   | "idle"
   | "running"
+  | "cancelling"
+  | "cancelled"
   | "completed"
   | "confirmation_required"
   | "error"
@@ -23,6 +25,9 @@ export interface AgentWorkspaceViewState {
   outputText: string
   provider: string
   model: string
+  runId: string
+  traceId: string
+  totalDurationMs: number
   confirmationTool: string
   activities: AgentActivityItem[]
   errorMessage: string
@@ -30,6 +35,15 @@ export interface AgentWorkspaceViewState {
 
 function text(value: unknown): string {
   return typeof value === "string" ? value : ""
+}
+
+function numeric(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+function withDuration(detail: string, payload: Record<string, unknown>): string {
+  const duration = numeric(payload.duration_ms)
+  return duration > 0 ? `${detail} · ${duration} ms` : detail
 }
 
 function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
@@ -40,7 +54,7 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
         sequence: event.sequence,
         eventType: event.event_type,
         label: "Agent started",
-        detail: text(payload.session_id) || "Preparing this run.",
+        detail: text(payload.run_id) || text(payload.session_id) || "Preparing this run.",
         tone: "neutral",
       }
     case "context_ready":
@@ -58,7 +72,10 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
         sequence: event.sequence,
         eventType: event.event_type,
         label: toolName ? `Plan ready: ${toolName}` : "Plan ready",
-        detail: text(payload.user_visible_reason) || (action === "answer" ? "The Agent will answer directly." : "The Agent selected its next action."),
+        detail: withDuration(
+          text(payload.user_visible_reason) || (action === "answer" ? "The Agent will answer directly." : "The Agent selected its next action."),
+          payload,
+        ),
         tone: "neutral",
       }
     }
@@ -72,25 +89,65 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
         tone: "neutral",
       }
     }
+    case "retry": {
+      const toolName = text(payload.tool_name) || "tool"
+      const attempt = numeric(payload.attempt)
+      const maxAttempts = numeric(payload.max_attempts)
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: `Retrying ${toolName}`,
+        detail: `${attempt > 0 && maxAttempts > 0 ? `Attempt ${attempt}/${maxAttempts}. ` : ""}${text(payload.reason) || "Transient tool failure."}`,
+        tone: "warning",
+      }
+    }
     case "tool_result": {
       const toolName = text(payload.tool_name) || "Tool"
       return {
         sequence: event.sequence,
         eventType: event.event_type,
         label: `${toolName} completed`,
-        detail: text(payload.provider) || "Tool result returned to the Agent.",
+        detail: withDuration(text(payload.provider) || "Tool result returned to the Agent.", payload),
         tone: "success",
       }
     }
-    case "agent_end": {
-      const status = text(payload.status)
-      const needsConfirmation = status === "confirmation_required"
+    case "synthesis_ready":
       return {
         sequence: event.sequence,
         eventType: event.event_type,
-        label: needsConfirmation ? "Confirmation required" : "Agent completed",
-        detail: text(payload.intent) || text(payload.ui_mode) || "Run finished.",
-        tone: needsConfirmation ? "warning" : "success",
+        label: "Response synthesized",
+        detail: withDuration(text(payload.model) || text(payload.provider) || "Final response generated.", payload),
+        tone: "success",
+      }
+    case "failure":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: `Failed: ${text(payload.stage) || "runtime"}`,
+        detail: `${text(payload.message) || "Agent execution failed."}${text(payload.fallback_reason) ? ` · ${text(payload.fallback_reason)}` : ""}`,
+        tone: "warning",
+      }
+    case "cancelled":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Agent cancelled",
+        detail: text(payload.message) || "Cancellation reached a safe checkpoint.",
+        tone: "warning",
+      }
+    case "agent_end": {
+      const status = text(payload.status)
+      const needsConfirmation = status === "confirmation_required"
+      const failed = status === "failed"
+      const cancelled = status === "cancelled"
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: needsConfirmation ? "Confirmation required" : failed ? "Agent failed" : cancelled ? "Agent cancelled" : "Agent completed",
+        detail: withDuration(text(payload.intent) || text(payload.ui_mode) || "Run finished.", {
+          duration_ms: payload.total_duration_ms,
+        }),
+        tone: needsConfirmation || failed || cancelled ? "warning" : "success",
       }
     }
   }
@@ -108,63 +165,70 @@ export function deriveAgentWorkspaceState({
   trace,
   liveEvents = [],
   pending = false,
+  cancelRequested = false,
+  cancelledMessage = "",
   errorMessage = "",
 }: {
   trace: AgentRunTraceResponse | null
   liveEvents?: AgentTraceEvent[]
   pending?: boolean
+  cancelRequested?: boolean
+  cancelledMessage?: string
   errorMessage?: string
 }): AgentWorkspaceViewState {
   const activities = activitySource(trace, liveEvents).map(eventToActivity)
+  const shared = {
+    uiMode: trace?.ui_mode ?? "assistant",
+    outputText: trace?.run.output_text ?? "",
+    provider: trace?.run.provider ?? "",
+    model: trace?.run.model ?? "",
+    runId: trace?.run_id ?? liveEvents.at(-1)?.run_id ?? "",
+    traceId: trace?.trace_id ?? liveEvents.at(-1)?.trace_id ?? "",
+    totalDurationMs: trace?.total_duration_ms ?? liveEvents.at(-1)?.elapsed_ms ?? 0,
+    activities,
+  }
 
   if (errorMessage) {
     return {
+      ...shared,
       phase: "error",
-      uiMode: trace?.ui_mode ?? "assistant",
-      outputText: trace?.run.output_text ?? "",
-      provider: trace?.run.provider ?? "",
-      model: trace?.run.model ?? "",
       confirmationTool: "",
-      activities,
       errorMessage,
+    }
+  }
+
+  if (cancelledMessage) {
+    return {
+      ...shared,
+      phase: "cancelled",
+      confirmationTool: "",
+      errorMessage: cancelledMessage,
     }
   }
 
   if (pending) {
     return {
-      phase: "running",
-      uiMode: trace?.ui_mode ?? "assistant",
-      outputText: trace?.run.output_text ?? "",
-      provider: trace?.run.provider ?? "",
-      model: trace?.run.model ?? "",
+      ...shared,
+      phase: cancelRequested ? "cancelling" : "running",
       confirmationTool: "",
-      activities,
       errorMessage: "",
     }
   }
 
   if (!trace) {
     return {
+      ...shared,
       phase: "idle",
-      uiMode: "assistant",
-      outputText: "",
-      provider: "",
-      model: "",
       confirmationTool: "",
-      activities,
       errorMessage: "",
     }
   }
 
   const confirmationRequired = trace.run.status === "confirmation_required"
   return {
+    ...shared,
     phase: confirmationRequired ? "confirmation_required" : "completed",
-    uiMode: trace.ui_mode,
-    outputText: trace.run.output_text,
-    provider: trace.run.provider,
-    model: trace.run.model,
     confirmationTool: confirmationRequired ? trace.run.plan.tool_name : "",
-    activities,
     errorMessage: "",
   }
 }

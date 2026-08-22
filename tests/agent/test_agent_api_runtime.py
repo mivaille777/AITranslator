@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from fastapi.testclient import TestClient
+
+from backend.agent_core.events import AgentEvent, AgentEventType
 from backend.agent_core.state import AgentState
-from backend.api.agent import run_product_agent
+from backend.api.agent import run_product_agent, run_product_agent_trace
 from backend.api.agent_dependencies import get_agent_runtime
+from backend.main import create_app
 from backend.models.agent_tools import AgentRunRequest
 
 
@@ -10,9 +14,20 @@ class FakeRuntime:
     def __init__(self, *, confirmation_required: bool = False) -> None:
         self.confirmation_required = confirmation_required
         self.received: AgentState | None = None
+        self.events: list[AgentEvent] = []
 
     def execute(self, state: AgentState) -> AgentState:
         self.received = state
+        self.events = [
+            AgentEvent(
+                event_type=AgentEventType.AGENT_START,
+                payload={"session_id": state.session_id},
+            ),
+            AgentEvent(
+                event_type=AgentEventType.CONTEXT_READY,
+                payload={"source_text": state.selected_text},
+            ),
+        ]
         if self.confirmation_required:
             state.planned_action = {
                 "action": "tool",
@@ -35,6 +50,22 @@ class FakeRuntime:
                 "request_id": 12,
             }
             state.ui_mode = "note"
+            self.events.extend(
+                [
+                    AgentEvent(
+                        event_type=AgentEventType.TOOL_CALL,
+                        payload={"name": "save_research_note"},
+                    ),
+                    AgentEvent(
+                        event_type=AgentEventType.AGENT_END,
+                        payload={
+                            "intent": state.intent,
+                            "status": "confirmation_required",
+                            "ui_mode": state.ui_mode,
+                        },
+                    ),
+                ]
+            )
             return state
 
         state.planned_action = {
@@ -72,6 +103,26 @@ class FakeRuntime:
             "request_id": 12,
         }
         state.ui_mode = "translation"
+        self.events.extend(
+            [
+                AgentEvent(
+                    event_type=AgentEventType.TOOL_CALL,
+                    payload={"name": "translate_selection"},
+                ),
+                AgentEvent(
+                    event_type=AgentEventType.TOOL_RESULT,
+                    payload={"tool_name": "translate_selection"},
+                ),
+                AgentEvent(
+                    event_type=AgentEventType.AGENT_END,
+                    payload={
+                        "intent": state.intent,
+                        "status": "completed",
+                        "ui_mode": state.ui_mode,
+                    },
+                ),
+            ]
+        )
         return state
 
 
@@ -126,6 +177,41 @@ def test_agent_run_api_preserves_write_confirmation_gate() -> None:
     assert response.tool_result is None
     assert runtime.received is not None
     assert runtime.received.tool_results == []
+
+
+def test_agent_trace_response_keeps_run_contract_and_orders_events() -> None:
+    runtime = FakeRuntime()
+
+    response = run_product_agent_trace(_request(), runtime)
+
+    assert response.session_id == "session-12"
+    assert response.ui_mode == "translation"
+    assert response.run.output_text == "贝叶斯优化"
+    assert [event.sequence for event in response.events] == list(range(5))
+    assert [event.event_type for event in response.events] == [
+        "agent_start",
+        "context_ready",
+        "tool_call",
+        "tool_result",
+        "agent_end",
+    ]
+    assert response.events[-1].payload["ui_mode"] == "translation"
+
+
+def test_agent_trace_http_endpoint_is_additive_to_existing_run_api() -> None:
+    runtime = FakeRuntime()
+    app = create_app()
+    app.dependency_overrides[get_agent_runtime] = lambda: runtime
+    client = TestClient(app)
+
+    response = client.post("/api/agent/run/trace", json=_request().model_dump())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run"]["status"] == "completed"
+    assert body["run"]["tool_result"]["tool_name"] == "translate_selection"
+    assert body["events"][0]["event_type"] == "agent_start"
+    assert body["events"][-1]["event_type"] == "agent_end"
 
 
 class FakeProductAgentService:

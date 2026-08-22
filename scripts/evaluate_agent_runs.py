@@ -4,6 +4,11 @@ import argparse
 from dataclasses import asdict
 import json
 from pathlib import Path
+import sys
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.evaluation.dataset import load_evaluation_dataset
 from backend.evaluation.runner import evaluate_agent_batch

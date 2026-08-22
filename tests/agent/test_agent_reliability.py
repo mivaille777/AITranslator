@@ -96,3 +96,20 @@ def test_runtime_cooperative_cancellation_emits_cancelled_terminal_state() -> No
     assert runtime.events[0].run_id == state.run_id
     assert runtime.events[0].payload["fallback_reason"] == "user_cancelled"
     assert runtime.events[-1].payload["status"] == "cancelled"
+
+
+def test_event_sink_failure_does_not_break_agent_execution() -> None:
+    runtime = AgentRuntime(
+        planner=lambda _state: {"intent": "translate", "tool_name": "translate_selection"},
+        tool_executor=lambda _state: {"translation": "ok"},
+    )
+    state = AgentState(user_input="hello")
+
+    def broken_sink(_event) -> None:
+        raise RuntimeError("stream closed")
+
+    result = runtime.execute(state, event_sink=broken_sink)
+
+    assert result.tool_results[-1]["translation"] == "ok"
+    assert runtime.events[-1].event_type == AgentEventType.AGENT_END
+    assert AgentEventType.FAILURE not in {event.event_type for event in runtime.events}

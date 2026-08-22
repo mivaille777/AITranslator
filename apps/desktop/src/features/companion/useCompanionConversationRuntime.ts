@@ -33,6 +33,7 @@ import {
   type CompanionContextSnapshot,
   type CompanionRuntimeMessage,
 } from "./companion-runtime"
+import { projectPersistedContext } from "./context-persistence-policy"
 import type { CompanionRecoveryState } from "./companion-recovery"
 import { companionExternalChangeDecision } from "./companion-sync"
 
@@ -41,6 +42,10 @@ type StreamEventContext = {
   requestId: number
   localUserId: string
   localAssistantId: string
+}
+
+type ApplyConversationOptions = {
+  preserveDraft?: boolean
 }
 
 const OWNERSHIP_REJECTION_CODES = new Set([
@@ -224,14 +229,17 @@ export function useCompanionConversationRuntime(
     closeActiveStream,
   ])
 
-  const applyConversation = useCallback((conversation: ConversationDetail) => {
+  const applyConversation = useCallback((
+    conversation: ConversationDetail,
+    options: ApplyConversationOptions = {},
+  ) => {
     applyConversationId(conversation.conversation_id)
     applyContext(companionContextSnapshot(conversation))
     applyContextMode(conversation.context_mode)
     sessionIdRef.current = conversation.session_id
     scopeRef.current = `stored:${conversation.conversation_id}`
     setMessages(restoreCompanionMessages(conversation.messages))
-    setDraft("")
+    if (!options.preserveDraft) setDraft("")
     lastFailedDraftRef.current = ""
     clearRecovery()
     queryClient.setQueryData(
@@ -262,7 +270,7 @@ export function useCompanionConversationRuntime(
       ) {
         return
       }
-      applyConversation(conversation)
+      applyConversation(conversation, { preserveDraft: true })
       void queryClient.invalidateQueries({ queryKey: ["conversations"] })
     } catch {
       // Explicit recovery paths surface failures. Background peer sync remains best-effort.
@@ -682,14 +690,21 @@ export function useCompanionConversationRuntime(
 
   const persistContextUpdate = useCallback(async (
     payload: ConversationContextUpdate,
+    preferredContext?: CompanionContextSnapshot,
   ) => {
     const currentConversationId = conversationIdRef.current
     if (!currentConversationId || conversationBusyElsewhere) return null
     const updated = await updateConversationContext(currentConversationId, payload)
-    applyConversation(updated)
+    const projected = projectPersistedContext(updated, preferredContext)
+    applyContext(projected.context)
+    applyContextMode(projected.contextMode)
+    queryClient.setQueryData(
+      queryKeys.conversations.detail(updated.conversation_id),
+      updated,
+    )
     void queryClient.invalidateQueries({ queryKey: ["conversations"] })
     return updated
-  }, [applyConversation, conversationBusyElsewhere, queryClient])
+  }, [applyContext, applyContextMode, conversationBusyElsewhere, queryClient])
 
   const attachReadingContext = useCallback(async (
     nextContext: CompanionContextSnapshot,
@@ -707,11 +722,12 @@ export function useCompanionConversationRuntime(
           target_language: nextContext.target_language,
           resource_url: nextContext.resource_url,
           resource_title: nextContext.resource_title,
+          application: nextContext.application,
           section_heading: nextContext.section_heading,
           context_before: nextContext.context_before,
           context_after: nextContext.context_after,
           source_kind: nextContext.source_kind,
-        })
+        }, nextContext)
       } else {
         applyContext(nextContext)
         applyContextMode("reading")
@@ -742,7 +758,7 @@ export function useCompanionConversationRuntime(
     setErrorMessage("")
     try {
       if (conversationIdRef.current) {
-        await persistContextUpdate({ context_mode: "general" })
+        await persistContextUpdate({ context_mode: "general" }, contextRef.current)
       } else {
         applyContextMode("general")
       }

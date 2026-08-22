@@ -18,6 +18,7 @@ def test_desktop_agent_ai_menu_exposes_context_aware_reading_actions(qtbot) -> N
         spec.label for spec in READING_ACTION_SPECS
     ]
     assert all(action.parent() is window.context_menu.ai_menu for action in actions.values())
+    assert all(not action.icon().isNull() for action in actions.values())
 
 
 def test_reading_action_emits_the_existing_semantic_context_signal(qtbot) -> None:

@@ -5,9 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from time import sleep
 
-from app.models.selection import SelectedText, SelectionContext
+from app.models.selection import (
+    DocumentIdentity,
+    ReadingSelection,
+    SelectedText,
+    SelectionContext,
+)
 from app.selection.base import SelectionProvider
 from app.selection.errors import SelectionError
+from app.selection.reading_context import normalize_application_name
 from app.selection.uia_provider import UIASelectionProvider
 
 BROWSER_PDF_PROCESS_NAMES = frozenset(
@@ -76,7 +82,7 @@ class BrowserPdfSelectionProvider(SelectionProvider):
 
         last_error: SelectionError | None = None
         delays = self._retry_delays or (0.0,)
-        for index, delay in enumerate(delays):
+        for delay in delays:
             if delay > 0:
                 self._sleeper(delay)
             try:
@@ -102,6 +108,33 @@ class BrowserPdfSelectionProvider(SelectionProvider):
         if last_error is not None:
             raise last_error
         raise SelectionError("browser/PDF accessibility selection unavailable")
+
+    def get_reading_selection(self) -> ReadingSelection:
+        raise SelectionError("browser/PDF reading selection requires frozen context")
+
+    def get_reading_selection_with_context(
+        self,
+        context: SelectionContext | None,
+    ) -> ReadingSelection:
+        """Return weak browser identity without inventing a URL or document title.
+
+        This tier can represent either a built-in PDF viewer or an ordinary
+        browser accessibility fallback.  Without DOM/extension evidence there
+        is no reliable URL/PDF discriminator, so Stage 6C deliberately records
+        only the browser source family and executable name.
+        """
+
+        selected = self.get_selected_text_with_context(context)
+        return ReadingSelection(
+            text=selected.text,
+            provider=selected.provider,
+            document=DocumentIdentity(
+                source_kind="browser",
+                application=normalize_application_name(
+                    context.process_name if context is not None else ""
+                ),
+            ),
+        )
 
 
 __all__ = [

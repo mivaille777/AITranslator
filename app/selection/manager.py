@@ -6,11 +6,12 @@ import logging
 from typing import Any
 
 from app.infrastructure.config import ConfigManager
-from app.models.selection import SelectedText, SelectionContext
+from app.models.selection import ReadingSelection, SelectedText, SelectionContext
 from app.selection.base import SelectionProvider
 from app.selection.browser_pdf_provider import BrowserPdfSelectionProvider
 from app.selection.clipboard_provider import ClipboardSelectionProvider
 from app.selection.errors import SelectionError
+from app.selection.reading_context import reading_selection_from_selected_text
 from app.selection.uia_provider import (
     DEFAULT_UIA_TIMEOUT_SECONDS,
     UIASelectionProvider,
@@ -28,6 +29,11 @@ class SelectionManager:
     automatic-mouse path: it uses only providers that read the target
     application's selection directly and can therefore guarantee that no
     synthetic Ctrl+C is emitted.
+
+    Stage 6C adds parallel ``get_reading_selection*`` methods. They preserve the
+    exact provider ordering while preferring richer metadata when a provider
+    exposes it. Legacy providers are upgraded to weak :class:`ReadingSelection`
+    values without changing their original API.
     """
 
     def __init__(
@@ -82,7 +88,25 @@ class SelectionManager:
             self.automatic_native_providers = tuple(automatic)
 
             self.clipboard_provider = resolved_clipboard
-            self.providers = (*self.native_providers, resolved_clipboard)
+
+            # Preserve the explicit legacy compatibility contract only when
+            # the caller has not supplied runtime configuration.  A caller
+            # that injects Word + Clipboard with no config is defining a
+            # deterministic two-tier Word -> Clipboard chain and should not
+            # inherit a live system UIA provider from the developer desktop.
+            # Supplying config_manager, however, is an explicit request to use
+            # the configured native stack, including the configured UIA
+            # timeout, so the default UIA provider must remain in that chain.
+            explicit_word_clipboard_chain = bool(
+                word_provider is not None
+                and clipboard_provider is not None
+                and uia_provider is None
+                and config_manager is None
+            )
+            if explicit_word_clipboard_chain:
+                self.providers = (resolved_word, resolved_clipboard)
+            else:
+                self.providers = (*self.native_providers, resolved_clipboard)
 
         # Preserve the Step5 ``provider`` attribute for callers that supplied
         # one explicitly; for the default chain it identifies the first tier.
@@ -114,6 +138,73 @@ class SelectionManager:
             mode="native",
         )
 
+    def get_reading_selection(self) -> ReadingSelection:
+        """Return selected text plus the best reliable document metadata."""
+
+        return self._capture_reading_from(
+            self.providers,
+            context=None,
+            mode="full",
+        )
+
+    def get_reading_selection_native(
+        self,
+        *,
+        context: SelectionContext | None = None,
+    ) -> ReadingSelection:
+        """Return rich native capture without clipboard or keyboard synthesis."""
+
+        return self._capture_reading_from(
+            self.automatic_native_providers,
+            context=context,
+            mode="native",
+        )
+
+    @staticmethod
+    def _selected_from_provider(
+        provider: SelectionProvider,
+        context: SelectionContext | None,
+    ) -> SelectedText:
+        contextual_capture = getattr(
+            provider,
+            "get_selected_text_with_context",
+            None,
+        )
+        if context is not None and callable(contextual_capture):
+            selected = contextual_capture(context)
+        else:
+            selected = provider.get_selected_text()
+        if not isinstance(selected, SelectedText):
+            raise SelectionError("selection provider returned unsupported result")
+        return selected
+
+    @staticmethod
+    def _reading_from_provider(
+        provider: SelectionProvider,
+        context: SelectionContext | None,
+    ) -> ReadingSelection:
+        contextual_capture = getattr(
+            provider,
+            "get_reading_selection_with_context",
+            None,
+        )
+        capture = getattr(provider, "get_reading_selection", None)
+
+        if context is not None and callable(contextual_capture):
+            result = contextual_capture(context)
+        elif callable(capture):
+            result = capture()
+        else:
+            result = SelectionManager._selected_from_provider(provider, context)
+
+        if isinstance(result, ReadingSelection):
+            if not result.text.strip():
+                raise SelectionError("reading selection is empty")
+            return result
+        if isinstance(result, SelectedText):
+            return reading_selection_from_selected_text(result, context=context)
+        raise SelectionError("reading selection provider returned unsupported result")
+
     def _capture_from(
         self,
         providers: tuple[SelectionProvider, ...],
@@ -128,15 +219,7 @@ class SelectionManager:
             last_error: SelectionError | None = None
             for provider in providers:
                 try:
-                    contextual_capture = getattr(
-                        provider,
-                        "get_selected_text_with_context",
-                        None,
-                    )
-                    if context is not None and callable(contextual_capture):
-                        selected = contextual_capture(context)
-                    else:
-                        selected = provider.get_selected_text()
+                    selected = self._selected_from_provider(provider, context)
 
                     if mode == "full":
                         self.logger.info(
@@ -171,6 +254,56 @@ class SelectionManager:
 
             if last_error is not None:
                 self.logger.info("selection_provider_failed_all mode=%s", mode)
+                raise last_error
+            raise SelectionError("no selection provider is configured")
+        finally:
+            self._busy = False
+
+    def _capture_reading_from(
+        self,
+        providers: tuple[SelectionProvider, ...],
+        *,
+        context: SelectionContext | None,
+        mode: str,
+    ) -> ReadingSelection:
+        if self._busy:
+            raise SelectionError("selection already in progress")
+        self._busy = True
+        try:
+            last_error: SelectionError | None = None
+            for provider in providers:
+                try:
+                    selection = self._reading_from_provider(provider, context)
+                    self.logger.info(
+                        "selection_provider_used provider=%s mode=%s capture=reading",
+                        selection.provider,
+                        mode,
+                    )
+                    return selection
+                except SelectionError as exc:
+                    last_error = exc
+                    self.logger.debug(
+                        "selection_provider_failed provider=%s mode=%s capture=reading error_type=%s",
+                        type(provider).__name__,
+                        mode,
+                        type(exc).__name__,
+                    )
+                except Exception as exc:
+                    error = SelectionError("reading selection provider failed")
+                    error.__cause__ = exc
+                    last_error = error
+                    self.logger.debug(
+                        "selection_provider_failed provider=%s mode=%s capture=reading error_type=%s",
+                        type(provider).__name__,
+                        mode,
+                        type(exc).__name__,
+                    )
+
+            if last_error is not None:
+                self.logger.info(
+                    "selection_provider_failed_all mode=%s capture=reading",
+                    mode,
+                )
                 raise last_error
             raise SelectionError("no selection provider is configured")
         finally:

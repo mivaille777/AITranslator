@@ -1,18 +1,28 @@
 name: CI
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - main
+      - WebReBuild
   push:
     branches:
       - main
+      - WebReBuild
 
 permissions:
   contents: read
 
+# Keep only the newest CI for each event/source pair. Push and pull_request
+# workflows must not share the same concurrency group because a branch push
+# can otherwise cancel the PR check that is required before merging to main.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  python-tests:
     name: Python tests (3.11)
     runs-on: windows-latest
     timeout-minutes: 30
@@ -36,10 +46,71 @@ jobs:
         shell: pwsh
         run: python -m pip install --upgrade pip
 
+      - name: Prepare test results directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force test-results | Out-Null
+
       - name: Run test suite
         shell: pwsh
-        run: .\scripts\test.ps1 -Install
+        run: .\scripts\test.ps1 -Install -PytestArgs '--junitxml=test-results/pytest.xml'
 
-      - name: Run application smoke test
+      - name: Run legacy application smoke test
         shell: pwsh
         run: python -m app.main --smoke-test
+
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-pytest-${{ github.run_id }}
+          path: test-results/pytest.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+  web-frontend:
+    name: React lint, tests, and build
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: apps/desktop
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --prefer-offline
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Test frontend
+        run: npm run test
+
+      - name: Build frontend
+        run: npm run build
+
+  tauri-shell:
+    name: Tauri shell check
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Tauri shell
+        shell: pwsh
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --no-default-features

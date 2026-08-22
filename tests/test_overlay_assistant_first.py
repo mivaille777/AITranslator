@@ -1,0 +1,152 @@
+from backend.services.overlay_state_service import OverlayStateService
+
+
+def test_new_selection_opens_assistant_clears_translation_and_keeps_conversation():
+    service = OverlayStateService()
+    service.show_assistant(
+        context_id="selection-a",
+        source_text="first external selection",
+        source_language="auto",
+        target_language="zh-CN",
+    )
+    service.bind_companion_conversation(
+        context_id="selection-a",
+        conversation_id="conversation-1",
+    )
+    service.show_translation(
+        context_id="selection-a",
+        source_text="first external selection",
+        translated_text="第一段",
+        source_language="en",
+        target_language="zh-CN",
+        provider="youdao_web",
+    )
+
+    state = service.show_assistant(
+        context_id="selection-b",
+        source_text="second external selection",
+        source_language="auto",
+        target_language="zh-CN",
+    )
+
+    assert state.visible is True
+    assert state.mode == "assistant"
+    assert state.phase == "ready"
+    assert state.context_id == "selection-b"
+    assert state.source_text == "second external selection"
+    assert state.translated_text == ""
+    assert state.provider == ""
+    assert state.translation_notice == ""
+    assert state.companion_conversation_id == "conversation-1"
+
+
+def test_translation_mode_preserves_companion_binding_for_same_context():
+    service = OverlayStateService()
+    service.show_assistant(
+        context_id="selection-a",
+        source_text="paper text",
+        source_language="en",
+        target_language="zh-CN",
+    )
+    service.bind_companion_conversation(
+        context_id="selection-a",
+        conversation_id="conversation-1",
+    )
+
+    state = service.show_translation(
+        context_id="selection-a",
+        source_text="paper text",
+        translated_text="论文文本",
+        source_language="en",
+        target_language="zh-CN",
+        provider="ai/deepseek-v4-flash",
+        translation_notice="Youdao and Google translation are unavailable; AI translation was used.",
+    )
+
+    assert state.mode == "translation"
+    assert state.phase == "ready"
+    assert state.companion_conversation_id == "conversation-1"
+    assert "Youdao and Google" in state.translation_notice
+
+
+def test_mode_switch_preserves_translation_context_and_conversation():
+    service = OverlayStateService()
+    service.show_assistant(
+        context_id="selection-a",
+        source_text="paper text",
+        source_language="en",
+        target_language="zh-CN",
+    )
+    service.bind_companion_conversation(
+        context_id="selection-a",
+        conversation_id="conversation-1",
+    )
+    service.show_translation(
+        context_id="selection-a",
+        source_text="paper text",
+        translated_text="论文文本",
+        source_language="en",
+        target_language="zh-CN",
+        provider="youdao_web",
+        translation_notice="",
+    )
+
+    assistant = service.switch_mode(context_id="selection-a", mode="assistant")
+    assert assistant.mode == "assistant"
+    assert assistant.phase == "ready"
+    assert assistant.translated_text == "论文文本"
+    assert assistant.provider == "youdao_web"
+    assert assistant.companion_conversation_id == "conversation-1"
+
+    translation = service.switch_mode(context_id="selection-a", mode="translation")
+    assert translation.mode == "translation"
+    assert translation.phase == "ready"
+    assert translation.translated_text == "论文文本"
+    assert translation.companion_conversation_id == "conversation-1"
+
+
+def test_mode_switch_rejects_stale_context():
+    service = OverlayStateService()
+    service.show_assistant(
+        context_id="selection-current",
+        source_text="paper text",
+        source_language="en",
+        target_language="zh-CN",
+    )
+
+    try:
+        service.switch_mode(context_id="selection-stale", mode="translation")
+    except ValueError as exc:
+        assert "context changed" in str(exc).lower()
+    else:
+        raise AssertionError("stale overlay mode switch must be rejected")
+
+
+def test_selection_context_can_change_repeatedly_without_rotating_conversation():
+    service = OverlayStateService()
+    service.show_assistant(
+        context_id="selection-a",
+        source_text="A",
+        source_language="auto",
+        target_language="zh-CN",
+    )
+    service.bind_companion_conversation(
+        context_id="selection-a",
+        conversation_id="conversation-keep",
+    )
+
+    for context_id, source_text in (
+        ("selection-b", "B"),
+        ("selection-c", "C"),
+        ("selection-d", "D"),
+    ):
+        state = service.show_assistant(
+            context_id=context_id,
+            source_text=source_text,
+            source_language="auto",
+            target_language="zh-CN",
+        )
+        assert state.context_id == context_id
+        assert state.source_text == source_text
+        assert state.mode == "assistant"
+        assert state.companion_conversation_id == "conversation-keep"

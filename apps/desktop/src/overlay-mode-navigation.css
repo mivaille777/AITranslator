@@ -1,0 +1,102 @@
+/* Batch 9.6.5.1 — explicit overlay layout model. */
+
+html[data-ait-view="overlay"] .ait-overlay-layout {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-source-context {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-workspace {
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.055);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-workspace[hidden] {
+  display: none !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-select {
+  height: 32px;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.045);
+  padding: 0 8px;
+  color: rgb(203 213 225);
+  font-size: 10px;
+  outline: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-select:focus,
+html[data-ait-view="overlay"] .ait-overlay-translation-editor:focus {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-select option {
+  background: #1b1b1f;
+  color: #e5e7eb;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-editor {
+  height: 76px;
+  max-height: 76px;
+  overflow-y: auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-output {
+  display: block;
+  min-height: 48px;
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-chat-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > .ait-overlay-conversation {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-conversation-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-conversation-messages {
+  height: 100% !important;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-conversation-composer {
+  flex: 0 0 auto;
+  background: rgba(12, 12, 14, 0.2);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-conversation-divider {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button {
+  min-height: 28px;
+}

@@ -1,10 +1,16 @@
-"""Google Translate web-compatible provider.
+"""Google Translate browser-web translation provider.
 
-This adapter intentionally contains all assumptions about the unauthenticated
-Google web-compatible request format.  The runtime uses the compact
-``translate.googleapis.com`` GTX request shape used by maintained free clients;
-it does not use Google account cookies, OAuth tokens, browser state, CAPTCHA
-handling, or access-limit workarounds.
+The request contract mirrors the browser-style GTX flow used by mature clients
+such as Zotero PDF Translate: a ``translate_a/single`` GET containing the
+browser token (``tk``), language parameters and the response ``dt`` set.
+
+Only the browser-facing ``translate.google.com`` route is used. Legacy local
+configuration that points at ``translate.googleapis.com`` is migrated in memory
+to the browser route rather than creating a second runtime path.
+
+This module does not handle CAPTCHA or attempt to bypass access controls. It
+keeps those responses diagnosable while never logging the user's source text or
+full request URL.
 """
 
 from __future__ import annotations
@@ -12,14 +18,15 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import html
-from http.client import HTTPConnection, HTTPException, HTTPSConnection
 import json
 import logging
-import ssl
 from threading import Lock
 from time import monotonic, sleep
 from typing import Any
 from urllib.parse import urlencode, urlsplit
+
+import certifi
+import requests
 
 from app.infrastructure.config import ConfigManager
 from app.models.translation import TranslationRequest, TranslationResult
@@ -27,11 +34,12 @@ from app.translation.base import TranslationProvider
 from app.translation.errors import WebTranslationError
 
 
-DEFAULT_WEB_ENDPOINT = "https://translate.googleapis.com/translate_a/single"
+DEFAULT_WEB_ENDPOINT = "https://translate.google.com/translate_a/single"
 LEGACY_WEB_ENDPOINTS = frozenset(
     {
-        "https://translate.google.com/translate_a/single",
         "http://translate.google.com/translate_a/single",
+        "http://translate.googleapis.com/translate_a/single",
+        "https://translate.googleapis.com/translate_a/single",
     }
 )
 DEFAULT_TIMEOUT_SECONDS = 8.0
@@ -45,9 +53,18 @@ DEFAULT_USER_AGENT = (
 LOGGER_NAME = "desktop_translator"
 TRANSIENT_HTTP_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
 WEB_LANGUAGE_MAP = {"pt-BR": "pt", "pt-br": "pt"}
-# Keep this exported constant for compatibility with existing tests/importers.
-# The current GTX contract only needs the translated-text response type.
-WEB_TRANSLATION_TYPES = ("t",)
+WEB_TRANSLATION_TYPES = (
+    "at",
+    "bd",
+    "ex",
+    "ld",
+    "md",
+    "qca",
+    "rw",
+    "rm",
+    "ss",
+    "t",
+)
 
 
 @dataclass(frozen=True)
@@ -56,6 +73,8 @@ class WebResponse:
 
     status_code: int
     body: bytes | str
+    final_url: str = ""
+    content_type: str = ""
 
 
 WebRequester = Callable[
@@ -64,30 +83,16 @@ WebRequester = Callable[
 ]
 
 
-def _create_ssl_context() -> ssl.SSLContext:
-    """Use certifi when available while retaining certificate verification."""
+class _RequestsWebRequester:
+    """Persistent browser-like transport with redirect and proxy support.
 
-    try:
-        import certifi
-
-        return ssl.create_default_context(cafile=certifi.where())
-    except Exception:
-        return ssl.create_default_context()
-
-
-class _PersistentWebRequester:
-    """Keep one HTTP/1.1 connection warm for repeated short translations.
-
-    A server can close an idle keep-alive socket without the client knowing.
-    If the first request on a reused connection fails at the transport layer,
-    discard that socket and transparently retry once on a fresh connection.
+    ``requests.Session`` follows redirects and honours normal environment proxy
+    settings. Explicit certifi verification avoids depending on a malformed
+    Windows certificate-store entry in the active Conda environment.
     """
 
-    def __init__(self) -> None:
-        self._lock = Lock()
-        self._connection: HTTPConnection | HTTPSConnection | None = None
-        self._connection_key: tuple[str, str, int | None] | None = None
-        self._ssl_context = _create_ssl_context()
+    def __init__(self, session: requests.Session | None = None) -> None:
+        self._session = session or requests.Session()
 
     def __call__(
         self,
@@ -95,92 +100,30 @@ class _PersistentWebRequester:
         headers: Mapping[str, str],
         timeout: float,
     ) -> WebResponse:
-        parsed = urlsplit(url)
-        scheme = parsed.scheme.lower()
-        if scheme not in {"http", "https"} or not parsed.hostname:
-            raise ValueError("Google web endpoint must be an HTTP URL")
-
-        host = parsed.hostname
-        port = parsed.port
-        target = parsed.path or "/"
-        if parsed.query:
-            target = f"{target}?{parsed.query}"
-        connection_key = (scheme, host, port)
-
-        with self._lock:
-            reused_connection = bool(
-                self._connection is not None
-                and self._connection_key == connection_key
-            )
-            connection = self._get_connection(connection_key, timeout)
-            request_headers = dict(headers)
-            request_headers.setdefault("Connection", "keep-alive")
-            request_headers.setdefault("Accept-Encoding", "identity")
-
-            attempts = 2 if reused_connection else 1
-            for attempt in range(attempts):
-                try:
-                    connection.timeout = timeout
-                    connection.request("GET", target, headers=request_headers)
-                    response = connection.getresponse()
-                    body = response.read()
-                    status_code = int(response.status)
-                    if response.will_close:
-                        self._close_locked()
-                    return WebResponse(status_code, body)
-                except (HTTPException, OSError):
-                    self._close_locked()
-                    if reused_connection and attempt == 0:
-                        connection = self._get_connection(connection_key, timeout)
-                        continue
-                    raise
-
-        raise RuntimeError("unreachable persistent request state")
-
-    def _get_connection(
-        self,
-        connection_key: tuple[str, str, int | None],
-        timeout: float,
-    ) -> HTTPConnection | HTTPSConnection:
-        if (
-            self._connection is not None
-            and self._connection_key == connection_key
-        ):
-            self._connection.timeout = timeout
-            return self._connection
-
-        self._close_locked()
-        scheme, host, port = connection_key
-        if scheme == "https":
-            connection = HTTPSConnection(
-                host,
-                port=port,
-                timeout=timeout,
-                context=self._ssl_context,
-            )
-        else:
-            connection = HTTPConnection(host, port=port, timeout=timeout)
-        self._connection = connection
-        self._connection_key = connection_key
-        return connection
+        response = self._session.get(
+            url,
+            headers=dict(headers),
+            timeout=timeout,
+            allow_redirects=True,
+            verify=certifi.where(),
+        )
+        return WebResponse(
+            status_code=int(response.status_code),
+            body=response.content,
+            final_url=str(response.url),
+            content_type=str(response.headers.get("content-type", "")),
+        )
 
     def close(self) -> None:
-        with self._lock:
-            self._close_locked()
+        self._session.close()
 
-    def _close_locked(self) -> None:
-        connection = self._connection
-        self._connection = None
-        self._connection_key = None
-        if connection is not None:
-            try:
-                connection.close()
-            except OSError:
-                pass
+
+# Keep the old private name as an alias so downstream imports do not break.
+_PersistentWebRequester = _RequestsWebRequester
 
 
 class GoogleWebTranslationProvider(TranslationProvider):
-    """Translate through Google's unauthenticated GTX web-compatible endpoint."""
+    """Translate through Google's unauthenticated browser-compatible endpoint."""
 
     def __init__(
         self,
@@ -237,7 +180,7 @@ class GoogleWebTranslationProvider(TranslationProvider):
             True,
         )
         self.user_agent = str(user_agent).strip() or DEFAULT_USER_AGENT
-        self._transport = None if requester is not None else _PersistentWebRequester()
+        self._transport = None if requester is not None else _RequestsWebRequester()
         self._requester = requester or self._transport
         self._sleep = sleep_function or sleep
         self._clock = clock or monotonic
@@ -248,12 +191,10 @@ class GoogleWebTranslationProvider(TranslationProvider):
     @staticmethod
     def _safe_endpoint(value: object) -> str:
         endpoint = str(value).strip().rstrip("?")
-        # Existing user.toml files may still contain the old translate.google.com
-        # path. Migrate that known legacy value in memory so users do not need
-        # to delete their settings after upgrading.
         if endpoint in LEGACY_WEB_ENDPOINTS:
             return DEFAULT_WEB_ENDPOINT
-        if endpoint.startswith(("https://", "http://")):
+        parsed = urlsplit(endpoint)
+        if parsed.scheme == "https" and parsed.hostname:
             return endpoint
         return DEFAULT_WEB_ENDPOINT
 
@@ -312,8 +253,40 @@ class GoogleWebTranslationProvider(TranslationProvider):
         if self._transport is not None:
             self._transport.close()
 
+    @staticmethod
+    def _token_shift(value: int, pattern: str) -> int:
+        """Apply the 32-bit shift/xor transform used by the browser token."""
+
+        value &= 0xFFFFFFFF
+        for index in range(0, len(pattern) - 2, 3):
+            code = pattern[index + 2]
+            shift = ord(code) - 87 if code >= "a" else int(code)
+            if pattern[index + 1] == "+":
+                shifted = (value & 0xFFFFFFFF) >> shift
+            else:
+                shifted = (value << shift) & 0xFFFFFFFF
+            if pattern[index] == "+":
+                value = (value + shifted) & 0xFFFFFFFF
+            else:
+                value = (value ^ shifted) & 0xFFFFFFFF
+        return value & 0xFFFFFFFF
+
+    @classmethod
+    def _token(cls, text: str) -> str:
+        """Generate the ``tk`` value used by Google Translate's GTX web call."""
+
+        seed = 406644
+        value = seed
+        for byte in text.encode("utf-8"):
+            value = (value + byte) & 0xFFFFFFFF
+            value = cls._token_shift(value, "+-a^+6")
+        value = cls._token_shift(value, "+-3^+b+-f")
+        value = (value ^ 3293161072) & 0xFFFFFFFF
+        value %= 1_000_000
+        return f"{value}.{value ^ seed}"
+
     def translate(self, request: TranslationRequest) -> TranslationResult:
-        """Send one request, retry transient failures, and parse safe output."""
+        """Send one browser-compatible request and parse translated segments."""
 
         if not self.enabled:
             raise WebTranslationError("Google web translation is disabled")
@@ -322,6 +295,7 @@ class GoogleWebTranslationProvider(TranslationProvider):
         headers = {
             "Accept": "application/json,text/plain,*/*",
             "Accept-Language": "en-US,en;q=0.8",
+            "Referer": "https://translate.google.com/",
             "User-Agent": self.user_agent,
         }
         last_status: int | None = None
@@ -348,6 +322,16 @@ class GoogleWebTranslationProvider(TranslationProvider):
                 ) from exc
 
             last_status = response.status_code
+            if self._is_google_challenge(response):
+                final_host = str(urlsplit(response.final_url).hostname or "unknown")
+                self.logger.warning(
+                    "google_web_challenge status=%s final_host=%s attempts=%s",
+                    response.status_code,
+                    final_host,
+                    attempt + 1,
+                )
+                raise WebTranslationError("Google web translation was challenged")
+
             if response.status_code in TRANSIENT_HTTP_STATUSES:
                 if attempt < self.max_retries:
                     self._retry_log(attempt, status=response.status_code)
@@ -366,7 +350,6 @@ class GoogleWebTranslationProvider(TranslationProvider):
         raise WebTranslationError("Google web translation request failed")
 
     def _log_http_failure(self, status: int | None, attempts: int) -> None:
-        # Never log the request URL because it contains the user's source text.
         self.logger.warning(
             "google_web_http_failed status=%s host=%s attempts=%s",
             status,
@@ -375,8 +358,6 @@ class GoogleWebTranslationProvider(TranslationProvider):
         )
 
     def _build_url(self, request: TranslationRequest) -> str:
-        """Build the compact current GTX request without legacy token fields."""
-
         source_language = WEB_LANGUAGE_MAP.get(
             request.source_language or "auto",
             request.source_language or "auto",
@@ -389,12 +370,54 @@ class GoogleWebTranslationProvider(TranslationProvider):
             ("client", "gtx"),
             ("sl", source_language),
             ("tl", target_language),
-            ("dt", "t"),
-            ("q", request.source_text),
+            ("hl", "en"),
         ]
+        query_items.extend(("dt", value) for value in WEB_TRANSLATION_TYPES)
+        query_items.extend(
+            [
+                ("source", "bh"),
+                ("ssel", "0"),
+                ("tsel", "0"),
+                ("kc", "1"),
+                ("tk", self._token(request.source_text)),
+                ("q", request.source_text),
+            ]
+        )
         query = urlencode(query_items)
         separator = "&" if "?" in self.endpoint else "?"
         return f"{self.endpoint}{separator}{query}"
+
+    @staticmethod
+    def _is_google_challenge(response: WebResponse) -> bool:
+        if response.final_url:
+            final = urlsplit(response.final_url)
+            if (
+                final.hostname
+                and final.hostname.lower().endswith("google.com")
+                and final.path.startswith("/sorry/")
+            ):
+                return True
+
+        content_type = response.content_type.lower()
+        if "text/html" not in content_type:
+            return False
+        try:
+            body = (
+                response.body.decode("utf-8", errors="ignore")
+                if isinstance(response.body, bytes)
+                else str(response.body)
+            ).lower()[:12000]
+        except Exception:
+            return False
+        return any(
+            marker in body
+            for marker in (
+                "our systems have detected unusual traffic",
+                "g-recaptcha",
+                "recaptcha",
+                "/sorry/",
+            )
+        )
 
     def _wait_for_rate_limit(self) -> None:
         if self.min_interval_seconds <= 0:

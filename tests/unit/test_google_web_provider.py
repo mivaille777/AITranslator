@@ -1,4 +1,4 @@
-"""Offline tests for the optional Google Translate web-compatible provider."""
+"""Offline tests for the Google Translate browser-web provider."""
 
 from __future__ import annotations
 
@@ -35,19 +35,28 @@ def _request() -> TranslationRequest:
 def test_live_translation_defaults_include_bounded_retry_and_spacing() -> None:
     assert DEFAULT_MAX_RETRIES == 1
     assert DEFAULT_MIN_INTERVAL_SECONDS >= 0.1
-    assert urlparse(DEFAULT_WEB_ENDPOINT).hostname == "translate.googleapis.com"
+    assert urlparse(DEFAULT_WEB_ENDPOINT).hostname == "translate.google.com"
 
 
-def test_legacy_translate_google_endpoint_is_migrated_in_memory() -> None:
-    provider = GoogleWebTranslationProvider(
-        endpoint="https://translate.google.com/translate_a/single",
-        requester=lambda *_args: WebResponse(200, "[]"),
-    )
+def test_legacy_google_endpoints_are_migrated_to_browser_web_route() -> None:
+    for legacy_endpoint in (
+        "http://translate.google.com/translate_a/single",
+        "http://translate.googleapis.com/translate_a/single",
+        "https://translate.googleapis.com/translate_a/single",
+    ):
+        provider = GoogleWebTranslationProvider(
+            endpoint=legacy_endpoint,
+            requester=lambda *_args: WebResponse(200, "[]"),
+        )
+        assert provider.endpoint == DEFAULT_WEB_ENDPOINT
 
-    assert provider.endpoint == DEFAULT_WEB_ENDPOINT
+
+def test_google_token_matches_browser_algorithm_for_utf8_text() -> None:
+    assert GoogleWebTranslationProvider._token("Hello world") == "814953.678685"
+    assert GoogleWebTranslationProvider._token("你好") == "964583.557971"
 
 
-def test_web_provider_builds_current_gtx_request_and_parses_segments() -> None:
+def test_web_provider_builds_zotero_style_gtx_request_and_parses_segments() -> None:
     calls: list[tuple[str, dict[str, str], float]] = []
 
     def requester(url, headers, timeout):
@@ -80,28 +89,76 @@ def test_web_provider_builds_current_gtx_request_and_parses_segments() -> None:
         provider="google_web",
         request_id=7,
     )
-    assert len(calls) == 1
     query = parse_qs(urlparse(calls[0][0]).query)
-    assert query == {
-        "client": ["gtx"],
-        "sl": ["en"],
-        "tl": ["zh-CN"],
-        "dt": list(WEB_TRANSLATION_TYPES),
-        "q": ["Hello world"],
-    }
-    assert "tk" not in query
-    assert "source" not in query
-    assert "ssel" not in query
-    assert "tsel" not in query
-    assert "kc" not in query
+    assert query["client"] == ["gtx"]
+    assert query["sl"] == ["en"]
+    assert query["tl"] == ["zh-CN"]
+    assert query["hl"] == ["en"]
+    assert query["dt"] == list(WEB_TRANSLATION_TYPES)
+    assert query["source"] == ["bh"]
+    assert query["ssel"] == ["0"]
+    assert query["tsel"] == ["0"]
+    assert query["kc"] == ["1"]
+    assert query["tk"] == ["814953.678685"]
+    assert query["q"] == ["Hello world"]
+    assert calls[0][1]["Referer"] == "https://translate.google.com/"
     assert "Hello world" not in calls[0][1].get("User-Agent", "")
     assert calls[0][2] == 3
+
+
+def test_requests_transport_follows_redirects_and_keeps_final_metadata() -> None:
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+        content = b"[]"
+        url = "https://translate.google.com/final"
+        headers = {"content-type": "application/json"}
+
+    class FakeSession:
+        def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return FakeResponse()
+
+        def close(self):
+            pass
+
+    transport = web_module._RequestsWebRequester(FakeSession())
+    response = transport("https://example.test/x", {"A": "B"}, 2.0)
+
+    assert response.status_code == 200
+    assert response.final_url == "https://translate.google.com/final"
+    assert response.content_type == "application/json"
+    assert calls[0][1]["allow_redirects"] is True
+    assert calls[0][1]["timeout"] == 2.0
+    transport.close()
+
+
+def test_google_sorry_redirect_is_reported_as_challenge_without_retry() -> None:
+    logger = MagicMock()
+    provider = GoogleWebTranslationProvider(
+        min_interval_seconds=0,
+        max_retries=1,
+        requester=lambda *_args: WebResponse(
+            429,
+            "<html>Our systems have detected unusual traffic</html>",
+            final_url="https://www.google.com/sorry/index?continue=redacted",
+            content_type="text/html; charset=UTF-8",
+        ),
+        logger=logger,
+    )
+
+    with pytest.raises(WebTranslationError, match="challenged"):
+        provider.translate(_request())
+
+    assert any("google_web_challenge" in str(call) for call in logger.mock_calls)
+    assert all("Hello world" not in str(call) for call in logger.mock_calls)
 
 
 def test_web_provider_retries_transient_status_without_logging_source_text() -> None:
     responses = iter(
         [
-            WebResponse(429, ""),
+            WebResponse(503, ""),
             WebResponse(
                 200,
                 json.dumps([[["你好", "hello", None]], None, "en"]),
@@ -168,96 +225,7 @@ def test_web_provider_can_be_disabled_without_network_access() -> None:
         provider.translate(_request())
 
 
-def test_persistent_requester_reuses_the_warm_connection(monkeypatch) -> None:
-    created: list[object] = []
-
-    class FakeResponse:
-        status = 200
-        will_close = False
-
-        def read(self):
-            return b"[]"
-
-    class FakeConnection:
-        def __init__(self, *_args, **_kwargs) -> None:
-            self.request_count = 0
-            self.timeout = None
-
-        def request(self, *_args, **_kwargs) -> None:
-            self.request_count += 1
-
-        def getresponse(self):
-            return FakeResponse()
-
-        def close(self) -> None:
-            pass
-
-    def make_connection(*_args, **_kwargs):
-        connection = FakeConnection()
-        created.append(connection)
-        return connection
-
-    monkeypatch.setattr(web_module, "HTTPSConnection", make_connection)
-    transport = web_module._PersistentWebRequester()
-
-    first = transport("https://example.test/translate?q=one", {}, 2.0)
-    second = transport("https://example.test/translate?q=two", {}, 2.0)
-
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert len(created) == 1
-    assert created[0].request_count == 2
-    transport.close()
-
-
-def test_persistent_requester_reconnects_once_when_reused_socket_is_stale(monkeypatch) -> None:
-    created: list[object] = []
-
-    class FakeResponse:
-        status = 200
-        will_close = False
-
-        def read(self):
-            return b"[]"
-
-    class FakeConnection:
-        def __init__(self, ordinal: int) -> None:
-            self.ordinal = ordinal
-            self.request_count = 0
-            self.timeout = None
-
-        def request(self, *_args, **_kwargs) -> None:
-            self.request_count += 1
-            if self.ordinal == 0 and self.request_count == 2:
-                raise OSError("stale keep-alive")
-
-        def getresponse(self):
-            return FakeResponse()
-
-        def close(self) -> None:
-            pass
-
-    def make_connection(*_args, **_kwargs):
-        connection = FakeConnection(len(created))
-        created.append(connection)
-        return connection
-
-    monkeypatch.setattr(web_module, "HTTPSConnection", make_connection)
-    transport = web_module._PersistentWebRequester()
-
-    assert transport("https://example.test/translate?q=one", {}, 2.0).status_code == 200
-    second = transport("https://example.test/translate?q=two", {}, 2.0)
-
-    assert second.status_code == 200
-    assert len(created) == 2
-    assert created[0].request_count == 2
-    assert created[1].request_count == 1
-    transport.close()
-
-
-def test_reconfiguring_web_provider_replaces_provider_and_clears_cache(
-    tmp_path,
-) -> None:
+def test_reconfiguring_web_provider_replaces_provider_and_clears_cache(tmp_path) -> None:
     default_path = tmp_path / "default.toml"
     user_path = tmp_path / "user.toml"
     default_path.write_text(
@@ -268,6 +236,7 @@ target_language = "zh-CN"
 
 [google_web]
 enabled = true
+endpoint = "https://translate.google.com/translate_a/single"
 timeout_ms = 8000
 max_retries = 0
 min_interval_ms = 0
@@ -291,4 +260,5 @@ min_interval_ms = 0
     assert manager.configure_provider()
 
     assert isinstance(manager.provider, GoogleWebTranslationProvider)
+    assert manager.provider.endpoint == DEFAULT_WEB_ENDPOINT
     assert manager.cache.size == 0

@@ -1,0 +1,42 @@
+/* Overlay stability fixes: isolate draggable header and scrolling layers. */
+html[data-ait-view="overlay"] .ait-overlay-root {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell {
+  overflow: hidden;
+  contain: layout paint;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell > div {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell * {
+  scrollbar-width: thin;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell::-webkit-scrollbar,
+html[data-ait-view="overlay"] .ait-overlay-shell > div::-webkit-scrollbar {
+  width: 6px;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell > div::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255,255,255,.28);
+}
+
+/* Match the opaque native window layer used to suppress WebView2 ghost chrome. */
+html[data-ait-view="overlay"],
+html[data-ait-view="overlay"] body,
+html[data-ait-view="overlay"] #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #17171a !important;
+}

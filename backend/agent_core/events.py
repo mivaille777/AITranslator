@@ -1,0 +1,31 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class AgentEventType(str, Enum):
+    AGENT_START = "agent_start"
+    CONTEXT_READY = "context_ready"
+    PLAN_READY = "plan_ready"
+    TOOL_CALL = "tool_call"
+    RETRY = "retry"
+    TOOL_RESULT = "tool_result"
+    SYNTHESIS_READY = "synthesis_ready"
+    FAILURE = "failure"
+    CANCELLED = "cancelled"
+    AGENT_END = "agent_end"
+
+
+class AgentEvent(BaseModel):
+    event_type: AgentEventType
+    payload: dict[str, Any] = Field(default_factory=dict)
+    run_id: str = ""
+    trace_id: str = ""
+    elapsed_ms: int = Field(default=0, ge=0)
+    timestamp: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )

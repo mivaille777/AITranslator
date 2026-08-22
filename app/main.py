@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from app.ai.research_agent_controller import ResearchAgentAppController
+from app.ai.adaptive_research_controller import AdaptiveResearchAgentAppController
 from app.infrastructure.logging import configure_logging, sanitized_exception_info
 from app.infrastructure.instance_lock import SingleInstanceLock
 from app.infrastructure.paths import ensure_runtime_directories
@@ -67,10 +67,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             logger.error("application_already_running")
             return 1
 
-    controller: ResearchAgentAppController | None = None
+    controller: AdaptiveResearchAgentAppController | None = None
     exit_code = 0
     try:
-        controller = ResearchAgentAppController(
+        controller = AdaptiveResearchAgentAppController(
             application,
             logger=logger,
         )

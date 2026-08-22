@@ -14,9 +14,11 @@ from app.translation.cache import TranslationCache
 from app.translation.errors import TranslationError
 from app.translation.google_web_provider import GoogleWebTranslationProvider
 from app.translation.normalizer import DEFAULT_MAX_TEXT_LENGTH, TextNormalizer
+from app.translation.youdao_web_provider import YoudaoWebTranslationProvider
 
 DEFAULT_SOURCE_LANGUAGE = "auto"
 DEFAULT_TARGET_LANGUAGE = "zh-CN"
+DEFAULT_TRANSLATION_PROVIDER = "google_web"
 LOGGER_NAME = "desktop_translator"
 
 
@@ -44,17 +46,13 @@ class TranslationManager:
         resolved_config = config_manager or ConfigManager()
         self.config_manager = resolved_config
         self._provider_managed = provider is None
-        # The web provider is lazy: constructing the manager performs no
-        # network request. Tests and offline callers can continue to inject a
-        # fake provider explicitly.
+
         if provider is None:
-            self.provider = GoogleWebTranslationProvider(
-                config_manager=resolved_config,
-                logger=self.logger,
-            )
+            self.provider = self._build_managed_provider()
         else:
             self.provider = provider
         self._provider_signature = self._read_provider_signature()
+
         configured_source = getattr(
             resolved_config,
             "translation_source_language",
@@ -111,9 +109,6 @@ class TranslationManager:
             configured_sqlite_enabled = bool(
                 getattr(resolved_config, "translation_sqlite_cache_enabled", True)
             )
-            # Explicitly injected providers are normally test/offline
-            # providers. Keep their default isolated from the application's
-            # persistent database unless the caller opts in explicitly.
             persistent_enabled = (
                 sqlite_enabled
                 if sqlite_enabled is not None
@@ -162,8 +157,6 @@ class TranslationManager:
         source_language: str | None = None,
         target_language: str | None = None,
     ) -> None:
-        """Apply language defaults for subsequent translation requests."""
-
         if source_language is not None and str(source_language).strip():
             self.default_source_language = str(source_language).strip()
         if target_language is not None and str(target_language).strip():
@@ -178,28 +171,26 @@ class TranslationManager:
         sqlite_path: str | Path | None = None,
         history_enabled: bool | None = None,
     ) -> None:
-        """Apply cache settings without exposing cache implementation details."""
-
         next_enabled = self.cache.enabled if enabled is None else bool(enabled)
         next_size = self.cache.max_size if max_size is None else int(max_size)
         if next_size < 1:
             next_size = 1
         if next_size != self.cache.max_size:
-            next_sqlite_enabled = getattr(
-                self.cache,
-                "sqlite_enabled",
-                False,
-            ) if sqlite_enabled is None else bool(sqlite_enabled)
-            next_sqlite_path = getattr(
-                self.cache,
-                "sqlite_path",
-                None,
-            ) if sqlite_path is None else sqlite_path
-            next_history_enabled = getattr(
-                self.cache,
-                "history_enabled",
-                False,
-            ) if history_enabled is None else bool(history_enabled)
+            next_sqlite_enabled = (
+                getattr(self.cache, "sqlite_enabled", False)
+                if sqlite_enabled is None
+                else bool(sqlite_enabled)
+            )
+            next_sqlite_path = (
+                getattr(self.cache, "sqlite_path", None)
+                if sqlite_path is None
+                else sqlite_path
+            )
+            next_history_enabled = (
+                getattr(self.cache, "history_enabled", False)
+                if history_enabled is None
+                else bool(history_enabled)
+            )
             old_cache = self.cache
             self.cache = TranslationCache(
                 max_size=next_size,
@@ -214,11 +205,7 @@ class TranslationManager:
                 close_cache()
         else:
             self.cache.enabled = next_enabled
-            configure_persistence = getattr(
-                self.cache,
-                "configure_persistence",
-                None,
-            )
+            configure_persistence = getattr(self.cache, "configure_persistence", None)
             if callable(configure_persistence):
                 configure_persistence(
                     sqlite_enabled=sqlite_enabled,
@@ -228,13 +215,9 @@ class TranslationManager:
 
     @property
     def provider_name(self) -> str:
-        """Return the active provider label without exposing implementation data."""
-
         return self._provider_name(self.provider)
 
     def close(self) -> None:
-        """Release resources owned by the provider and both cache levels."""
-
         close = getattr(self.provider, "close", None)
         try:
             if callable(close):
@@ -250,8 +233,6 @@ class TranslationManager:
         *,
         truncate: bool = False,
     ) -> str:
-        """Normalize source text for a caller that needs explicit preparation."""
-
         return self.text_normalizer.normalize(source_text, truncate=truncate)
 
     @staticmethod
@@ -263,39 +244,111 @@ class TranslationManager:
             return name.strip()
         return type(provider).__name__
 
+    @staticmethod
+    def _normalize_managed_provider_name(value: object) -> str:
+        normalized = str(value or "").strip().lower().replace("-", "_")
+        aliases = {
+            "google": "google_web",
+            "google_web": "google_web",
+            "youdao": "youdao_web",
+            "youdao_web": "youdao_web",
+        }
+        return aliases.get(normalized, DEFAULT_TRANSLATION_PROVIDER)
+
+    @staticmethod
+    def _config_value(
+        config: object,
+        section: str,
+        key: str,
+        default: object,
+    ) -> object:
+        getter = getattr(config, "get", None)
+        if callable(getter):
+            try:
+                return getter(section, key, default)
+            except TypeError:
+                pass
+        return getattr(config, f"{section}_{key}", default)
+
+    def _configured_provider_name(self) -> str:
+        return self._normalize_managed_provider_name(
+            self._config_value(
+                self.config_manager,
+                "translation",
+                "provider",
+                DEFAULT_TRANSLATION_PROVIDER,
+            )
+        )
+
+    def _build_managed_provider(self) -> TranslationProvider:
+        provider_name = self._configured_provider_name()
+        if provider_name == "youdao_web":
+            return YoudaoWebTranslationProvider(
+                config_manager=self.config_manager,
+                logger=self.logger,
+            )
+        return GoogleWebTranslationProvider(
+            config_manager=self.config_manager,
+            logger=self.logger,
+        )
+
     def _read_provider_signature(self) -> tuple[object, ...]:
         return (
+            self._configured_provider_name(),
             getattr(self.config_manager, "google_web_enabled", True),
             getattr(
                 self.config_manager,
                 "google_web_endpoint",
-                "https://translate.google.com/translate_a/single",
+                "https://translate.googleapis.com/translate_a/single",
             ),
             getattr(self.config_manager, "google_web_timeout_seconds", 8.0),
             getattr(self.config_manager, "google_web_max_retries", 0),
             getattr(self.config_manager, "google_web_min_interval_seconds", 0.0),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "enabled",
+                True,
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "endpoint",
+                "https://dict.youdao.com/webtranslate",
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "timeout_ms",
+                8000,
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "max_retries",
+                1,
+            ),
+            self._config_value(
+                self.config_manager,
+                "youdao_web",
+                "min_interval_ms",
+                200,
+            ),
         )
 
     def configure_provider(self, *, force: bool = False) -> bool:
-        """Apply the current web-provider configuration to future requests.
-
-        Changing the endpoint or request policy clears the in-memory cache so
-        a result produced under an older web configuration is not reused.
-        """
-
         if not self._provider_managed and not force:
             return False
         signature = self._read_provider_signature()
         if not force and signature == self._provider_signature:
             return False
+
         old_provider = self.provider
         close = getattr(old_provider, "close", None)
         if callable(close):
             close()
-        self.provider = GoogleWebTranslationProvider(
-            config_manager=self.config_manager,
-            logger=self.logger,
-        )
+
+        self.provider = self._build_managed_provider()
         self._provider_signature = signature
         self.cache.clear()
         self.logger.info(
@@ -315,8 +368,6 @@ class TranslationManager:
         sqlite_path: str | Path | None = None,
         history_enabled: bool | None = None,
     ) -> None:
-        """Apply common settings and then refresh the web provider."""
-
         self.configure_languages(source_language, target_language)
         self.configure_cache(
             enabled=cache_enabled,
@@ -334,8 +385,6 @@ class TranslationManager:
         target_language: str | None = None,
         request_id: int = 0,
     ) -> TranslationResult:
-        """Translate source text through the configured provider."""
-
         text = self.text_normalizer.normalize(source_text)
 
         request = TranslationRequest(
@@ -350,15 +399,30 @@ class TranslationManager:
             request.target_language,
             request.source_text,
         )
-        if cached_result is not None:
+        cache_provider_matches = (
+            cached_result is not None
+            and (
+                not self._provider_managed
+                or cached_result.provider == self.provider_name
+            )
+        )
+        if cache_provider_matches:
             self.logger.info("CACHE_HIT request_id=%s", request.request_id)
             return replace(
                 cached_result,
                 source_text=request.source_text,
                 request_id=request.request_id,
             )
+        if cached_result is not None:
+            self.logger.info(
+                "CACHE_PROVIDER_MISS request_id=%s cached_provider=%s active_provider=%s",
+                request.request_id,
+                cached_result.provider,
+                self.provider_name,
+            )
+        else:
+            self.logger.info("CACHE_MISS request_id=%s", request.request_id)
 
-        self.logger.info("CACHE_MISS request_id=%s", request.request_id)
         try:
             result = self.provider.translate(request)
         except TranslationError:
@@ -375,8 +439,6 @@ class TranslationManager:
             or not result.translated_text.strip()
         ):
             raise TranslationError("translated text is empty")
-        # The manager owns the request boundary. Providers may not know about
-        # the UI request version, so normalize the returned model here.
         if result.request_id != request.request_id:
             result = replace(result, request_id=request.request_id)
         self.cache.set(
@@ -388,8 +450,6 @@ class TranslationManager:
         return result
 
     def translate_request(self, request: TranslationRequest) -> TranslationResult:
-        """Translate an already-built request using the same validation path."""
-
         return self.translate(
             request.source_text,
             source_language=request.source_language,

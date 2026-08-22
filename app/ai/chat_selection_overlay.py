@@ -7,6 +7,7 @@ from typing import Any
 from PySide6.QtCore import QEvent, QPoint, Qt, QTimer
 from PySide6.QtGui import QAction
 
+from app.ai.browser_link_opener import prompt_and_open_url
 from app.ai.chat.models import ChatMessage
 from app.ai.chat_overlay import (
     ConversationalAIOverlayManager,
@@ -17,6 +18,9 @@ from app.overlay.context_menu import OVERLAY_THEMES, symbol_icon
 from app.overlay.drag_handle import OverlayDragHandle
 from app.overlay.positioning import PositionManager
 from app.overlay.window import OverlayWindow
+
+
+DEFAULT_CHAT_DISPLAY_FONT_SIZE = 13
 
 
 class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindow):
@@ -71,6 +75,10 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._chat_panel.regenerate_requested.connect(
             lambda content: self.context_action.emit("ai_chat_regenerate", content)
         )
+        self._chat_panel.display_font_size_changed.connect(
+            self._set_chat_display_font_size
+        )
+        self._chat_panel.link_open_requested.connect(self._open_chat_link)
 
         self._chat_panel.title_label.installEventFilter(self)
         self._drag_handle = OverlayDragHandle(self._header)
@@ -102,6 +110,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
             self._sync_chat_selection_capture_action
         )
         self._sync_chat_selection_capture_action()
+        self._apply_configured_chat_font_size()
 
         self._apply_theme(self._theme_name)
         self._resize_to_content()
@@ -117,6 +126,35 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
     @property
     def chat_selection_capture_action(self) -> QAction:
         return self._chat_capture_action
+
+    def _configured_chat_font_size(self) -> int:
+        get = getattr(self._chat_config_manager, "get", None)
+        if not callable(get):
+            return DEFAULT_CHAT_DISPLAY_FONT_SIZE
+        value = get("ai", "chat_font_size", DEFAULT_CHAT_DISPLAY_FONT_SIZE)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_CHAT_DISPLAY_FONT_SIZE
+
+    def _apply_configured_chat_font_size(self) -> int:
+        self._chat_panel.set_display_font_size(self._configured_chat_font_size())
+        return int(self._chat_panel.display_font_size)
+
+    def _set_chat_display_font_size(self, size: int) -> None:
+        self._chat_panel.set_display_font_size(size)
+        resolved = int(self._chat_panel.display_font_size)
+        save = getattr(self._chat_config_manager, "save", None)
+        if callable(save):
+            try:
+                save({"ai": {"chat_font_size": resolved}})
+            except (OSError, TypeError, ValueError):
+                pass
+        if self._chat_open:
+            self._resize_to_content(animate=False)
+
+    def _open_chat_link(self, url: str) -> None:
+        prompt_and_open_url(self, url)
 
     def _position_drag_handle(self) -> None:
         handle = getattr(self, "_drag_handle", None)
@@ -183,6 +221,7 @@ class SelectionCaptureConversationalAIOverlayWindow(ConversationalAIOverlayWindo
         self._chat_panel.set_context(source_text, translated_text)
         self._chat_panel.set_identity(provider, model)
         self._chat_panel.set_messages(messages)
+        self._apply_configured_chat_font_size()
         self._chat_panel.show()
 
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, False)
@@ -358,6 +397,7 @@ class SelectionCaptureConversationalAIOverlayManager(ConversationalAIOverlayMana
 
 
 __all__ = [
+    "DEFAULT_CHAT_DISPLAY_FONT_SIZE",
     "SelectionCaptureConversationalAIOverlayManager",
     "SelectionCaptureConversationalAIOverlayWindow",
 ]

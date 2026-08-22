@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, QSize, Qt
 from PySide6.QtWidgets import QHBoxLayout, QToolButton
 
 from app.ai.chat.ui import OverlayChatPanel
+from app.ui.design_tokens import CONTROL, ICON, RADIUS
+from app.ui.svg_icons import svg_icon
 
 
 class SelectionCaptureChatPanel(OverlayChatPanel):
@@ -22,14 +24,20 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
 
         self.undo_selection_button = QToolButton(self)
         self.undo_selection_button.setObjectName("OverlayChatUndoSelectionButton")
-        self.undo_selection_button.setText("↶")
+        self.undo_selection_button.setText("")
         self.undo_selection_button.setToolTip("撤销最近一次划词输入")
         self.undo_selection_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.undo_selection_button.setFixedSize(44, 44)
+        self.undo_selection_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self.undo_selection_button.setIconSize(QSize(ICON.md, ICON.md))
+        self.undo_selection_button.setFixedSize(
+            CONTROL.large_height,
+            CONTROL.large_height,
+        )
         self.undo_selection_button.setEnabled(False)
         self.undo_selection_button.clicked.connect(
             lambda _checked=False: self.undo_last_selection_input()
         )
+        self._update_undo_icon()
 
         root = self.layout()
         input_item = root.itemAt(root.count() - 1) if root is not None else None
@@ -75,6 +83,11 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
             self._last_auto_insert_snapshot is not None
             and self.input_edit.isEnabled()
         )
+
+    def _update_undo_icon(self) -> None:
+        palette = getattr(self, "_palette", {})
+        color = palette.get("chrome_muted_text", palette.get("muted_text", "#CBD5E1"))
+        self.undo_selection_button.setIcon(svg_icon("undo", color, size=ICON.md))
 
     def insert_selected_text(self, text: object) -> bool:
         """Insert one captured selection at the cursor and expose one-step undo."""
@@ -134,6 +147,7 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
 
     def apply_palette(self, palette: dict[str, str]) -> None:
         super().apply_palette(palette)
+        self._update_undo_icon()
         self.setStyleSheet(
             self.styleSheet()
             + f"""
@@ -141,8 +155,7 @@ class SelectionCaptureChatPanel(OverlayChatPanel):
                 color: {palette['text']};
                 background-color: {palette['menu_background']};
                 border: 1px solid {palette['border']};
-                border-radius: 7px;
-                font-size: 18px;
+                border-radius: {RADIUS.sm}px;
             }}
             QToolButton#OverlayChatUndoSelectionButton:hover:enabled {{
                 border-color: {palette['accent']};

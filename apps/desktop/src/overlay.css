@@ -1,0 +1,380 @@
+/*
+ * Windows clips the native overlay with SetWindowRgn. Keep the surface flush
+ * with that region and opaque so WebView2 cannot reveal its ghost titlebar
+ * during native dragging or focus changes.
+ */
+html[data-ait-view="overlay"] .ait-overlay-root {
+  padding: 0 !important;
+  background: #17171a !important;
+}
+
+/*
+ * The overlay uses a dark glass surface. Keep every scrollable child on the
+ * same visual system instead of letting the host WebView paint a bright,
+ * native-looking scrollbar over the panel.
+ */
+html[data-ait-view="overlay"] {
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 229, 236, 0.42) transparent;
+}
+
+html[data-ait-view="overlay"] *,
+html[data-ait-view="overlay"] *::before,
+html[data-ait-view="overlay"] *::after {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 229, 236, 0.42) transparent;
+}
+
+html[data-ait-view="overlay"] *::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+html[data-ait-view="overlay"] *::-webkit-scrollbar-track,
+html[data-ait-view="overlay"] *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html[data-ait-view="overlay"] *::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(229, 229, 236, 0.42);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  transition: background-color 160ms ease, box-shadow 160ms ease;
+}
+
+html[data-ait-view="overlay"] *::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 245, 250, 0.62);
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+html[data-ait-view="overlay"] *::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.74);
+  background-clip: padding-box;
+}
+
+html[data-ait-view="overlay"] *::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell {
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  background:
+    linear-gradient(155deg, #252528, #17171a 56%, #111113) !important;
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.28),
+    0 4px 14px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055) !important;
+  transform-origin: 50% 16%;
+  transition:
+    transform 180ms var(--ait-ease-spring),
+    box-shadow 220ms var(--ait-ease-standard),
+    border-color 180ms var(--ait-ease-standard);
+  will-change: transform;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell.ait-overlay-near-enter {
+  animation: ait-overlay-near-enter 280ms var(--ait-ease-spring) both;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-drag-handle {
+  transition:
+    color 160ms var(--ait-ease-standard),
+    transform 180ms var(--ait-ease-spring);
+}
+
+html[data-ait-view="overlay"] header:hover .ait-overlay-drag-handle {
+  color: rgba(235, 235, 245, 0.48) !important;
+  transform: translateX(1px);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface {
+  flex: 0 0 auto;
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.065) !important;
+  background: rgba(255, 255, 255, 0.022);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.022);
+}
+
+/*
+ * Assistant-first overlay layout.
+ *
+ * In assistant mode the companion chat is the overlay itself, not a secondary
+ * panel under the old translation body. Keep the native window compact,
+ * remove duplicate chrome, and make the composer visible immediately. The
+ * selected text remains in the textarea through the runtime's initialDraft.
+ */
+html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > div.min-h-0.flex-1,
+html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > footer {
+  display: none !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > header p.mt-1 {
+  display: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  border-top: 0 !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  border-bottom: 0 !important;
+  background: transparent;
+}
+
+/* The outer AITranslator header is the only title bar in assistant mode. */
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div:first-child {
+  display: none !important;
+}
+
+/* Keep a small scrollable conversation viewport instead of a 220px empty pad. */
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.relative {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.relative > div:first-child {
+  height: 104px !important;
+  min-height: 72px;
+  max-height: 128px;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.relative + div,
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.border-t {
+  flex: 0 0 auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-bar {
+  min-height: 50px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-bar > div:first-child {
+  scrollbar-width: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-bar > div:first-child::-webkit-scrollbar {
+  display: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button {
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(242, 242, 247, 0.76);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition:
+    transform 150ms var(--ait-ease-control),
+    color 200ms var(--ait-ease-standard),
+    background-color 200ms var(--ait-ease-standard),
+    border-color 200ms var(--ait-ease-standard),
+    box-shadow 220ms var(--ait-ease-standard);
+  will-change: transform;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.135);
+  background: rgba(255, 255, 255, 0.085);
+  color: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    0 5px 14px rgba(0, 0, 0, 0.12);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button:active:not(:disabled) {
+  transform: translateY(0) scale(0.972);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button.is-active {
+  border-color: rgba(140, 200, 255, 0.2);
+  background: rgba(100, 181, 246, 0.12);
+  color: rgba(225, 243, 255, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(100, 181, 246, 0.025);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-morph,
+html[data-ait-view="overlay"] .ait-overlay-more-morph {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translateY(4px) scale(0.995);
+  transition:
+    grid-template-rows 300ms var(--ait-ease-spring),
+    opacity 180ms var(--ait-ease-standard),
+    transform 280ms var(--ait-ease-spring);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-morph-inner,
+html[data-ait-view="overlay"] .ait-overlay-more-morph-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-result-open .ait-overlay-result-morph,
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-more-open .ait-overlay-more-morph {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs {
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  background: rgba(0, 0, 0, 0.14);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs button {
+  color: rgba(235, 235, 245, 0.48);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs button:hover {
+  color: rgba(245, 245, 247, 0.78);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-tabs button.bg-white\/10 {
+  background: rgba(255, 255, 255, 0.09) !important;
+  color: rgba(255, 255, 255, 0.94) !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-result-content {
+  scrollbar-gutter: stable;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-quiet-button {
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(235, 235, 245, 0.48);
+  transition:
+    background-color 180ms var(--ait-ease-standard),
+    border-color 180ms var(--ait-ease-standard),
+    color 180ms var(--ait-ease-standard),
+    transform 140ms var(--ait-ease-control),
+    box-shadow 180ms var(--ait-ease-standard);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-quiet-button:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.075);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-quiet-button:active {
+  transform: scale(0.965);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-quiet-button.is-copied,
+html[data-ait-view="overlay"] .ait-overlay-copy-button.is-copied {
+  border-color: rgba(110, 231, 183, 0.16) !important;
+  background: rgba(52, 211, 153, 0.11) !important;
+  color: rgba(209, 250, 229, 0.94) !important;
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.025);
+  animation: ait-overlay-copy-confirm 260ms var(--ait-ease-spring) both;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-copy-button {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(245, 245, 247, 0.78);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-copy-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.095);
+  color: rgba(255, 255, 255, 0.94);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-copy-button:active {
+  transform: scale(0.97);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-toast {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(44, 44, 48, 0.94);
+  color: rgba(235, 235, 245, 0.68);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: ait-overlay-toast-enter 220ms var(--ait-ease-spring) both;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-context-menu {
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  background: rgba(38, 38, 41, 0.94) !important;
+  box-shadow:
+    0 22px 60px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045) !important;
+  backdrop-filter: blur(28px) saturate(110%);
+  -webkit-backdrop-filter: blur(28px) saturate(110%);
+}
+
+@keyframes ait-overlay-near-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(7px) scale(0.982);
+  }
+  68% {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ait-overlay-copy-confirm {
+  0% {
+    transform: scale(0.94);
+  }
+  70% {
+    transform: scale(1.025);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes ait-overlay-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-ait-view="overlay"] .ait-overlay-result-morph,
+  html[data-ait-view="overlay"] .ait-overlay-more-morph,
+  html[data-ait-view="overlay"] .ait-overlay-shell,
+  html[data-ait-view="overlay"] .ait-overlay-action-button,
+  html[data-ait-view="overlay"] .ait-overlay-copy-button,
+  html[data-ait-view="overlay"] .ait-overlay-quiet-button {
+    transform: none;
+  }
+}

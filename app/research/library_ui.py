@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from app.overlay.context_menu import OVERLAY_THEMES
 from app.research.notes import ResearchNote
+from app.ui.design_tokens import CONTROL, RADIUS, SPACING, TYPOGRAPHY
 
 
 class ResearchNotesLibraryWindow(QDialog):
@@ -42,8 +43,8 @@ class ResearchNotesLibraryWindow(QDialog):
         self._palette = dict(palette or OVERLAY_THEMES["dark"])
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
-        root.setSpacing(10)
+        root.setContentsMargins(SPACING.lg, SPACING.lg, SPACING.lg, SPACING.lg)
+        root.setSpacing(SPACING.sm)
 
         header = QHBoxLayout()
         title = QLabel("Research Notes", self)
@@ -51,7 +52,7 @@ class ResearchNotesLibraryWindow(QDialog):
         subtitle = QLabel("把阅读、翻译和 AI 理解沉淀为可检索的个人研究记忆", self)
         subtitle.setObjectName("ResearchNotesSubtitle")
         header_text = QVBoxLayout()
-        header_text.setSpacing(1)
+        header_text.setSpacing(SPACING.xxs)
         header_text.addWidget(title)
         header_text.addWidget(subtitle)
         header.addLayout(header_text, 1)
@@ -60,6 +61,7 @@ class ResearchNotesLibraryWindow(QDialog):
         self.search_edit.setPlaceholderText("搜索文献、章节、原文、AI 结果或个人笔记…")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setMinimumWidth(310)
+        self.search_edit.setMinimumHeight(CONTROL.normal_height)
         header.addWidget(self.search_edit)
         root.addLayout(header)
 
@@ -70,22 +72,27 @@ class ResearchNotesLibraryWindow(QDialog):
         left = QFrame(splitter)
         left.setObjectName("ResearchNotesListPane")
         left_layout = QVBoxLayout(left)
-        left_layout.setContentsMargins(8, 8, 8, 8)
-        left_layout.setSpacing(6)
+        left_layout.setContentsMargins(SPACING.sm, SPACING.sm, SPACING.sm, SPACING.sm)
+        left_layout.setSpacing(SPACING.xs)
         self.result_label = QLabel("0 条笔记", left)
         self.result_label.setObjectName("ResearchNotesResultCount")
         left_layout.addWidget(self.result_label)
         self.notes_list = QListWidget(left)
         self.notes_list.setObjectName("ResearchNotesList")
-        self.notes_list.setSpacing(2)
+        self.notes_list.setSpacing(SPACING.xxs)
         left_layout.addWidget(self.notes_list, 1)
         splitter.addWidget(left)
 
         right = QFrame(splitter)
         right.setObjectName("ResearchNotesDetailPane")
         right_layout = QVBoxLayout(right)
-        right_layout.setContentsMargins(12, 10, 12, 10)
-        right_layout.setSpacing(7)
+        right_layout.setContentsMargins(
+            SPACING.md,
+            SPACING.sm,
+            SPACING.md,
+            SPACING.sm,
+        )
+        right_layout.setSpacing(SPACING.sm)
 
         self.detail_title = QLabel("选择一条研究笔记", right)
         self.detail_title.setObjectName("ResearchNoteDetailTitle")
@@ -117,6 +124,7 @@ class ResearchNotesLibraryWindow(QDialog):
         right_layout.addWidget(self.user_note_edit)
 
         actions = QHBoxLayout()
+        actions.setSpacing(SPACING.sm)
         self.open_source_button = QPushButton("打开来源", right)
         self.open_source_button.setObjectName("ResearchNoteOpenSource")
         self.save_button = QPushButton("保存我的笔记", right)
@@ -125,6 +133,13 @@ class ResearchNotesLibraryWindow(QDialog):
         self.delete_button.setObjectName("ResearchNoteDelete")
         self.close_button = QPushButton("关闭", right)
         self.close_button.setObjectName("ResearchNotesClose")
+        for button in (
+            self.open_source_button,
+            self.save_button,
+            self.delete_button,
+            self.close_button,
+        ):
+            button.setMinimumHeight(CONTROL.normal_height)
         actions.addWidget(self.open_source_button)
         actions.addStretch(1)
         actions.addWidget(self.delete_button)
@@ -255,52 +270,81 @@ class ResearchNotesLibraryWindow(QDialog):
         self.setStyleSheet(
             f"""
             QDialog#ResearchNotesLibraryWindow {{
-                background: {p['menu_background']}; color: {p['text']};
+                background: {p['menu_background']};
+                color: {p['text']};
             }}
             QLabel#ResearchNotesTitle {{
-                color: {p['text']}; font-size: 22px; font-weight: 650;
+                color: {p['text']};
+                font-size: {TYPOGRAPHY.title_large}px;
+                font-weight: {TYPOGRAPHY.weight_semibold};
             }}
             QLabel#ResearchNotesSubtitle,
             QLabel#ResearchNotesResultCount,
-            QLabel#ResearchNoteDetailMeta {{ color: {p['muted_text']}; }}
+            QLabel#ResearchNoteDetailMeta {{
+                color: {p['muted_text']};
+                font-size: {TYPOGRAPHY.caption}px;
+            }}
             QFrame#ResearchNotesListPane,
             QFrame#ResearchNotesDetailPane {{
                 background: {p['label_background']};
-                border: 1px solid {p['border']}; border-radius: 10px;
+                border: 1px solid {p['border']};
+                border-radius: {RADIUS.lg}px;
             }}
-            QLineEdit#ResearchNotesSearch, QPlainTextEdit {{
-                color: {p['text']}; background: {p['menu_background']};
-                border: 1px solid {p['border']}; border-radius: 8px;
-                padding: 7px 9px; selection-background-color: {p['accent']};
+            QLineEdit#ResearchNotesSearch,
+            QPlainTextEdit {{
+                color: {p['text']};
+                background: {p['menu_background']};
+                border: 1px solid {p['border']};
+                border-radius: {RADIUS.md}px;
+                padding: {SPACING.sm}px {SPACING.sm}px;
+                selection-background-color: {p['accent']};
+                font-size: {TYPOGRAPHY.body}px;
             }}
             QListWidget#ResearchNotesList {{
-                color: {p['muted_text']}; background: transparent;
-                border: none; outline: none;
+                color: {p['muted_text']};
+                background: transparent;
+                border: none;
+                outline: none;
+                font-size: {TYPOGRAPHY.body}px;
             }}
             QListWidget#ResearchNotesList::item {{
-                border-radius: 7px; padding: 8px; margin: 1px 0;
+                border-radius: {RADIUS.sm}px;
+                padding: {SPACING.sm}px;
+                margin: {SPACING.xxs}px 0;
             }}
             QListWidget#ResearchNotesList::item:selected {{
-                color: {p['text']}; background: {p['hover']};
+                color: {p['text']};
+                background: {p['hover']};
             }}
             QLabel#ResearchNoteDetailTitle {{
-                color: {p['text']}; font-size: 18px; font-weight: 620;
+                color: {p['text']};
+                font-size: {TYPOGRAPHY.title}px;
+                font-weight: {TYPOGRAPHY.weight_semibold};
             }}
             QLabel#ResearchNoteSectionLabel {{
-                color: {p['accent']}; font-size: 11px; font-weight: 600;
+                color: {p['accent']};
+                font-size: {TYPOGRAPHY.caption}px;
+                font-weight: {TYPOGRAPHY.weight_semibold};
             }}
             QPushButton {{
-                color: {p['text']}; background: transparent;
-                border: 1px solid {p['border']}; border-radius: 7px;
-                padding: 7px 12px;
+                color: {p['text']};
+                background: transparent;
+                border: 1px solid {p['border']};
+                border-radius: {RADIUS.sm}px;
+                padding: {SPACING.xs}px {SPACING.md}px;
+                font-size: {TYPOGRAPHY.body}px;
             }}
             QPushButton:hover:enabled {{
-                background: {p['hover']}; border-color: {p['accent']};
+                background: {p['hover']};
+                border-color: {p['accent']};
             }}
             QPushButton#ResearchNoteSaveUserNote {{
-                color: {p['text']}; background: {p['hover']};
+                color: {p['text']};
+                background: {p['hover']};
             }}
-            QPushButton:disabled {{ color: {p['muted_text']}; }}
+            QPushButton:disabled {{
+                color: {p['muted_text']};
+            }}
             """
         )
 

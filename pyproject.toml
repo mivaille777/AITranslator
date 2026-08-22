@@ -9,20 +9,24 @@ description = "A Windows desktop selection translation overlay application."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
-    # 6.7.3 is the tested Windows baseline for this project. Later wheels
-    # require an ICU runtime that is not bundled consistently on Windows.
+    # 6.7.3 is the tested Windows baseline for the legacy desktop UI during migration.
     "PySide6==6.7.3",
     "pywin32>=306",
     "pynput>=1.7.6",
     "cachetools>=5.3",
     "certifi>=2024.8.30",
+    # Web-compatible translation providers use a persistent browser-like HTTP session.
+    "requests>=2.32,<3",
+    # Youdao WebFanyi returns an AES-CBC encrypted response body.
+    "pycryptodome>=3.20,<4",
     "uiautomation>=2.0.18",
     "openai>=1.0",
-    # LangGraph is the stateful orchestration layer for chat/workspace/tool
-    # execution. Keep the 1.2 line stable instead of following breaking majors.
+    "fastapi>=0.116,<1",
+    "pydantic>=2.10,<3",
+    "uvicorn[standard]>=0.35,<1",
+    # LangGraph is the stateful orchestration layer for chat/workspace/tool execution.
     "langgraph>=1.2,<1.3",
-    # Local Document Agent tools. PDF/DOCX parsing stays deterministic and
-    # runs in the existing QThreadPool rather than inside the LLM provider.
+    # Local Document Agent tools. PDF/DOCX parsing remains deterministic.
     "pypdf>=5.0,<6",
     "python-docx>=1.1,<2",
 ]
@@ -31,6 +35,8 @@ dependencies = [
 dev = [
     "pytest>=7.4",
     "pytest-qt>=4.2",
+    "httpx>=0.27,<1",
+    "ruff>=0.12,<1",
 ]
 build = [
     "pyinstaller>=6.10,<7",
@@ -38,9 +44,10 @@ build = [
 
 [project.scripts]
 desktop-translator = "app.main:main"
+aitrans-backend = "backend.main:main"
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "backend*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

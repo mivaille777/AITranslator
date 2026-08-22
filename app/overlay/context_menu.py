@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, Qt, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction, QActionGroup, QIcon
 from PySide6.QtWidgets import (
     QFrame,
     QMenu,
@@ -15,38 +15,22 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from app.ui.design_tokens import (
+    CONTROL,
+    ICON,
+    LAYOUT,
+    RADIUS,
+    SPACING,
+    THEMES,
+    legacy_overlay_palette,
+)
+from app.ui.svg_icons import icon_names, svg_icon
 
+
+# Compatibility facade for code written before the design system. The actual
+# theme source of truth now lives in app.ui.design_tokens.
 OVERLAY_THEMES: dict[str, dict[str, str]] = {
-    "dark": {
-        "label_background": "rgba(30, 41, 59, 242)",
-        "menu_background": "#1E293B",
-        "text": "#F8FAFC",
-        "muted_text": "#CBD5E1",
-        "border": "#334155",
-        "hover": "#334155",
-        "accent": "#60A5FA",
-        "shadow": "rgba(0, 0, 0, 165)",
-    },
-    "soft": {
-        "label_background": "rgba(43, 47, 54, 242)",
-        "menu_background": "#2B2F36",
-        "text": "#F5F7FA",
-        "muted_text": "#D5DAE2",
-        "border": "#494F5A",
-        "hover": "#494F5A",
-        "accent": "#AEB9C9",
-        "shadow": "rgba(0, 0, 0, 150)",
-    },
-    "contrast": {
-        "label_background": "rgba(13, 17, 23, 248)",
-        "menu_background": "#0D1117",
-        "text": "#00E6B8",
-        "muted_text": "#B7FFF1",
-        "border": "#00E6B8",
-        "hover": "#173C3A",
-        "accent": "#00E6B8",
-        "shadow": "rgba(0, 0, 0, 190)",
-    },
+    name: legacy_overlay_palette(name) for name in THEMES
 }
 
 THEME_LABELS = {
@@ -70,15 +54,62 @@ LANGUAGE_OPTIONS = (
     ("zh-CN", "中文", "中文"),
 )
 
-# The Settings submenu is intentionally bounded. As new settings actions are
-# added, only this many rows remain visible and a native vertical scrollbar is
-# used for the remaining entries instead of allowing the menu to grow beyond
-# the desktop work area.
-SETTINGS_MENU_MAX_VISIBLE_ITEMS = 6
-SETTINGS_MENU_ITEM_HEIGHT = 38
-SETTINGS_MENU_MIN_WIDTH = 260
-SETTINGS_MENU_MAX_HEIGHT = 260
-SETTINGS_MENU_OUTER_MARGIN = 8
+# Keep the public constants for compatibility, but derive their values from the
+# shared design system so menu metrics no longer drift independently.
+SETTINGS_MENU_MAX_VISIBLE_ITEMS = LAYOUT.menu_visible_items
+SETTINGS_MENU_ITEM_HEIGHT = CONTROL.normal_height + SPACING.xxs
+SETTINGS_MENU_MIN_WIDTH = LAYOUT.menu_min_width
+SETTINGS_MENU_MAX_HEIGHT = LAYOUT.menu_max_height
+SETTINGS_MENU_OUTER_MARGIN = SPACING.sm
+
+_ACTION_ICON_NAMES: dict[str, str] = {
+    "copy_original": "copy",
+    "copy_translation": "copy",
+    "ai_translate": "translate",
+    "ai_polish": "edit",
+    "hide": "hide",
+    "lock_position": "lock",
+    "always_on_top": "pin",
+    "show_original": "eye",
+    "settings": "settings",
+    "ai_settings": "sparkle",
+    "about": "info",
+    "exit": "power",
+}
+
+# Transitional bridge for large legacy surfaces such as OverlayWindow. Existing
+# callers can keep passing their old glyph token while the renderer is already
+# SVG-based. New code should call svg_icon() with a semantic name directly.
+_LEGACY_SYMBOL_ICON_NAMES: dict[str, str] = {
+    "☰": "menu",
+    "…": "more",
+    "⋯": "more",
+    "▣": "copy",
+    "▤": "copy",
+    "＋": "add",
+    "+": "add",
+    "←": "back",
+    "⌫": "delete",
+    "■": "stop",
+    "↻": "refresh",
+    "↶": "undo",
+    "✦": "sparkle",
+    "译": "translate",
+    "✎": "edit",
+    "◌": "hide",
+    "⌖": "lock",
+    "↥": "pin",
+    "文": "document",
+    "◐": "opacity",
+    "◒": "sparkle",
+    "A": "font",
+    "⚙": "settings",
+    "ⓘ": "info",
+    "⏻": "power",
+    "记": "note",
+    "库": "library",
+    "簿": "history",
+}
 
 
 def normalize_language_code(value: object, *, fallback: str = "auto") -> str:
@@ -116,29 +147,14 @@ def language_display_name(
     return f"{source_compact} → {target_label}"
 
 
-def _symbol_icon(symbol: str, color: str, size: int = 18) -> QIcon:
-    """Create a small self-contained line-style icon without external assets."""
+def symbol_icon(symbol: str, color: str, size: int = ICON.md) -> QIcon:
+    """Compatibility wrapper that renders legacy glyph tokens as local SVG."""
 
-    icon_size = max(12, int(size))
-    pixmap = QPixmap(icon_size, icon_size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setPen(QColor(color))
-    painter.setFont(QFont("Segoe UI Symbol", max(10, round(icon_size * 0.62))))
-    painter.drawText(
-        QRect(0, 0, icon_size, icon_size),
-        Qt.AlignmentFlag.AlignCenter,
-        symbol,
-    )
-    painter.end()
-    return QIcon(pixmap)
-
-
-def symbol_icon(symbol: str, color: str, size: int = 18) -> QIcon:
-    """Return a generated glyph icon for compact Overlay controls."""
-
-    return _symbol_icon(symbol, color, size)
+    candidate = str(symbol or "").strip()
+    semantic = _LEGACY_SYMBOL_ICON_NAMES.get(candidate)
+    if semantic is None and candidate.lower() in icon_names():
+        semantic = candidate.lower()
+    return svg_icon(semantic or "document", color, size=size)
 
 
 class ScrollableSettingsMenu(QMenu):
@@ -160,7 +176,7 @@ class ScrollableSettingsMenu(QMenu):
         max_visible_items: int = SETTINGS_MENU_MAX_VISIBLE_ITEMS,
     ) -> None:
         super().__init__(title, parent)
-        self._max_height = max(120, int(max_height))
+        self._max_height = max(CONTROL.large_height * 3, int(max_height))
         self._max_visible_items = max(1, int(max_visible_items))
         self._buttons: list[QToolButton] = []
         self._content_height = 0
@@ -184,8 +200,13 @@ class ScrollableSettingsMenu(QMenu):
         self._scroll_content = QWidget(self._scroll_area)
         self._scroll_content.setObjectName("OverlaySettingsScrollContent")
         self._scroll_layout = QVBoxLayout(self._scroll_content)
-        self._scroll_layout.setContentsMargins(4, 4, 4, 4)
-        self._scroll_layout.setSpacing(1)
+        self._scroll_layout.setContentsMargins(
+            SPACING.xs,
+            SPACING.xs,
+            SPACING.xs,
+            SPACING.xs,
+        )
+        self._scroll_layout.setSpacing(SPACING.xxs)
         self._scroll_area.setWidget(self._scroll_content)
 
         self._scroll_action = QWidgetAction(self)
@@ -249,7 +270,7 @@ class ScrollableSettingsMenu(QMenu):
         natural_viewport_height = (
             SETTINGS_MENU_OUTER_MARGIN + visible_rows + visible_gaps
         )
-        max_viewport_height = max(1, self._max_height - 16)
+        max_viewport_height = max(1, self._max_height - SPACING.lg)
         self._viewport_height = min(natural_viewport_height, max_viewport_height)
         if count == 0:
             self._viewport_height = 1
@@ -270,14 +291,14 @@ class ScrollableSettingsMenu(QMenu):
             }}
             QScrollBar:vertical {{
                 background: {palette['menu_background']};
-                width: 9px;
-                margin: 4px 1px 4px 1px;
+                width: {RADIUS.lg}px;
+                margin: {SPACING.xs}px {SPACING.xxs}px;
                 border: none;
             }}
             QScrollBar::handle:vertical {{
                 background: {palette['border']};
-                min-height: 24px;
-                border-radius: 4px;
+                min-height: {ICON.xl}px;
+                border-radius: {RADIUS.xs}px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background: {palette['accent']};
@@ -301,8 +322,8 @@ class ScrollableSettingsMenu(QMenu):
                 background-color: transparent;
                 color: {palette['text']};
                 border: none;
-                border-radius: 5px;
-                padding: 6px 10px;
+                border-radius: {RADIUS.sm}px;
+                padding: {SPACING.sm}px {SPACING.md}px;
                 text-align: left;
             }}
             QToolButton:hover {{
@@ -374,54 +395,46 @@ class OverlayContextMenu(QMenu):
         return dict(self._source_language_actions)
 
     def _build(self) -> None:
-        self._add_action(
-            "复制原文",
-            "copy_original",
-            symbol="▣",
-        )
-        self._add_action(
-            "复制译文",
-            "copy_translation",
-            symbol="▤",
-        )
+        self._add_action("复制原文", "copy_original", icon_name="copy")
+        self._add_action("复制译文", "copy_translation", icon_name="copy")
 
-        self._ai_menu = self._make_submenu("AI 助手", "AI", "✦")
+        self._ai_menu = self._make_submenu("AI 助手", "AI", "sparkle")
         self._add_submenu_action(
             self._ai_menu,
             "AI 翻译",
             "ai_translate",
-            symbol="译",
+            icon_name="translate",
         )
         self._add_submenu_action(
             self._ai_menu,
             "AI 润色",
             "ai_polish",
-            symbol="✎",
+            icon_name="edit",
         )
         self.addSeparator()
 
-        self._add_action("隐藏悬浮窗", "hide", symbol="◌")
+        self._add_action("隐藏悬浮窗", "hide", icon_name="hide")
         self._add_action(
             "锁定位置",
             "lock_position",
             checkable=True,
-            symbol="⌖",
+            icon_name="lock",
         )
         self._add_action(
             "置顶显示",
             "always_on_top",
             checkable=True,
-            symbol="↥",
+            icon_name="pin",
         )
         self._add_action(
             "显示原文",
             "show_original",
             checkable=True,
-            symbol="文",
+            icon_name="eye",
         )
         self.addSeparator()
 
-        self._language_menu = self._make_submenu("翻译语言", "Language", "文")
+        self._language_menu = self._make_submenu("翻译语言", "Language", "language")
         target_action = QAction(
             f"目标语言：{TARGET_LANGUAGE_LABEL}",
             self._language_menu,
@@ -451,7 +464,7 @@ class OverlayContextMenu(QMenu):
             self._make_opacity_submenu(
                 "背景透明度",
                 "BackgroundOpacity",
-                "◐",
+                "opacity",
                 "background_opacity",
             )
         )
@@ -459,12 +472,12 @@ class OverlayContextMenu(QMenu):
             self._make_opacity_submenu(
                 "字体透明度",
                 "TextOpacity",
-                "A",
+                "font",
                 "text_opacity",
             )
         )
 
-        self._font_size_menu = self._make_submenu("字体大小", "FontSize", "A")
+        self._font_size_menu = self._make_submenu("字体大小", "FontSize", "font")
         font_group = QActionGroup(self)
         font_group.setExclusive(True)
         for size in FONT_SIZE_OPTIONS:
@@ -480,10 +493,10 @@ class OverlayContextMenu(QMenu):
             self._font_size_menu.addAction(action)
             self._font_size_actions[size] = action
 
-        self._theme_menu = self._make_submenu("主题切换", "Theme", "◒")
+        self._theme_menu = self._make_submenu("主题切换", "Theme", "sparkle")
         theme_group = QActionGroup(self)
         theme_group.setExclusive(True)
-        for name in ("dark", "soft", "contrast"):
+        for name in THEMES:
             action = QAction(THEME_LABELS[name], self._theme_menu)
             action.setCheckable(True)
             action.triggered.connect(
@@ -500,23 +513,23 @@ class OverlayContextMenu(QMenu):
         self._settings_menu = self._make_scrollable_settings_submenu(
             "设置",
             "Settings",
-            "⚙",
+            "settings",
         )
         self._add_submenu_action(
             self._settings_menu,
             "常规设置...",
             "settings",
-            symbol="⚙",
+            icon_name="settings",
         )
         self._add_submenu_action(
             self._settings_menu,
             "AI 大模型与 API Key...",
             "ai_settings",
-            symbol="✦",
+            icon_name="sparkle",
         )
-        self._add_action("关于", "about", symbol="ⓘ")
+        self._add_action("关于", "about", icon_name="info")
         self.addSeparator()
-        self._add_action("退出", "exit", symbol="⏻")
+        self._add_action("退出", "exit", icon_name="power")
 
     def _add_action(
         self,
@@ -524,13 +537,13 @@ class OverlayContextMenu(QMenu):
         key: str,
         *,
         checkable: bool = False,
-        symbol: str | None = None,
+        icon_name: str | None = None,
     ) -> QAction:
         action = QAction(text, self)
         action.setObjectName(f"OverlayContext{key.title().replace('_', '')}Action")
         action.setCheckable(checkable)
-        if symbol:
-            action.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
+        if icon_name:
+            action.setIcon(svg_icon(icon_name, OVERLAY_THEMES["dark"]["text"]))
         action.triggered.connect(
             lambda checked=False, action_key=key: self._emit(
                 action_key,
@@ -547,14 +560,14 @@ class OverlayContextMenu(QMenu):
         text: str,
         key: str,
         *,
-        symbol: str | None = None,
+        icon_name: str | None = None,
     ) -> QAction:
         """Add a semantic action to a submenu while keeping one action index."""
 
         action = QAction(text, menu)
         action.setObjectName(f"OverlayContext{key.title().replace('_', '')}Action")
-        if symbol:
-            action.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
+        if icon_name:
+            action.setIcon(svg_icon(icon_name, OVERLAY_THEMES["dark"]["text"]))
         action.triggered.connect(
             lambda _checked=False, action_key=key: self._emit(action_key, None)
         )
@@ -565,10 +578,10 @@ class OverlayContextMenu(QMenu):
         self._actions[key] = action
         return action
 
-    def _make_submenu(self, title: str, key: str, symbol: str) -> QMenu:
+    def _make_submenu(self, title: str, key: str, icon_name: str) -> QMenu:
         menu = QMenu(title, self)
         menu.setObjectName(f"OverlayContext{key}Menu")
-        menu.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
+        menu.setIcon(svg_icon(icon_name, OVERLAY_THEMES["dark"]["text"]))
         self.addMenu(menu)
         self._menus.append(menu)
         return menu
@@ -577,11 +590,11 @@ class OverlayContextMenu(QMenu):
         self,
         title: str,
         key: str,
-        symbol: str,
+        icon_name: str,
     ) -> ScrollableSettingsMenu:
         menu = ScrollableSettingsMenu(title, self)
         menu.setObjectName(f"OverlayContext{key}Menu")
-        menu.setIcon(_symbol_icon(symbol, OVERLAY_THEMES["dark"]["text"]))
+        menu.setIcon(svg_icon(icon_name, OVERLAY_THEMES["dark"]["text"]))
         self.addMenu(menu)
         self._menus.append(menu)
         return menu
@@ -590,12 +603,12 @@ class OverlayContextMenu(QMenu):
         self,
         title: str,
         key: str,
-        symbol: str,
+        icon_name: str,
         action_key: str,
     ) -> tuple[QMenu, dict[float, QAction]]:
         """Create one independent opacity submenu and its checkable actions."""
 
-        menu = self._make_submenu(title, key, symbol)
+        menu = self._make_submenu(title, key, icon_name)
         actions: dict[float, QAction] = {}
         group = QActionGroup(self)
         group.setExclusive(True)
@@ -713,16 +726,16 @@ class OverlayContextMenu(QMenu):
                     background-color: {palette['menu_background']};
                     color: {palette['text']};
                     border: 1px solid {palette['border']};
-                    border-radius: 8px;
-                    padding: 7px 0px;
+                    border-radius: {RADIUS.md}px;
+                    padding: {SPACING.sm}px 0px;
                 }}
                 QMenu#{menu.objectName()}::item {{
                     background-color: transparent;
                     color: {palette['text']};
-                    padding: 7px 10px 7px 30px;
-                    margin: 1px 4px;
-                    min-width: 150px;
-                    border-radius: 5px;
+                    padding: {SPACING.sm}px {SPACING.md}px {SPACING.sm}px {SPACING.xxl}px;
+                    margin: {SPACING.xxs}px {SPACING.xs}px;
+                    min-width: {LAYOUT.menu_item_min_width}px;
+                    border-radius: {RADIUS.sm}px;
                 }}
                 QMenu#{menu.objectName()}::item:selected {{
                     background-color: {palette['hover']};
@@ -734,41 +747,23 @@ class OverlayContextMenu(QMenu):
                 QMenu#{menu.objectName()}::separator {{
                     height: 1px;
                     background-color: {palette['border']};
-                    margin: 6px 12px;
+                    margin: {SPACING.sm}px {SPACING.md}px;
                 }}
                 """
             )
         icon_color = palette["text"]
-        for action in self._actions.values():
-            symbol = {
-                "copyoriginal": "▣",
-                "copytranslation": "▤",
-                "aitranslate": "译",
-                "aipolish": "✎",
-                "hide": "◌",
-                "lockposition": "⌖",
-                "alwaysontop": "↥",
-                "showoriginal": "文",
-                "settings": "⚙",
-                "aisettings": "✦",
-                "about": "ⓘ",
-                "exit": "⏻",
-            }.get(
-                action.objectName()
-                .replace("OverlayContext", "")
-                .replace("Action", "")
-                .lower()
-            )
-            if symbol:
-                action.setIcon(_symbol_icon(symbol, icon_color))
-        self._ai_menu.setIcon(_symbol_icon("✦", palette["accent"]))
-        self._settings_menu.setIcon(_symbol_icon("⚙", icon_color))
+        for key, action in self._actions.items():
+            icon_name = _ACTION_ICON_NAMES.get(key)
+            if icon_name:
+                action.setIcon(svg_icon(icon_name, icon_color, size=ICON.md))
+        self._ai_menu.setIcon(svg_icon("sparkle", palette["accent"], size=ICON.md))
+        self._settings_menu.setIcon(svg_icon("settings", icon_color, size=ICON.md))
         self._settings_menu.apply_palette(palette)
-        self._background_opacity_menu.setIcon(_symbol_icon("◐", icon_color))
-        self._text_opacity_menu.setIcon(_symbol_icon("A", icon_color))
-        self._language_menu.setIcon(_symbol_icon("文", icon_color))
-        self._font_size_menu.setIcon(_symbol_icon("A", icon_color))
-        self._theme_menu.setIcon(_symbol_icon("◒", icon_color))
+        self._background_opacity_menu.setIcon(svg_icon("opacity", icon_color, size=ICON.md))
+        self._text_opacity_menu.setIcon(svg_icon("font", icon_color, size=ICON.md))
+        self._language_menu.setIcon(svg_icon("language", icon_color, size=ICON.md))
+        self._font_size_menu.setIcon(svg_icon("font", icon_color, size=ICON.md))
+        self._theme_menu.setIcon(svg_icon("sparkle", icon_color, size=ICON.md))
 
 
 __all__ = [

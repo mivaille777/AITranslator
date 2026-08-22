@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+from threading import Lock
+
+from backend.api.llm_dependencies import (
+    build_routed_product_agent_service,
+    build_routed_quick_action_service,
+)
+from backend.services.agent_tool_registry import AgentToolRegistry
+from backend.services.browser_context_service import BrowserContextService
+from backend.services.companion_chat_service import CompanionChatService
+from backend.services.companion_handoff_service import CompanionHandoffService
+from backend.services.companion_ownership_service import CompanionConversationOwnershipService
+from backend.services.conversation_lifecycle_service import ConversationLifecycleService
+from backend.services.conversation_store_service import ConversationStoreService
+from backend.services.overlay_state_service import OverlayStateService
+from backend.services.product_agent_service import ProductAgentService
+from backend.services.quick_action_service import QuickActionService
+from backend.services.reading_selection_resolver import ReadingSelectionResolver
+from backend.services.research_note_service import ResearchNoteService
+from backend.services.translation_service import TranslationService
+
+_translation_service: TranslationService | None = None
+_translation_service_lock = Lock()
+_browser_context_service: BrowserContextService | None = None
+_browser_context_service_lock = Lock()
+_reading_selection_resolver: ReadingSelectionResolver | None = None
+_reading_selection_resolver_lock = Lock()
+_overlay_state_service: OverlayStateService | None = None
+_overlay_state_service_lock = Lock()
+_quick_action_service: QuickActionService | None = None
+_quick_action_service_lock = Lock()
+_research_note_service: ResearchNoteService | None = None
+_research_note_service_lock = Lock()
+_companion_handoff_service: CompanionHandoffService | None = None
+_companion_handoff_service_lock = Lock()
+_companion_chat_service: CompanionChatService | None = None
+_companion_chat_service_lock = Lock()
+_conversation_store_service: ConversationStoreService | None = None
+_conversation_store_service_lock = Lock()
+_companion_ownership_service: CompanionConversationOwnershipService | None = None
+_companion_ownership_service_lock = Lock()
+_agent_tool_registry: AgentToolRegistry | None = None
+_agent_tool_registry_lock = Lock()
+_product_agent_service: ProductAgentService | None = None
+_product_agent_service_lock = Lock()
+
+
+def get_translation_service() -> TranslationService:
+    global _translation_service
+    if _translation_service is not None:
+        return _translation_service
+    with _translation_service_lock:
+        if _translation_service is None:
+            _translation_service = TranslationService()
+        return _translation_service
+
+
+def close_translation_service() -> None:
+    global _translation_service
+    with _translation_service_lock:
+        service = _translation_service
+        _translation_service = None
+    if service is not None:
+        service.close()
+
+
+def get_browser_context_service() -> BrowserContextService:
+    global _browser_context_service
+    if _browser_context_service is not None:
+        return _browser_context_service
+    with _browser_context_service_lock:
+        if _browser_context_service is None:
+            _browser_context_service = BrowserContextService()
+        return _browser_context_service
+
+
+def close_browser_context_service() -> None:
+    global _browser_context_service
+    with _browser_context_service_lock:
+        service = _browser_context_service
+        _browser_context_service = None
+    if service is not None:
+        service.close()
+
+
+def get_reading_selection_resolver() -> ReadingSelectionResolver:
+    global _reading_selection_resolver
+    if _reading_selection_resolver is not None:
+        return _reading_selection_resolver
+    with _reading_selection_resolver_lock:
+        if _reading_selection_resolver is None:
+            _reading_selection_resolver = ReadingSelectionResolver(
+                browser_context_service=get_browser_context_service()
+            )
+        return _reading_selection_resolver
+
+
+def close_reading_selection_resolver() -> None:
+    global _reading_selection_resolver
+    with _reading_selection_resolver_lock:
+        resolver = _reading_selection_resolver
+        _reading_selection_resolver = None
+    if resolver is not None:
+        resolver.clear_cache()
+
+
+def get_overlay_state_service() -> OverlayStateService:
+    global _overlay_state_service
+    if _overlay_state_service is not None:
+        return _overlay_state_service
+    with _overlay_state_service_lock:
+        if _overlay_state_service is None:
+            _overlay_state_service = OverlayStateService()
+        return _overlay_state_service
+
+
+def get_quick_action_service() -> QuickActionService:
+    global _quick_action_service
+    if _quick_action_service is not None:
+        return _quick_action_service
+    with _quick_action_service_lock:
+        if _quick_action_service is None:
+            _quick_action_service = build_routed_quick_action_service()
+        return _quick_action_service
+
+
+def close_quick_action_service() -> None:
+    global _quick_action_service
+    with _quick_action_service_lock:
+        service = _quick_action_service
+        _quick_action_service = None
+    if service is not None:
+        service.close()
+
+
+def get_research_note_service() -> ResearchNoteService:
+    global _research_note_service
+    if _research_note_service is not None:
+        return _research_note_service
+    with _research_note_service_lock:
+        if _research_note_service is None:
+            _research_note_service = ResearchNoteService(
+                reading_resolver=get_reading_selection_resolver()
+            )
+        return _research_note_service
+
+
+def get_companion_handoff_service() -> CompanionHandoffService:
+    global _companion_handoff_service
+    if _companion_handoff_service is not None:
+        return _companion_handoff_service
+    with _companion_handoff_service_lock:
+        if _companion_handoff_service is None:
+            _companion_handoff_service = CompanionHandoffService(
+                reading_resolver=get_reading_selection_resolver()
+            )
+        return _companion_handoff_service
+
+
+def get_companion_chat_service() -> CompanionChatService:
+    global _companion_chat_service
+    if _companion_chat_service is not None:
+        return _companion_chat_service
+    with _companion_chat_service_lock:
+        if _companion_chat_service is None:
+            _companion_chat_service = CompanionChatService(
+                reading_resolver=get_reading_selection_resolver()
+            )
+        return _companion_chat_service
+
+
+def close_companion_chat_service() -> None:
+    global _companion_chat_service
+    with _companion_chat_service_lock:
+        service = _companion_chat_service
+        _companion_chat_service = None
+    if service is not None:
+        service.close()
+
+
+def get_conversation_store_service() -> ConversationStoreService:
+    global _conversation_store_service
+    if _conversation_store_service is not None:
+        return _conversation_store_service
+    with _conversation_store_service_lock:
+        if _conversation_store_service is None:
+            _conversation_store_service = ConversationLifecycleService()
+        return _conversation_store_service
+
+
+def close_conversation_store_service() -> None:
+    global _conversation_store_service
+    with _conversation_store_service_lock:
+        _conversation_store_service = None
+
+
+def get_companion_ownership_service() -> CompanionConversationOwnershipService:
+    global _companion_ownership_service
+    if _companion_ownership_service is not None:
+        return _companion_ownership_service
+    with _companion_ownership_service_lock:
+        if _companion_ownership_service is None:
+            _companion_ownership_service = CompanionConversationOwnershipService()
+        return _companion_ownership_service
+
+
+def close_companion_ownership_service() -> None:
+    global _companion_ownership_service
+    with _companion_ownership_service_lock:
+        service = _companion_ownership_service
+        _companion_ownership_service = None
+    if service is not None:
+        service.clear()
+
+
+def get_agent_tool_registry() -> AgentToolRegistry:
+    global _agent_tool_registry
+    if _agent_tool_registry is not None:
+        return _agent_tool_registry
+    with _agent_tool_registry_lock:
+        if _agent_tool_registry is None:
+            _agent_tool_registry = AgentToolRegistry(
+                translation_service=get_translation_service(),
+                quick_action_service=get_quick_action_service(),
+                research_note_service=get_research_note_service(),
+            )
+        return _agent_tool_registry
+
+
+def close_agent_tool_registry() -> None:
+    global _agent_tool_registry
+    with _agent_tool_registry_lock:
+        _agent_tool_registry = None
+
+
+def get_product_agent_service() -> ProductAgentService:
+    global _product_agent_service
+    if _product_agent_service is not None:
+        return _product_agent_service
+    with _product_agent_service_lock:
+        if _product_agent_service is None:
+            _product_agent_service = build_routed_product_agent_service(
+                registry=get_agent_tool_registry(),
+                resolver=get_reading_selection_resolver(),
+            )
+        return _product_agent_service
+
+
+def close_product_agent_service() -> None:
+    global _product_agent_service
+    with _product_agent_service_lock:
+        service = _product_agent_service
+        _product_agent_service = None
+    if service is not None:
+        service.close()

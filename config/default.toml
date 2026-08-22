@@ -7,6 +7,9 @@ level = "INFO"
 directory = "logs"
 
 [translation]
+# Preserve the established default. Set to "youdao_web" in user settings
+# when testing or selecting the Youdao web-compatible provider.
+provider = "google_web"
 source_language = "auto"
 target_language = "zh-CN"
 cache_enabled = true
@@ -21,12 +24,21 @@ chat_selection_capture_enabled = true
 
 [google_web]
 enabled = true
-endpoint = "https://translate.googleapis.com/translate_a/single"
+# Browser-facing Google Translate only; no Google Cloud/API endpoint is used.
+endpoint = "https://translate.google.com/translate_a/single"
 timeout_ms = 8000
-# One bounded retry absorbs stale keep-alive sockets and short 429/5xx bursts.
+# One bounded retry absorbs stale sessions and short 429/5xx bursts.
 max_retries = 1
 # Keep automatic/manual live translation from creating back-to-back web hits.
 min_interval_ms = 120
+
+[youdao_web]
+enabled = true
+endpoint = "https://dict.youdao.com/webtranslate"
+timeout_ms = 8000
+# Current WebFanyi keys are fetched lazily from /webtranslate/key.
+max_retries = 1
+min_interval_ms = 200
 
 [cache]
 enabled = true

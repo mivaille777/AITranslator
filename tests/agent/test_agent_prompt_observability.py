@@ -75,3 +75,7 @@ def test_observability_persists_prompt_ids_and_route_metadata_without_prompt_tex
     assert "private selected source text" not in serialized
     assert "private user request" not in serialized
     assert "must not persist" not in serialized
+
+    summary = store.summary(limit=10)
+    assert summary.sample_size == 1
+    assert summary.schema_valid_rate == 1.0

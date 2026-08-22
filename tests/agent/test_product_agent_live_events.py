@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
+from backend.agent_core.reliability import AgentExecutionPolicy, AgentRunControl
 from backend.models.agent_tools import AgentPlan
 from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolSpec
 from backend.services.product_agent_service import ProductAgentService
@@ -38,8 +41,9 @@ class FakePlanner:
 
 
 class FakeRegistry:
-    def __init__(self, spec: AgentToolSpec) -> None:
+    def __init__(self, spec: AgentToolSpec, *, failures: int = 0) -> None:
         self.spec = spec
+        self.failures = failures
         self.executions: list[tuple[str, dict]] = []
 
     def list_tools(self):
@@ -50,6 +54,8 @@ class FakeRegistry:
 
     def execute(self, name: str, **payload):
         self.executions.append((name, payload))
+        if len(self.executions) <= self.failures:
+            raise OSError("temporary provider failure")
         return AgentToolExecutionResult(
             tool_name=name,
             output_text="工具结果",
@@ -90,19 +96,23 @@ def payload(**overrides):
     }
 
 
-def test_product_agent_emits_plan_tool_and_result_at_execution_boundaries() -> None:
-    registry = FakeRegistry(TRANSLATE_TOOL)
-    service = ProductAgentService(
+def service_for(spec: AgentToolSpec, registry: FakeRegistry) -> ProductAgentService:
+    return ProductAgentService(
         registry=registry,
         chat_service=FakeChatService(),
         planner=FakePlanner(
             AgentPlan(
                 action="tool",
-                tool_name="translate_selection",
-                user_visible_reason="Use the translation tool.",
+                tool_name=spec.name,
+                user_visible_reason="Use the bounded tool.",
             )
         ),
     )
+
+
+def test_product_agent_emits_phase_timings_at_execution_boundaries() -> None:
+    registry = FakeRegistry(TRANSLATE_TOOL)
+    service = service_for(TRANSLATE_TOOL, registry)
     events: list[tuple[str, dict]] = []
 
     result = service.run(
@@ -115,25 +125,39 @@ def test_product_agent_emits_plan_tool_and_result_at_execution_boundaries() -> N
         "plan_ready",
         "tool_call",
         "tool_result",
+        "synthesis_ready",
     ]
-    assert events[1][1]["name"] == "translate_selection"
-    assert events[2][1]["tool_name"] == "translate_selection"
+    assert events[0][1]["duration_ms"] >= 0
+    assert events[2][1]["duration_ms"] >= 0
+    assert events[3][1]["duration_ms"] >= 0
     assert registry.executions[0][0] == "translate_selection"
+
+
+def test_safe_compute_tool_retries_once_after_transient_failure() -> None:
+    registry = FakeRegistry(TRANSLATE_TOOL, failures=1)
+    service = service_for(TRANSLATE_TOOL, registry)
+    events: list[tuple[str, dict]] = []
+    control = AgentRunControl(
+        policy=AgentExecutionPolicy(max_safe_retries=1),
+    )
+
+    result = service.run(
+        event_sink=lambda event_type, data: events.append((event_type, data)),
+        control=control,
+        **payload(),
+    )
+
+    assert result.status == "completed"
+    assert len(registry.executions) == 2
+    retry = next(data for event_type, data in events if event_type == "retry")
+    assert retry["attempt"] == 2
+    assert retry["max_attempts"] == 2
+    assert "temporary provider failure" in retry["reason"]
 
 
 def test_product_agent_confirmation_stops_before_live_tool_result() -> None:
     registry = FakeRegistry(WRITE_TOOL)
-    service = ProductAgentService(
-        registry=registry,
-        chat_service=FakeChatService(),
-        planner=FakePlanner(
-            AgentPlan(
-                action="tool",
-                tool_name="save_research_note",
-                user_visible_reason="The note must be explicitly confirmed.",
-            )
-        ),
-    )
+    service = service_for(WRITE_TOOL, registry)
     events: list[tuple[str, dict]] = []
 
     result = service.run(
@@ -144,3 +168,25 @@ def test_product_agent_confirmation_stops_before_live_tool_result() -> None:
     assert result.status == "confirmation_required"
     assert [event_type for event_type, _ in events] == ["plan_ready", "tool_call"]
     assert registry.executions == []
+
+
+def test_confirmed_write_tool_is_never_automatically_retried() -> None:
+    registry = FakeRegistry(WRITE_TOOL, failures=1)
+    service = service_for(WRITE_TOOL, registry)
+    events: list[tuple[str, dict]] = []
+    control = AgentRunControl(
+        policy=AgentExecutionPolicy(max_safe_retries=3),
+    )
+
+    with pytest.raises(OSError, match="temporary provider failure"):
+        service.run(
+            event_sink=lambda event_type, data: events.append((event_type, data)),
+            control=control,
+            **payload(
+                user_message="Save this note",
+                confirmed_write_tools=["save_research_note"],
+            ),
+        )
+
+    assert len(registry.executions) == 1
+    assert "retry" not in {event_type for event_type, _ in events}

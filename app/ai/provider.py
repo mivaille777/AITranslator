@@ -11,7 +11,11 @@ from app.ai.client import DeepSeekClient
 from app.ai.errors import AIConfigurationError, AIResponseError
 from app.ai.models import AITextAction, AITextRequest, AITextResult
 from app.ai.output_guard import validate_model_output
+from app.ai.prompt_registry import PromptRegistry
 from app.ai.prompts import (
+    POLISH_PROMPT,
+    STRICT_RETRY_PROMPT,
+    TRANSLATE_PROMPT,
     build_polish_prompt,
     build_strict_retry_prompt,
     build_translate_prompt,
@@ -19,9 +23,9 @@ from app.ai.prompts import (
 )
 
 
-TRANSLATE_TEMPERATURE = 0.1
-POLISH_TEMPERATURE = 0.3
-STRICT_RETRY_TEMPERATURE = 0.0
+TRANSLATE_TEMPERATURE = TRANSLATE_PROMPT.temperature
+POLISH_TEMPERATURE = POLISH_PROMPT.temperature
+STRICT_RETRY_TEMPERATURE = STRICT_RETRY_PROMPT.temperature
 DEFAULT_AI_MAX_TOKENS = 4096
 
 
@@ -42,10 +46,14 @@ class DeepSeekTextProvider(AITextProvider):
         *,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         max_tokens: int = DEFAULT_AI_MAX_TOKENS,
+        prompt_registry: PromptRegistry | None = None,
     ) -> None:
         self.client = client if client is not None else DeepSeekClient()
         self.chunk_size = int(chunk_size)
         self.max_tokens = int(max_tokens)
+        self._prompt_registry = prompt_registry or PromptRegistry(
+            (TRANSLATE_PROMPT, POLISH_PROMPT, STRICT_RETRY_PROMPT)
+        )
 
     @property
     def model(self) -> str:
@@ -63,12 +71,14 @@ class DeepSeekTextProvider(AITextProvider):
 
     def _prompts_for(self, request: AITextRequest) -> tuple[str, str, float, str]:
         if request.action is AITextAction.TRANSLATE:
-            system_prompt, user_prompt = build_translate_prompt(request)
-            return system_prompt, user_prompt, TRANSLATE_TEMPERATURE, request.style or "general"
+            _system_prompt, user_prompt = build_translate_prompt(request)
+            prompt = self._prompt_registry.get("text.translate")
+            return prompt.system_prompt, user_prompt, prompt.temperature, request.style or "general"
         if request.action is AITextAction.POLISH:
             style = normalize_polish_style(request.style)
-            system_prompt, user_prompt = build_polish_prompt(request)
-            return system_prompt, user_prompt, POLISH_TEMPERATURE, style
+            _system_prompt, user_prompt = build_polish_prompt(request)
+            prompt = self._prompt_registry.get("text.polish")
+            return prompt.system_prompt, user_prompt, prompt.temperature, style
         raise AIConfigurationError(f"Unsupported AI text action: {request.action!s}.")
 
     def _complete_once(self, request: AITextRequest) -> str:
@@ -87,14 +97,15 @@ class DeepSeekTextProvider(AITextProvider):
         if validation.valid:
             return validation.text
 
-        strict_system, strict_user = build_strict_retry_prompt(
+        _strict_system, strict_user = build_strict_retry_prompt(
             request,
             previous_failure=validation.reason,
         )
+        strict_prompt = self._prompt_registry.get("text.strict_retry")
         retry_raw = self.client.complete(
-            system_prompt=strict_system,
+            system_prompt=strict_prompt.system_prompt,
             user_prompt=strict_user,
-            temperature=STRICT_RETRY_TEMPERATURE,
+            temperature=strict_prompt.temperature,
             max_tokens=self.max_tokens,
         )
         retry_validation = validate_model_output(

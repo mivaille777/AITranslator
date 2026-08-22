@@ -109,15 +109,28 @@ class ProductAgentRuntimeAdapter:
         state: AgentState,
         emit: Callable[[AgentEventType, dict[str, Any]], None],
     ) -> AgentState:
+        emitted: set[AgentEventType] = set()
+
         def forward(event_type: str, payload: dict[str, Any]) -> None:
             try:
                 core_type = AgentEventType(event_type)
             except ValueError:
                 return
+            emitted.add(core_type)
             emit(core_type, payload)
 
         result = self._service.run(event_sink=forward, **self._payload(state))
-        return self._apply_result(state, result)
+        state = self._apply_result(state, result)
+
+        # Keep compatibility with lightweight mocks or alternative services that
+        # accept event_sink through **kwargs but do not emit lifecycle callbacks.
+        if AgentEventType.PLAN_READY not in emitted:
+            emit(AgentEventType.PLAN_READY, dict(state.planned_action))
+        if state.tool_calls and AgentEventType.TOOL_CALL not in emitted:
+            emit(AgentEventType.TOOL_CALL, dict(state.tool_calls[-1]))
+        if state.tool_results and AgentEventType.TOOL_RESULT not in emitted:
+            emit(AgentEventType.TOOL_RESULT, dict(state.tool_results[-1]))
+        return state
 
     def close(self) -> None:
         close = getattr(self._service, "close", None)

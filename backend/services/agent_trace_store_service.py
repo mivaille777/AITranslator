@@ -48,6 +48,7 @@ class AgentObservabilitySummary:
     cancelled_runs: int
     confirmation_required_runs: int
     success_rate: float
+    schema_valid_rate: float
     retry_rate: float
     failure_rate: float
     timeout_rate: float
@@ -393,6 +394,7 @@ class AgentTraceStoreService:
         failed = sum(run.status == "failed" for run in runs)
         cancelled = sum(run.status == "cancelled" for run in runs)
         confirmations = sum(run.status == "confirmation_required" for run in runs)
+        schema_valid = sum(bool(run.intent) for run in runs)
         retries = sum(run.retry_count > 0 for run in runs)
         timeouts = sum(run.timeout_count > 0 for run in runs)
         fallbacks = sum(bool(run.fallback_reason) for run in runs)
@@ -409,6 +411,7 @@ class AgentTraceStoreService:
             cancelled_runs=cancelled,
             confirmation_required_runs=confirmations,
             success_rate=round(completed / denominator, 4) if sample_size else 0.0,
+            schema_valid_rate=round(schema_valid / denominator, 4) if sample_size else 0.0,
             retry_rate=round(retries / denominator, 4) if sample_size else 0.0,
             failure_rate=round(failed / denominator, 4) if sample_size else 0.0,
             timeout_rate=round(timeouts / denominator, 4) if sample_size else 0.0,

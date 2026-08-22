@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { presentOverlay } from "../api/overlay"
 import {
@@ -38,7 +38,7 @@ const workspaceCache = new Map<string, CachedWorkspace>()
 function providerDisplayName(provider: string, model = ""): string {
   if (provider === "youdao_web") return "Youdao"
   if (provider === "google_web") return "Google"
-  if (provider === "ai") return model ? `AI · ${model}` : "AI"
+  if (provider === "ai" || provider.startsWith("ai/")) return model ? `AI · ${model}` : "AI"
   return provider || "Translation"
 }
 
@@ -52,7 +52,10 @@ function initialWorkspace(state: OverlayStateResponse): CachedWorkspace {
 }
 
 export default function OverlayTranslationWorkspace({ state }: { state: OverlayStateResponse }) {
-  const initial = useMemo(() => initialWorkspace(state), [state.context_id])
+  const initialRef = useRef<CachedWorkspace | null>(null)
+  if (initialRef.current === null) initialRef.current = initialWorkspace(state)
+  const initial = initialRef.current
+
   const [sourceText, setSourceText] = useState(initial.sourceText)
   const [sourceLanguage, setSourceLanguage] = useState(initial.sourceLanguage)
   const [targetLanguage, setTargetLanguage] = useState(initial.targetLanguage)
@@ -81,8 +84,12 @@ export default function OverlayTranslationWorkspace({ state }: { state: OverlayS
   useEffect(() => {
     const signature = `${sourceText}\u001f${sourceLanguage}\u001f${targetLanguage}\u001f${providerMode}`
     const normalizedSource = sourceText.trim()
+
+    // Every edit/settings change immediately invalidates older in-flight work.
+    const requestId = latestRequestRef.current + 1
+    latestRequestRef.current = requestId
+
     if (!normalizedSource) {
-      latestRequestRef.current += 1
       setBusy(false)
       setTranslatedText("")
       setNotice("")
@@ -92,8 +99,6 @@ export default function OverlayTranslationWorkspace({ state }: { state: OverlayS
     if (signature === lastCompletedSignatureRef.current) return
 
     const timer = window.setTimeout(() => {
-      const requestId = latestRequestRef.current + 1
-      latestRequestRef.current = requestId
       setBusy(true)
       setErrorMessage("")
 

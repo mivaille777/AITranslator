@@ -24,20 +24,7 @@ import {
   contextFromOverlay,
   overlayCompanionConversationId,
 } from "./overlay-chat-context"
-
-const TRANSLATION_INTENT_PATTERNS = [
-  /^翻译(?:一下|下)?(?:这段|这个|它)?[。！! ]*$/i,
-  /^帮我翻译(?:一下|下)?(?:这段|这个|它)?[。！! ]*$/i,
-  /^我要你翻译(?:一下|下)?(?:这段|这个|它)?[。！! ]*$/i,
-  /^请翻译(?:一下|下)?(?:这段|这个|它)?[。！! ]*$/i,
-  /^translate(?: this| it| the selection)?[.! ]*$/i,
-  /^please translate(?: this| it| the selection)?[.! ]*$/i,
-]
-
-function isExplicitTranslationIntent(value: string): boolean {
-  const normalized = value.trim()
-  return Boolean(normalized) && TRANSLATION_INTENT_PATTERNS.some((pattern) => pattern.test(normalized))
-}
+import { resolveExplicitOverlayTranslationIntent } from "./overlay-translation-intent"
 
 export default function OverlayCompactChat({
   state,
@@ -75,6 +62,7 @@ export default function OverlayCompactChat({
   })
   const runtimeConversationId = runtime.conversationId
   const openRuntimeConversation = runtime.openConversation
+  const draftTranslationIntent = resolveExplicitOverlayTranslationIntent(runtime.draft)
 
   useEffect(() => {
     if (!persistedConversationId || runtimeConversationId === persistedConversationId) return
@@ -123,7 +111,14 @@ export default function OverlayCompactChat({
 
   useEffect(() => {
     const translatedText = state.translated_text.trim()
-    if (!translatedText || runtime.activeRequestId !== null || runtime.contextUpdating) return
+    if (
+      !translatedText ||
+      runtime.activeRequestId !== null ||
+      runtime.contextUpdating ||
+      runtime.conversationBusyElsewhere
+    ) {
+      return
+    }
     if (
       runtime.context.source_text === state.source_text &&
       runtime.context.translated_text === state.translated_text
@@ -147,6 +142,7 @@ export default function OverlayCompactChat({
     runtime.context.source_text,
     runtime.context.translated_text,
     runtime.contextUpdating,
+    runtime.conversationBusyElsewhere,
     state.context_id,
     state.source_text,
     state.translated_text,
@@ -222,19 +218,23 @@ export default function OverlayCompactChat({
     void runtime.rewriteFromUser(retryUser, retryUser.content)
   }
 
-  async function runTranslationHandoff(userMessage: string) {
+  async function runTranslationHandoff(userMessage: string, targetLanguage: string) {
     if (translationHandoffBusy || !state.source_text.trim()) return
     setTranslationHandoffBusy(true)
 
-    // Keep the command in the normal AI conversation. Translation itself uses
-    // the frozen reading source, never the command text in the composer.
-    runtime.sendMessage(userMessage)
+    // Keep the command in the normal AI conversation when Chat is available.
+    // Translation itself uses the frozen reading source, never the command text.
+    if (runtime.chatAvailable) {
+      runtime.sendMessage(userMessage)
+    } else {
+      runtime.setDraft("")
+    }
 
     try {
       const result = await translateTextWithFallback({
         source_text: state.source_text,
         source_language: state.source_language,
-        target_language: state.target_language,
+        target_language: targetLanguage,
       })
       await presentOverlay({
         context_id: state.context_id,
@@ -256,7 +256,7 @@ export default function OverlayCompactChat({
         context_id: state.context_id,
         source_text: state.source_text,
         source_language: state.source_language,
-        target_language: state.target_language,
+        target_language: targetLanguage,
         message: error instanceof Error ? error.message : "Translation failed.",
         resource_url: state.resource_url,
         resource_title: state.resource_title,
@@ -273,8 +273,12 @@ export default function OverlayCompactChat({
   function submitComposer() {
     const message = runtime.draft.trim()
     if (!message) return
-    if (isExplicitTranslationIntent(message)) {
-      void runTranslationHandoff(message)
+    const translationIntent = resolveExplicitOverlayTranslationIntent(message)
+    if (translationIntent) {
+      void runTranslationHandoff(
+        message,
+        translationIntent.targetLanguage || state.target_language,
+      )
       return
     }
     runtime.sendMessage()
@@ -291,6 +295,7 @@ export default function OverlayCompactChat({
           : "Open main chat ↗"
 
   const recovering = runtime.recoveryState === "recovering"
+  const composerHasExecutableAction = runtime.chatAvailable || draftTranslationIntent !== null
 
   return (
     <div className="border-b border-white/10 bg-black/10" data-ait-selection-scope="internal">
@@ -428,7 +433,7 @@ export default function OverlayCompactChat({
       )}
 
       {!runtime.chatAvailable && runtime.chatStatusLoaded && runtime.recoveryState === "idle" && (
-        <p className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] leading-4 text-amber-100/80">AI Chat unavailable · {runtime.chatStatusDetail}</p>
+        <p className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] leading-4 text-amber-100/80">AI Chat unavailable · explicit translation commands can still use Youdao/Google.</p>
       )}
 
       <div className="border-t border-white/[0.07] px-3 py-2.5">
@@ -464,7 +469,7 @@ export default function OverlayCompactChat({
           {runtime.activeRequestId !== null ? (
             <button type="button" data-tauri-drag-region="false" title="Stop generation" className="ait-overlay-action-button flex h-9 w-9 items-center justify-center rounded-full text-xs text-rose-200" onClick={runtime.cancelStream}>■</button>
           ) : (
-            <button type="button" data-tauri-drag-region="false" title="Send · Enter" disabled={!runtime.chatAvailable || !runtime.draft.trim() || runtime.openingConversation || runtime.conversationBusyElsewhere || recovering || translationHandoffBusy} className="ait-overlay-action-button flex h-9 w-9 items-center justify-center rounded-full text-sm disabled:opacity-35" onClick={submitComposer}>↑</button>
+            <button type="button" data-tauri-drag-region="false" title="Send · Enter" disabled={!composerHasExecutableAction || !runtime.draft.trim() || runtime.openingConversation || runtime.conversationBusyElsewhere || recovering || translationHandoffBusy} className="ait-overlay-action-button flex h-9 w-9 items-center justify-center rounded-full text-sm disabled:opacity-35" onClick={submitComposer}>↑</button>
           )}
         </div>
 

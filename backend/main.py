@@ -77,7 +77,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.17.0",
+        version="0.16.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
         lifespan=lifespan,
     )

@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from app.ai.errors import AIError
 from app.ai.gateway import LLMGateway
 from app.infrastructure.settings import SettingsManager
 from app.models.translation import TranslationRequest
@@ -53,7 +52,9 @@ class TranslationFallbackService:
         self._normalizer = normalizer or TextNormalizer()
 
     @staticmethod
-    def _close_provider(provider: object) -> None:
+    def _close_provider(provider: object | None) -> None:
+        if provider is None:
+            return
         close = getattr(provider, "close", None)
         if callable(close):
             close()
@@ -106,8 +107,9 @@ class TranslationFallbackService:
         )
 
         for fallback_level, (provider_name, factory) in enumerate(provider_factories):
-            provider = factory()
+            provider = None
             try:
+                provider = factory()
                 result = provider.translate(request)
                 if not result.translated_text.strip():
                     raise TranslationError("translated text is empty")
@@ -134,18 +136,20 @@ class TranslationFallbackService:
             finally:
                 self._close_provider(provider)
 
-        ai_service = self._llm_gateway.create_text_service("translation_ai")
+        ai_service = None
         try:
+            ai_service = self._llm_gateway.create_text_service("translation_ai")
             ai_result = ai_service.translate(
                 request.source_text,
                 source_language=request.source_language,
                 target_language=request.target_language,
                 request_id=request.request_id,
             )
-        except AIError as exc:
+        except Exception as exc:
             raise TranslationError("all translation providers are unavailable") from exc
         finally:
-            ai_service.close()
+            if ai_service is not None:
+                ai_service.close()
 
         attempts.append(TranslationAttempt("ai", "success"))
         return TranslationCascadeResult(

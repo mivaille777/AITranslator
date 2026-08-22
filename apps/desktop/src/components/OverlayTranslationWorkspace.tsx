@@ -1,171 +1,191 @@
 import { useEffect, useRef, useState } from "react"
 
-import { presentOverlay } from "../api/overlay"
 import {
   translateTextWithFallback,
   type TranslationProviderMode,
 } from "../api/translation"
 import type { OverlayStateResponse } from "../api/types"
+import {
+  resolveTranslationLanguageSwap,
+  TRANSLATION_PROVIDER_OPTIONS,
+  TRANSLATION_SOURCE_LANGUAGES,
+  TRANSLATION_TARGET_LANGUAGES,
+  translationProviderLabel,
+} from "./translation-workspace-config"
 
-const DEBOUNCE_MS = 420
-
-const LANGUAGE_OPTIONS = [
-  { value: "auto", label: "Auto detect", sourceOnly: true },
-  { value: "zh-CN", label: "Chinese" },
-  { value: "en", label: "English" },
-  { value: "ja", label: "Japanese" },
-  { value: "ko", label: "Korean" },
-  { value: "fr", label: "French" },
-  { value: "de", label: "German" },
-]
-
-const PROVIDER_OPTIONS: Array<{ value: TranslationProviderMode; label: string }> = [
-  { value: "auto", label: "Auto" },
-  { value: "youdao_web", label: "Youdao" },
-  { value: "google_web", label: "Google" },
-  { value: "ai", label: "AI" },
-]
-
-type CachedWorkspace = {
-  sourceText: string
-  sourceLanguage: string
-  targetLanguage: string
-  providerMode: TranslationProviderMode
+type OverlayTranslationWorkspaceProps = {
+  state: OverlayStateResponse
+  visible: boolean
 }
 
-const workspaceCache = new Map<string, CachedWorkspace>()
+const TRANSLATION_DEBOUNCE_MS = 420
 
-function providerDisplayName(provider: string, model = ""): string {
-  if (provider === "youdao_web") return "Youdao"
-  if (provider === "google_web") return "Google"
-  if (provider === "ai" || provider.startsWith("ai/")) return model ? `AI · ${model}` : "AI"
-  return provider || "Translation"
-}
-
-function initialWorkspace(state: OverlayStateResponse): CachedWorkspace {
-  return workspaceCache.get(state.context_id) ?? {
-    sourceText: state.source_text,
-    sourceLanguage: state.source_language || "auto",
-    targetLanguage: state.target_language || "zh-CN",
-    providerMode: "auto",
-  }
-}
-
-export default function OverlayTranslationWorkspace({ state }: { state: OverlayStateResponse }) {
-  const initialRef = useRef<CachedWorkspace | null>(null)
-  if (initialRef.current === null) initialRef.current = initialWorkspace(state)
-  const initial = initialRef.current
-
-  const [sourceText, setSourceText] = useState(initial.sourceText)
-  const [sourceLanguage, setSourceLanguage] = useState(initial.sourceLanguage)
-  const [targetLanguage, setTargetLanguage] = useState(initial.targetLanguage)
-  const [providerMode, setProviderMode] = useState<TranslationProviderMode>(initial.providerMode)
+export default function OverlayTranslationWorkspace({
+  state,
+  visible,
+}: OverlayTranslationWorkspaceProps) {
+  const [workingText, setWorkingText] = useState(state.source_text)
   const [translatedText, setTranslatedText] = useState(state.translated_text)
-  const [providerLabel, setProviderLabel] = useState(providerDisplayName(state.provider))
-  const [notice, setNotice] = useState(state.translation_notice?.trim() ?? "")
+  const [sourceLanguage, setSourceLanguage] = useState(state.source_language || "auto")
+  const [targetLanguage, setTargetLanguage] = useState(state.target_language || "zh-CN")
+  const [providerMode, setProviderMode] = useState<TranslationProviderMode>("auto")
+  const [actualProvider, setActualProvider] = useState(state.provider)
+  const [detectedSourceLanguage, setDetectedSourceLanguage] = useState("")
+  const [notice, setNotice] = useState(state.translation_notice ?? "")
   const [errorMessage, setErrorMessage] = useState("")
-  const [busy, setBusy] = useState(false)
-  const latestRequestRef = useRef(0)
-  const lastCompletedSignatureRef = useRef(
-    state.translated_text.trim()
-      ? `${initial.sourceText}\u001f${initial.sourceLanguage}\u001f${initial.targetLanguage}\u001f${initial.providerMode}`
-      : "",
-  )
+  const [pending, setPending] = useState(false)
+
+  const activeContextRef = useRef(state.context_id)
+  const requestSequenceRef = useRef(0)
+  const userTouchedRef = useRef(false)
+  const immediateRef = useRef(false)
 
   useEffect(() => {
-    workspaceCache.set(state.context_id, {
-      sourceText,
-      sourceLanguage,
-      targetLanguage,
-      providerMode,
-    })
-  }, [providerMode, sourceLanguage, sourceText, state.context_id, targetLanguage])
+    if (activeContextRef.current === state.context_id) return
+
+    activeContextRef.current = state.context_id
+    requestSequenceRef.current += 1
+    userTouchedRef.current = false
+    immediateRef.current = false
+
+    setWorkingText(state.source_text)
+    setTranslatedText(state.translated_text)
+    setSourceLanguage(state.source_language || "auto")
+    setTargetLanguage(state.target_language || "zh-CN")
+    setProviderMode("auto")
+    setActualProvider(state.provider)
+    setDetectedSourceLanguage("")
+    setNotice(state.translation_notice ?? "")
+    setErrorMessage("")
+    setPending(false)
+  }, [
+    state.context_id,
+    state.provider,
+    state.source_language,
+    state.source_text,
+    state.target_language,
+    state.translated_text,
+    state.translation_notice,
+  ])
 
   useEffect(() => {
-    const signature = `${sourceText}\u001f${sourceLanguage}\u001f${targetLanguage}\u001f${providerMode}`
-    const normalizedSource = sourceText.trim()
+    if (!visible || userTouchedRef.current) return
+    if (!state.translated_text.trim()) return
+    if (workingText !== state.source_text) return
 
-    // Every edit/settings change immediately invalidates older in-flight work.
-    const requestId = latestRequestRef.current + 1
-    latestRequestRef.current = requestId
+    setTranslatedText(state.translated_text)
+    setActualProvider(state.provider)
+    setNotice(state.translation_notice ?? "")
+    setErrorMessage("")
+  }, [
+    state.provider,
+    state.source_text,
+    state.translated_text,
+    state.translation_notice,
+    visible,
+    workingText,
+  ])
 
+  useEffect(() => {
+    if (!visible || !userTouchedRef.current) return
+
+    const normalizedSource = workingText.trim()
     if (!normalizedSource) {
-      setBusy(false)
+      requestSequenceRef.current += 1
       setTranslatedText("")
+      setActualProvider("")
       setNotice("")
       setErrorMessage("")
+      setPending(false)
       return
     }
-    if (signature === lastCompletedSignatureRef.current) return
+
+    const delay = immediateRef.current ? 0 : TRANSLATION_DEBOUNCE_MS
+    immediateRef.current = false
 
     const timer = window.setTimeout(() => {
-      setBusy(true)
+      const requestSequence = requestSequenceRef.current + 1
+      requestSequenceRef.current = requestSequence
+      setPending(true)
       setErrorMessage("")
 
       void translateTextWithFallback({
-        source_text: sourceText,
+        source_text: normalizedSource,
         source_language: sourceLanguage,
         target_language: targetLanguage,
         provider_mode: providerMode,
-        request_id: requestId,
-      }).then(async (result) => {
-        if (latestRequestRef.current !== requestId) return
-        lastCompletedSignatureRef.current = signature
-        setTranslatedText(result.translated_text)
-        setProviderLabel(providerDisplayName(result.provider, result.model))
-        setNotice(result.notice)
-        setErrorMessage("")
-        setBusy(false)
-
-        // The editable translation source is a working copy. Persist only the
-        // result/settings while preserving the original captured reading text.
-        await presentOverlay({
-          context_id: state.context_id,
-          source_text: state.source_text,
-          translated_text: result.translated_text,
-          source_language: sourceLanguage,
-          target_language: targetLanguage,
-          provider: result.provider === "ai" && result.model
-            ? `ai/${result.model}`
-            : result.provider,
-          translation_notice: result.notice,
-          resource_url: state.resource_url,
-          resource_title: state.resource_title,
-          application: state.application,
-          section_heading: state.section_heading,
-          context_before: state.context_before,
-          context_after: state.context_after,
-          source_kind: state.source_kind,
-        }).catch(() => undefined)
-      }).catch((error) => {
-        if (latestRequestRef.current !== requestId) return
-        setErrorMessage(error instanceof Error ? error.message : "Translation failed.")
-      }).finally(() => {
-        if (latestRequestRef.current === requestId) setBusy(false)
+        request_id: requestSequence,
       })
-    }, DEBOUNCE_MS)
+        .then((result) => {
+          if (requestSequenceRef.current !== requestSequence) return
+          setTranslatedText(result.translated_text)
+          setActualProvider(result.provider)
+          setDetectedSourceLanguage(
+            result.source_language && result.source_language !== "auto"
+              ? result.source_language
+              : "",
+          )
+          setNotice(result.notice)
+          setErrorMessage("")
+        })
+        .catch((error) => {
+          if (requestSequenceRef.current !== requestSequence) return
+          setNotice("")
+          setErrorMessage(
+            error instanceof Error ? error.message : "Translation failed.",
+          )
+        })
+        .finally(() => {
+          if (requestSequenceRef.current === requestSequence) {
+            setPending(false)
+          }
+        })
+    }, delay)
 
     return () => window.clearTimeout(timer)
-  }, [
-    providerMode,
-    sourceLanguage,
-    sourceText,
-    state.application,
-    state.context_after,
-    state.context_before,
-    state.context_id,
-    state.resource_title,
-    state.resource_url,
-    state.section_heading,
-    state.source_kind,
-    state.source_text,
-    targetLanguage,
-  ])
+  }, [providerMode, sourceLanguage, targetLanguage, visible, workingText])
 
-  const canSwap = sourceLanguage !== "auto"
+  function markUserChange(immediate = false) {
+    userTouchedRef.current = true
+    immediateRef.current = immediate
+  }
+
+  function handleProviderChange(value: TranslationProviderMode) {
+    markUserChange(true)
+    setProviderMode(value)
+  }
+
+  function handleSourceLanguageChange(value: string) {
+    markUserChange(true)
+    setSourceLanguage(value)
+  }
+
+  function handleTargetLanguageChange(value: string) {
+    markUserChange(true)
+    setTargetLanguage(value)
+  }
+
+  function handleSwapLanguages() {
+    const swapped = resolveTranslationLanguageSwap(
+      sourceLanguage,
+      targetLanguage,
+      detectedSourceLanguage,
+    )
+    if (!swapped) return
+    markUserChange(true)
+    setSourceLanguage(swapped.sourceLanguage)
+    setTargetLanguage(swapped.targetLanguage)
+  }
+
+  const canSwap = resolveTranslationLanguageSwap(
+    sourceLanguage,
+    targetLanguage,
+    detectedSourceLanguage,
+  ) !== null
 
   return (
     <div
+      hidden={!visible}
       className="ait-overlay-translation-workspace border-b border-white/[0.07] bg-black/[0.06] px-3 py-3"
       data-ait-selection-scope="internal"
     >
@@ -174,10 +194,10 @@ export default function OverlayTranslationWorkspace({ state }: { state: OverlayS
           <span className="sr-only">Translation engine</span>
           <select
             value={providerMode}
-            className="ait-overlay-select w-full rounded-lg border border-white/[0.08] bg-white/[0.045] px-2 py-1.5 text-[10px] text-slate-300 outline-none"
-            onChange={(event) => setProviderMode(event.target.value as TranslationProviderMode)}
+            className="ait-overlay-translation-select w-full"
+            onChange={(event) => handleProviderChange(event.target.value as TranslationProviderMode)}
           >
-            {PROVIDER_OPTIONS.map((option) => (
+            {TRANSLATION_PROVIDER_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
@@ -187,26 +207,21 @@ export default function OverlayTranslationWorkspace({ state }: { state: OverlayS
           <span className="sr-only">Source language</span>
           <select
             value={sourceLanguage}
-            className="ait-overlay-select w-full rounded-lg border border-white/[0.08] bg-white/[0.045] px-2 py-1.5 text-[10px] text-slate-300 outline-none"
-            onChange={(event) => setSourceLanguage(event.target.value)}
+            className="ait-overlay-translation-select w-full"
+            onChange={(event) => handleSourceLanguageChange(event.target.value)}
           >
-            {LANGUAGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+            {TRANSLATION_SOURCE_LANGUAGES.map((option) => (
+              <option key={option.code} value={option.code}>{option.label}</option>
             ))}
           </select>
         </label>
 
         <button
           type="button"
+          title={canSwap ? "Swap languages" : "Choose a source language before swapping"}
           disabled={!canSwap}
-          title={canSwap ? "Swap source and target languages" : "Choose a source language before swapping"}
-          className="ait-overlay-quiet-button flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs text-slate-400 disabled:opacity-30"
-          onClick={() => {
-            if (!canSwap) return
-            const previousSource = sourceLanguage
-            setSourceLanguage(targetLanguage)
-            setTargetLanguage(previousSource)
-          }}
+          className="ait-overlay-quiet-button flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs text-slate-400 disabled:opacity-30"
+          onClick={handleSwapLanguages}
         >
           ⇄
         </button>
@@ -215,55 +230,66 @@ export default function OverlayTranslationWorkspace({ state }: { state: OverlayS
           <span className="sr-only">Target language</span>
           <select
             value={targetLanguage}
-            className="ait-overlay-select w-full rounded-lg border border-white/[0.08] bg-white/[0.045] px-2 py-1.5 text-[10px] text-slate-300 outline-none"
-            onChange={(event) => setTargetLanguage(event.target.value)}
+            className="ait-overlay-translation-select w-full"
+            onChange={(event) => handleTargetLanguageChange(event.target.value)}
           >
-            {LANGUAGE_OPTIONS.filter((option) => !option.sourceOnly).map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
+            {TRANSLATION_TARGET_LANGUAGES.map((option) => (
+              <option key={option.code} value={option.code}>{option.label}</option>
             ))}
           </select>
         </label>
       </div>
 
-      <div className="mt-2 grid gap-2">
-        <label>
-          <div className="mb-1 flex items-center justify-between gap-2">
+      <div className="mt-3 grid gap-2.5">
+        <section>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Original</span>
-            <span className="text-[9px] text-slate-600">editable · live</span>
+            <span className="text-[9px] text-slate-600">{workingText.length} chars</span>
           </div>
           <textarea
-            value={sourceText}
+            value={workingText}
             rows={3}
-            className="max-h-28 min-h-16 w-full resize-y rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] leading-4 text-slate-200 outline-none focus:border-white/[0.16]"
-            onChange={(event) => setSourceText(event.target.value)}
+            className="ait-overlay-translation-editor w-full resize-none rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] leading-4 text-slate-200 outline-none focus:border-white/[0.16] focus:bg-white/[0.055]"
+            onChange={(event) => {
+              markUserChange(false)
+              setWorkingText(event.target.value)
+            }}
           />
-        </label>
+        </section>
 
-        <div>
-          <div className="mb-1 flex items-center justify-between gap-2">
+        <section className="rounded-[12px] border border-white/[0.07] bg-white/[0.025] px-3 py-2.5">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Translation</span>
-            <span className="flex items-center gap-1.5 text-[9px] text-slate-600">
-              {busy && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />}
-              {busy ? "Translating…" : providerLabel}
+            <span className="truncate text-[9px] text-slate-600">
+              {pending
+                ? "Translating…"
+                : actualProvider
+                  ? `Using ${translationProviderLabel(actualProvider)}`
+                  : providerMode === "auto"
+                    ? "Auto"
+                    : translationProviderLabel(providerMode)}
             </span>
           </div>
-          <div className="max-h-28 min-h-16 overflow-y-auto rounded-[12px] border border-white/[0.07] bg-white/[0.025] px-3 py-2 text-[11px] leading-4 text-slate-200">
-            {translatedText ? (
-              <p className="whitespace-pre-wrap">{translatedText}</p>
-            ) : busy ? (
-              <p className="text-slate-500">Translating…</p>
-            ) : (
-              <p className="text-slate-600">Translation will appear here.</p>
-            )}
-          </div>
-        </div>
+
+          {pending && !translatedText ? (
+            <div className="flex min-h-12 items-center gap-2 text-[10px] text-slate-500">
+              <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/70" />
+              Translating current text…
+            </div>
+          ) : errorMessage ? (
+            <p className="min-h-12 whitespace-pre-wrap text-[10px] leading-4 text-rose-200/85">{errorMessage}</p>
+          ) : translatedText ? (
+            <p className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-4 text-slate-200">{translatedText}</p>
+          ) : (
+            <p className="min-h-12 text-[10px] leading-4 text-slate-600">Edit the original text to translate in real time.</p>
+          )}
+        </section>
       </div>
 
-      {notice && !errorMessage && (
-        <p className="mt-2 text-[9px] leading-4 text-amber-200/75">{notice}</p>
-      )}
-      {errorMessage && (
-        <p className="mt-2 text-[9px] leading-4 text-rose-200/85">{errorMessage}</p>
+      {notice && (
+        <p className="mt-2 rounded-[10px] border border-amber-300/10 bg-amber-300/[0.055] px-2.5 py-1.5 text-[9px] leading-4 text-amber-100/80">
+          {notice}
+        </p>
       )}
     </div>
   )

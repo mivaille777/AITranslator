@@ -23,13 +23,12 @@ const READY_MIN_HEIGHT = 286
 const READY_MAX_HEIGHT = 600
 
 const ACTION_RESERVE: Record<OverlayActionPresentation, number> = {
-  // Assistant is the primary surface now. Compact must reserve enough room for
-  // the lightweight action row, a small message viewport and the composer.
   compact: 154,
   expanded: 194,
   result: 224,
-  // Translation keeps the same companion composer mounted below the result.
-  chat: 300,
+  // Interactive Translation now owns an editable source, language/provider
+  // controls, translated output and the persistent companion composer.
+  chat: 430,
 }
 
 function wrappedLineCount(text: string, charsPerLine: number, maxLines: number): number {
@@ -57,16 +56,13 @@ export function computeOverlayWindowSize({
   if (phase === "hidden") {
     height = 190
   } else if (phase === "idle") {
-    // Idle is the Assistant-ready shell before any loading/result state. Keep
-    // it compact while still reserving room for the composer.
     height = READY_MIN_HEIGHT
   } else if (phase === "loading") {
-    // Translation loading no longer hides the AI composer.
-    height = actionPresentation === "chat" ? 520 : 230
+    height = actionPresentation === "chat" ? 560 : 230
   } else if (phase === "error") {
     const messageLines = Math.max(1, wrappedLineCount(message, 42, 4))
     const errorHeight = 184 + messageLines * 22
-    height = actionPresentation === "chat" ? Math.max(520, errorHeight) : errorHeight
+    height = actionPresentation === "chat" ? Math.max(560, errorHeight) : errorHeight
   } else {
     const translationLines = Math.max(1, wrappedLineCount(translatedText, 45, 11))
     const sourceLines = wrappedLineCount(sourceText, 54, 3)

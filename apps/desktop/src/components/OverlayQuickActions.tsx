@@ -50,7 +50,10 @@ export default function OverlayQuickActions({
       data-overlay-mode={mode}
     >
       <OverlaySourceContext state={state} />
-      {mode === "translation" && <OverlayTranslationWorkspace state={state} />}
+      <OverlayTranslationWorkspace
+        state={state}
+        visible={mode === "translation"}
+      />
       <OverlayCompactChat
         state={state}
         aiResult={null}

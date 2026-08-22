@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.agent import router as agent_router
 from backend.api.agent_observability import router as agent_observability_router
 from backend.api.agent_observability_dependencies import close_agent_trace_store_service
+from backend.api.agent_runtime_config import router as agent_runtime_config_router
 from backend.api.browser_context import router as browser_context_router
 from backend.api.companion import router as companion_router
 from backend.api.companion_stream import router as companion_stream_router
@@ -75,15 +76,13 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.15.0",
+        version="0.16.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
         lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=get_dev_origins(),
-        # Web development may use a non-default Vite port. The backend is
-        # loopback-only, so allow localhost/127.0.0.1 dev origins by regex.
         allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -98,6 +97,7 @@ def create_app() -> FastAPI:
     app.include_router(research_router)
     app.include_router(agent_router)
     app.include_router(agent_observability_router)
+    app.include_router(agent_runtime_config_router)
     app.include_router(companion_router)
     app.include_router(companion_stream_router)
     app.include_router(conversations_router)

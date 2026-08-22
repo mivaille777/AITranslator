@@ -5,6 +5,8 @@ import type { OverlayStateResponse } from "../api/types"
 import { subscribeOverlayCommands } from "../desktop/overlay-commands"
 import type { OverlayActionPresentation } from "../desktop/overlay-sizing"
 import OverlayCompactChat from "./OverlayCompactChat"
+import OverlaySourceContext from "./OverlaySourceContext"
+import OverlayTranslationWorkspace from "./OverlayTranslationWorkspace"
 
 export type OverlayCompletedInteraction = "copy" | "handoff"
 
@@ -47,6 +49,8 @@ export default function OverlayQuickActions({
       className={`ait-overlay-action-surface relative ${mode === "assistant" ? "is-assistant-primary" : "is-translation-primary"}`}
       data-overlay-mode={mode}
     >
+      <OverlaySourceContext state={state} />
+      {mode === "translation" && <OverlayTranslationWorkspace state={state} />}
       <OverlayCompactChat
         state={state}
         aiResult={null}

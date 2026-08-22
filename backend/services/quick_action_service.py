@@ -38,12 +38,7 @@ class QuickActionResult:
 
 
 class QuickActionService:
-    """Application boundary for source-bound AI actions.
-
-    Deterministic translation remains outside this service. Context-aware
-    reading actions reuse the mature chat prompt contract, while polishing
-    reuses the provider-independent AI text service.
-    """
+    """Application boundary for source-bound AI actions."""
 
     def __init__(
         self,
@@ -166,8 +161,15 @@ class QuickActionService:
         )
 
     def close(self) -> None:
-        service = self._text_service
+        text_service = self._text_service
+        chat_service = self._chat_service
         self._chat_service = None
         self._text_service = None
-        if service is not None:
-            service.close()
+
+        chat_text_service = getattr(chat_service, "text_service", None)
+        if chat_text_service is not None and chat_text_service is not text_service:
+            close = getattr(chat_text_service, "close", None)
+            if callable(close):
+                close()
+        if text_service is not None:
+            text_service.close()

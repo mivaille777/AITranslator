@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from typing import Any
+from typing import Any, Callable
 
+from backend.agent_core.events import AgentEventType
 from backend.agent_core.state import AgentState
 
 
@@ -36,7 +37,7 @@ class ProductAgentRuntimeAdapter:
     """Map the existing bounded ProductAgentService loop onto AgentState.
 
     ProductAgentService remains the owner of Plan -> Validate -> Execute ->
-    Synthesize behavior.  This adapter only translates between that established
+    Synthesize behavior. This adapter only translates between that established
     service contract and the state/event-oriented Agent Core contract.
     """
 
@@ -68,8 +69,8 @@ class ProductAgentRuntimeAdapter:
             "request_id": max(0, int(context.get("request_id", 0) or 0)),
         }
 
-    def __call__(self, state: AgentState) -> AgentState:
-        result = self._service.run(**self._payload(state))
+    @staticmethod
+    def _apply_result(state: AgentState, result: Any) -> AgentState:
         plan = _structured(result.plan)
         state.planned_action = plan
 
@@ -98,6 +99,25 @@ class ProductAgentRuntimeAdapter:
         }
         state.ui_mode = _UI_MODE_BY_TOOL.get(tool_name, "assistant")
         return state
+
+    def __call__(self, state: AgentState) -> AgentState:
+        result = self._service.run(**self._payload(state))
+        return self._apply_result(state, result)
+
+    def run_with_events(
+        self,
+        state: AgentState,
+        emit: Callable[[AgentEventType, dict[str, Any]], None],
+    ) -> AgentState:
+        def forward(event_type: str, payload: dict[str, Any]) -> None:
+            try:
+                core_type = AgentEventType(event_type)
+            except ValueError:
+                return
+            emit(core_type, payload)
+
+        result = self._service.run(event_sink=forward, **self._payload(state))
+        return self._apply_result(state, result)
 
     def close(self) -> None:
         close = getattr(self._service, "close", None)

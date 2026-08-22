@@ -7,6 +7,7 @@ export type AgentToolEffect = "read" | "compute" | "write"
 export type AgentTraceEventType =
   | "agent_start"
   | "context_ready"
+  | "plan_ready"
   | "tool_call"
   | "tool_result"
   | "agent_end"

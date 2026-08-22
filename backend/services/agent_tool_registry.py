@@ -128,15 +128,17 @@ class AgentToolRegistry:
         quick_action_service: QuickActionService | Any | None = None,
         research_note_service: ResearchNoteService | Any | None = None,
     ) -> None:
-        # Explicit translation_service injection remains supported for existing
-        # deterministic tests/integrations. Production defaults to the same
-        # Youdao -> Google -> AI cascade used by the unified overlay.
+        # Explicit non-production translation service injection remains
+        # supported for deterministic tests/integrations. The real
+        # TranslationService is paired with the same Youdao -> Google -> AI
+        # cascade used by the unified overlay.
         self._translation_service = translation_service
-        self._translation_fallback_service = (
-            translation_fallback_service
-            if translation_fallback_service is not None
-            else None if translation_service is not None else TranslationFallbackService()
-        )
+        if translation_fallback_service is not None:
+            self._translation_fallback_service = translation_fallback_service
+        elif translation_service is None or isinstance(translation_service, TranslationService):
+            self._translation_fallback_service = TranslationFallbackService()
+        else:
+            self._translation_fallback_service = None
         self._quick_action_service = quick_action_service or QuickActionService()
         self._research_note_service = research_note_service or ResearchNoteService()
 
@@ -182,11 +184,15 @@ class AgentToolRegistry:
             )
 
         if spec.name == "translate_selection":
+            target_language = str(
+                payload.get("target_language", context["target_language"])
+                or context["target_language"]
+            )
             if self._translation_fallback_service is not None:
                 result = self._translation_fallback_service.translate(
                     context["source_text"],
                     source_language=context["source_language"],
-                    target_language=str(payload.get("target_language", context["target_language"]) or context["target_language"]),
+                    target_language=target_language,
                     request_id=request_id,
                 )
                 return AgentToolExecutionResult(
@@ -213,7 +219,7 @@ class AgentToolRegistry:
             result = self._translation_service.translate(
                 context["source_text"],
                 source_language=context["source_language"],
-                target_language=str(payload.get("target_language", context["target_language"]) or context["target_language"]),
+                target_language=target_language,
                 request_id=request_id,
             )
             return AgentToolExecutionResult(

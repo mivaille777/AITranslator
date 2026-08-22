@@ -5,16 +5,7 @@ import type {
 } from "../../api/types"
 import { Toggle } from "../../shared/components/Toggle"
 
-export default function BrowserReadingContextPanel({
-  browserStatus,
-  browserPage,
-  readingSelection,
-  followBrowserSelection,
-  autoTranslateSelection,
-  autoTranslating,
-  onFollowBrowserSelectionChange,
-  onAutoTranslateSelectionChange,
-}: {
+type BrowserReadingContextPanelProps = {
   browserStatus: BrowserBridgeStatusResponse | undefined
   browserPage: BrowserPage | null
   readingSelection: ReadingSelection | null
@@ -23,7 +14,16 @@ export default function BrowserReadingContextPanel({
   autoTranslating: boolean
   onFollowBrowserSelectionChange: (checked: boolean) => void
   onAutoTranslateSelectionChange: (checked: boolean) => void
-}) {
+}
+
+export default function BrowserReadingContextPanel(props: BrowserReadingContextPanelProps) {
+  const {
+    browserStatus,
+    browserPage,
+    readingSelection,
+    followBrowserSelection,
+    onFollowBrowserSelectionChange,
+  } = props
   const isBrowserSelection = readingSelection?.source_kind === "browser"
   const title =
     readingSelection?.resource_title ||
@@ -70,17 +70,15 @@ export default function BrowserReadingContextPanel({
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Toggle
             label="Follow selection"
             checked={followBrowserSelection}
             onChange={onFollowBrowserSelectionChange}
           />
-          <Toggle
-            label={autoTranslating ? "Auto translating…" : "Auto translate + overlay"}
-            checked={autoTranslateSelection}
-            onChange={onAutoTranslateSelectionChange}
-          />
+          <span className="rounded-full border border-cyan-200/70 bg-cyan-50 px-3 py-1.5 text-[11px] font-medium text-cyan-700">
+            Assistant-first overlay
+          </span>
         </div>
       </div>
 

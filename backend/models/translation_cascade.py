@@ -5,10 +5,11 @@ from pydantic import BaseModel, Field
 from backend.models.translation import TranslationApiRequest
 
 TranslationAttemptStatus = Literal["success", "unavailable"]
+TranslationProviderMode = Literal["auto", "youdao_web", "google_web", "ai"]
 
 
 class TranslationCascadeRequest(TranslationApiRequest):
-    pass
+    provider_mode: TranslationProviderMode = "auto"
 
 
 class TranslationCascadeAttempt(BaseModel):

@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe("agent observability api", () => {
   it("reads the persisted summary contract", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) =>
       new Response(
         JSON.stringify({
           sample_size: 4,
@@ -46,7 +46,7 @@ describe("agent observability api", () => {
   it("unwraps recent persisted runs", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
+      vi.fn(async (_input: RequestInfo | URL) =>
         new Response(
           JSON.stringify({
             runs: [

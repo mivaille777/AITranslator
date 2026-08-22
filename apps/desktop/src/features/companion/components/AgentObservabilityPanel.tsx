@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Activity, Clock3, RefreshCcw, RotateCcw, ShieldCheck } from "lucide-react"
+import { Activity, Clock3, Cpu, RefreshCcw, RotateCcw, ShieldCheck } from "lucide-react"
 
 import {
   getAgentObservabilitySummary,
@@ -7,6 +7,10 @@ import {
   type AgentObservabilitySummary,
   type AgentRunMetric,
 } from "../../../api/agent-observability"
+import {
+  getAgentRuntimeConfig,
+  type AgentRuntimeConfig,
+} from "../../../api/agent-runtime-config"
 import { AITPanel } from "@/shared/components/AITPanel"
 
 function percentage(value: number): string {
@@ -41,6 +45,7 @@ export function AgentObservabilityPanel({
 }) {
   const [summary, setSummary] = useState<AgentObservabilitySummary | null>(null)
   const [runs, setRuns] = useState<AgentRunMetric[]>([])
+  const [runtimeConfig, setRuntimeConfig] = useState<AgentRuntimeConfig | null>(null)
   const [loading, setLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
 
@@ -48,11 +53,16 @@ export function AgentObservabilityPanel({
     let cancelled = false
     setLoading(true)
     setErrorMessage("")
-    void Promise.all([getAgentObservabilitySummary(100), getRecentAgentRuns(6)])
-      .then(([nextSummary, nextRuns]) => {
+    void Promise.all([
+      getAgentObservabilitySummary(100),
+      getRecentAgentRuns(6),
+      getAgentRuntimeConfig(),
+    ])
+      .then(([nextSummary, nextRuns, nextConfig]) => {
         if (cancelled) return
         setSummary(nextSummary)
         setRuns(nextRuns)
+        setRuntimeConfig(nextConfig)
       })
       .catch((error) => {
         if (cancelled) return
@@ -70,6 +80,18 @@ export function AgentObservabilityPanel({
   const current = useMemo(
     () => runs.find((run) => run.run_id === currentRunId) ?? null,
     [currentRunId, runs],
+  )
+  const visibleRoutes = useMemo(
+    () => runtimeConfig?.model_routes.filter((route) =>
+      ["planner", "agent_synthesis", "reading"].includes(route.role),
+    ) ?? [],
+    [runtimeConfig],
+  )
+  const visiblePrompts = useMemo(
+    () => runtimeConfig?.prompts.filter((prompt) =>
+      ["agent.planner", "chat.reading"].includes(prompt.name),
+    ) ?? [],
+    [runtimeConfig],
   )
 
   return (
@@ -103,6 +125,41 @@ export function AgentObservabilityPanel({
         <Metric label="Retry rate" value={summary ? percentage(summary.retry_rate) : "—"} />
         <Metric label="Fallback rate" value={summary ? percentage(summary.fallback_rate) : "—"} />
       </div>
+
+      {runtimeConfig ? (
+        <div className="mt-4 rounded-[14px] border border-slate-100 bg-white p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+              <Cpu size={14} />
+              Runtime routing
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+              <ShieldCheck size={12} />
+              {runtimeConfig.document_content_trust} · {runtimeConfig.planner_argument_policy}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {visibleRoutes.map((route) => (
+              <span
+                key={route.role}
+                className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600"
+                title={`${route.provider} · ${route.model}`}
+              >
+                {route.role}: <span className="font-medium text-slate-800">{route.model}</span>
+              </span>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-400">
+            {visiblePrompts.map((prompt) => (
+              <span key={prompt.prompt_id} title={prompt.prompt_id}>
+                {prompt.name} v{prompt.version}
+              </span>
+            ))}
+            <span>planner budget {runtimeConfig.planner_context_max_chars.toLocaleString()} chars</span>
+            <span>chat budget {runtimeConfig.chat_context_max_chars.toLocaleString()} chars</span>
+          </div>
+        </div>
+      ) : null}
 
       {current ? (
         <div className="mt-4 grid gap-2 rounded-[14px] border border-slate-100 bg-white p-3 md:grid-cols-4">

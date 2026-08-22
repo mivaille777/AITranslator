@@ -96,8 +96,9 @@ export function AgentObservabilityPanel({
         </div>
       ) : null}
 
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Success" value={summary ? percentage(summary.success_rate) : "—"} />
+        <Metric label="Schema valid" value={summary ? percentage(summary.schema_valid_rate) : "—"} />
         <Metric label="P95 latency" value={summary ? duration(summary.p95_total_duration_ms) : "—"} />
         <Metric label="Retry rate" value={summary ? percentage(summary.retry_rate) : "—"} />
         <Metric label="Fallback rate" value={summary ? percentage(summary.fallback_rate) : "—"} />

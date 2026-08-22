@@ -1,5 +1,5 @@
 import type { FormEvent } from "react"
-import { ArrowUp, LoaderCircle } from "lucide-react"
+import { ArrowUp, LoaderCircle, Square } from "lucide-react"
 
 import { AITInput } from "@/shared/components/AITInput"
 
@@ -7,14 +7,18 @@ export function AgentInputComposer({
   value,
   onChange,
   onSubmit,
+  onCancel,
   disabled,
   busy,
+  cancelling,
 }: {
   value: string
   onChange: (value: string) => void
   onSubmit: () => void
+  onCancel: () => void
   disabled: boolean
   busy: boolean
+  cancelling: boolean
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -37,14 +41,26 @@ export function AgentInputComposer({
           }
         }}
       />
-      <button
-        type="submit"
-        disabled={disabled || !value.trim()}
-        aria-label="Run Agent"
-        className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-[12px] bg-slate-950 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-      >
-        {busy ? <LoaderCircle size={16} className="animate-spin" /> : <ArrowUp size={16} />}
-      </button>
+      {busy ? (
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={cancelling}
+          aria-label="Cancel Agent"
+          className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-[12px] bg-slate-950 text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:bg-slate-400"
+        >
+          {cancelling ? <LoaderCircle size={16} className="animate-spin" /> : <Square size={14} fill="currentColor" />}
+        </button>
+      ) : (
+        <button
+          type="submit"
+          disabled={disabled || !value.trim()}
+          aria-label="Run Agent"
+          className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-[12px] bg-slate-950 text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          <ArrowUp size={16} />
+        </button>
+      )}
     </form>
   )
 }

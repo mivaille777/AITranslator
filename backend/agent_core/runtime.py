@@ -8,6 +8,7 @@ from backend.agent_core.reliability import AgentRunControl
 from backend.agent_core.state import AgentState
 
 AgentEventSink = Callable[[AgentEvent], None]
+AgentRunRecorder = Callable[[AgentState, tuple[AgentEvent, ...]], None]
 
 
 def _fallback_reason(exc: Exception) -> str:
@@ -24,6 +25,8 @@ class AgentRuntime:
     Agent Core owns correlation IDs, total execution budget, cooperative
     cancellation and normalized lifecycle events. Existing product services keep
     ownership of planning, tool validation, confirmation gates and synthesis.
+    Runtime telemetry persistence is a best-effort observer and cannot change
+    execution outcomes.
     """
 
     def __init__(
@@ -33,11 +36,13 @@ class AgentRuntime:
         planner: Callable[[AgentState], dict[str, Any]] | None = None,
         tool_executor: Callable[[AgentState], dict[str, Any]] | None = None,
         workflow_adapter: Callable[[AgentState], AgentState] | None = None,
+        run_recorder: AgentRunRecorder | None = None,
     ) -> None:
         self.context_provider = context_provider
         self.planner = planner
         self.tool_executor = tool_executor
         self.workflow_adapter = workflow_adapter
+        self.run_recorder = run_recorder
         self.events: list[AgentEvent] = []
         self._event_sink: AgentEventSink | None = None
         self._active_state: AgentState | None = None
@@ -192,6 +197,13 @@ class AgentRuntime:
             )
             raise
         finally:
+            if self.run_recorder is not None:
+                try:
+                    self.run_recorder(state, tuple(self.events))
+                except Exception:
+                    # Persistence is diagnostic only. Disk/SQLite failures must
+                    # not change Agent success, failure, cancellation or safety.
+                    pass
             self._event_sink = previous_sink
             self._active_state = previous_state
             self._control = previous_control

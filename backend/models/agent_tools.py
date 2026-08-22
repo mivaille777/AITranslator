@@ -14,7 +14,11 @@ AgentTraceEventType = Literal[
     "context_ready",
     "plan_ready",
     "tool_call",
+    "retry",
     "tool_result",
+    "synthesis_ready",
+    "failure",
+    "cancelled",
     "agent_end",
 ]
 
@@ -71,6 +75,7 @@ class AgentPlan(BaseModel):
 
 class AgentRunRequest(ReadingContextPayload):
     session_id: str = Field(default="agent-session", min_length=1, max_length=128)
+    trace_id: str = Field(default="", max_length=128)
     user_message: str = Field(min_length=1, max_length=20_000)
     style: str = Field(default="academic", min_length=1, max_length=64)
     conversation_id: str = Field(default="", max_length=128)
@@ -92,11 +97,17 @@ class AgentTraceEvent(BaseModel):
     sequence: int = Field(ge=0)
     event_type: AgentTraceEventType
     timestamp: str
+    run_id: str = ""
+    trace_id: str = ""
+    elapsed_ms: int = Field(default=0, ge=0)
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentRunTraceResponse(BaseModel):
+    run_id: str
+    trace_id: str
     session_id: str
     ui_mode: str = "idle"
+    total_duration_ms: int = Field(default=0, ge=0)
     run: AgentRunResponse
     events: list[AgentTraceEvent] = Field(default_factory=list)

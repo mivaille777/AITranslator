@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-from typing import Any
+from typing import Any, Callable
 
 from backend.models.agent_tools import AgentPlan
 from backend.services.agent_planner_service import AgentPlannerService
@@ -13,6 +13,7 @@ from backend.services.agent_tool_registry import (
 from backend.services.companion_chat_service import CompanionChatService
 
 _ALLOWED_PLANNER_ARGUMENTS = frozenset({"target_language", "style", "user_note"})
+AgentLifecycleSink = Callable[[str, dict[str, Any]], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,10 @@ class ProductAgentService:
     select only registered tools and can override only a small allow-list of
     non-sensitive arguments. Write tools stop at a confirmation gate unless the
     caller explicitly confirms that tool for the current request.
+
+    ``event_sink`` is an optional observer only. It exposes lifecycle events to
+    Agent Core without granting the transport layer any authority over planning,
+    tool validation, execution or confirmation policy.
     """
 
     def __init__(
@@ -61,9 +66,24 @@ class ProductAgentService:
             "source_kind": payload.get("source_kind", "desktop"),
         }
 
-    def run(self, **payload: Any) -> ProductAgentRunResult:
+    @staticmethod
+    def _emit(
+        sink: AgentLifecycleSink | None,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        if sink is not None:
+            sink(event_type, payload)
+
+    def run(
+        self,
+        *,
+        event_sink: AgentLifecycleSink | None = None,
+        **payload: Any,
+    ) -> ProductAgentRunResult:
         reading = self._reading_fields(payload)
         tools = self._registry.list_tools()
+        request_id = max(0, int(payload.get("request_id", 0) or 0))
         plan = self._planner.plan(
             tools=tools,
             user_message=str(payload["user_message"]),
@@ -76,7 +96,17 @@ class ProductAgentService:
             context_after=str(reading["context_after"]),
             source_kind=str(reading["source_kind"]),
         )
-        request_id = max(0, int(payload.get("request_id", 0) or 0))
+        self._emit(
+            event_sink,
+            "plan_ready",
+            {
+                "action": plan.action,
+                "tool_name": plan.tool_name,
+                "user_visible_reason": plan.user_visible_reason,
+                "arguments": dict(plan.arguments),
+                "request_id": request_id,
+            },
+        )
 
         if plan.action == "answer":
             answer = self._chat_service.send(
@@ -98,6 +128,18 @@ class ProductAgentService:
         spec = self._registry.get_tool(plan.tool_name)
         if spec is None:
             raise RuntimeError(f"Validated plan references missing tool: {plan.tool_name}")
+
+        self._emit(
+            event_sink,
+            "tool_call",
+            {
+                "name": spec.name,
+                "arguments": dict(plan.arguments),
+                "effect": spec.effect,
+                "requires_confirmation": spec.requires_confirmation,
+                "request_id": request_id,
+            },
+        )
 
         confirmed = {
             str(item).strip()
@@ -122,6 +164,19 @@ class ProductAgentService:
                 execution_payload[key] = value
 
         tool_result = self._registry.execute(spec.name, **execution_payload)
+        self._emit(
+            event_sink,
+            "tool_result",
+            {
+                "tool_name": tool_result.tool_name,
+                "output_text": tool_result.output_text,
+                "effect": tool_result.effect,
+                "provider": tool_result.provider,
+                "model": tool_result.model,
+                "request_id": tool_result.request_id,
+                "data": tool_result.data or {},
+            },
+        )
         if spec.effect == "write":
             return ProductAgentRunResult(
                 status="completed",

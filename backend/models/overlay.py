@@ -2,7 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-OverlayPhase = Literal["hidden", "loading", "ready", "error"]
+OverlayMode = Literal["assistant", "translation"]
+OverlayPhase = Literal["hidden", "idle", "loading", "ready", "error"]
 
 
 class OverlayReadingContext(BaseModel):
@@ -17,6 +18,7 @@ class OverlayReadingContext(BaseModel):
 class OverlayStateResponse(OverlayReadingContext):
     revision: int
     visible: bool
+    mode: OverlayMode = "assistant"
     phase: OverlayPhase
     context_id: str = ""
     source_text: str = ""
@@ -25,7 +27,15 @@ class OverlayStateResponse(OverlayReadingContext):
     target_language: str = "zh-CN"
     provider: str = ""
     message: str = ""
+    translation_notice: str = ""
     companion_conversation_id: str = ""
+
+
+class OverlayAssistantRequest(OverlayReadingContext):
+    context_id: str = Field(min_length=1, max_length=128)
+    source_text: str = Field(min_length=1, max_length=20_000)
+    source_language: str = "auto"
+    target_language: str = "zh-CN"
 
 
 class OverlayLoadingRequest(OverlayReadingContext):
@@ -38,6 +48,7 @@ class OverlayLoadingRequest(OverlayReadingContext):
 class OverlayPresentRequest(OverlayLoadingRequest):
     translated_text: str = Field(min_length=1, max_length=50_000)
     provider: str = "unknown"
+    translation_notice: str = Field(default="", max_length=500)
 
 
 class OverlayErrorRequest(OverlayReadingContext):

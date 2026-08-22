@@ -28,16 +28,7 @@ class CompanionChatResult:
 
 
 class CompanionChatService:
-    """WebReBuild boundary around the existing provider-neutral chat core.
-
-    REST requests keep using the stable non-streaming service for compatibility.
-    WebSocket requests use the UI-independent streaming core. Neither path
-    introduces LangGraph or desktop UI ownership into normal Companion chat.
-
-    Stage 6C/6D can additionally enrich a matching reading request through the
-    unified ``ReadingSelectionResolver``. Explicit frozen request fields always
-    win; resolver metadata only fills missing values for the same selected text.
-    """
+    """WebReBuild boundary around the existing provider-neutral chat core."""
 
     def __init__(
         self,
@@ -78,6 +69,11 @@ class CompanionChatService:
     def model(self) -> str:
         service = self._ensure_text_service()
         return str(getattr(service, "model", "")).strip() or "unknown"
+
+    @property
+    def prompt_id(self) -> str:
+        service = self._ensure_chat_service()
+        return str(getattr(service, "prompt_id", "")).strip()
 
     def status(self) -> tuple[bool, str, str, str]:
         try:

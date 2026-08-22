@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+from time import monotonic
 from typing import Any, Callable
 
+from app.ai.errors import AIConfigurationError, AIError
+from backend.agent_core.exceptions import AgentRuntimeError, AgentToolError
+from backend.agent_core.reliability import AgentRunControl, run_safe_tool_with_timeout
 from backend.models.agent_tools import AgentPlan
 from backend.services.agent_planner_service import AgentPlannerService
 from backend.services.agent_tool_registry import (
@@ -27,6 +31,16 @@ class ProductAgentRunResult:
     tool_result: AgentToolExecutionResult | None = None
 
 
+def _duration_ms(started: float) -> int:
+    return max(0, int((monotonic() - started) * 1000))
+
+
+def _retryable_tool_error(exc: Exception) -> bool:
+    if isinstance(exc, AIConfigurationError):
+        return False
+    return isinstance(exc, (AIError, OSError, TimeoutError, AgentRuntimeError))
+
+
 class ProductAgentService:
     """Bounded Plan -> Validate -> Execute -> Synthesize agent loop.
 
@@ -35,9 +49,9 @@ class ProductAgentService:
     non-sensitive arguments. Write tools stop at a confirmation gate unless the
     caller explicitly confirms that tool for the current request.
 
-    ``event_sink`` is an optional observer only. It exposes lifecycle events to
-    Agent Core without granting the transport layer any authority over planning,
-    tool validation, execution or confirmation policy.
+    ``event_sink`` is observational only. ``control`` supplies cooperative
+    cancellation and execution budgets without transferring policy ownership to
+    the transport layer.
     """
 
     def __init__(
@@ -79,11 +93,16 @@ class ProductAgentService:
         self,
         *,
         event_sink: AgentLifecycleSink | None = None,
+        control: AgentRunControl | None = None,
         **payload: Any,
     ) -> ProductAgentRunResult:
+        control = control or AgentRunControl()
         reading = self._reading_fields(payload)
         tools = self._registry.list_tools()
         request_id = max(0, int(payload.get("request_id", 0) or 0))
+
+        control.checkpoint("planner")
+        planner_started = monotonic()
         plan = self._planner.plan(
             tools=tools,
             user_message=str(payload["user_message"]),
@@ -96,6 +115,7 @@ class ProductAgentService:
             context_after=str(reading["context_after"]),
             source_kind=str(reading["source_kind"]),
         )
+        control.checkpoint("planner_result")
         self._emit(
             event_sink,
             "plan_ready",
@@ -105,16 +125,30 @@ class ProductAgentService:
                 "user_visible_reason": plan.user_visible_reason,
                 "arguments": dict(plan.arguments),
                 "request_id": request_id,
+                "duration_ms": _duration_ms(planner_started),
             },
         )
 
         if plan.action == "answer":
+            control.checkpoint("synthesis")
+            synthesis_started = monotonic()
             answer = self._chat_service.send(
                 session_id=str(payload.get("session_id", "agent-session")),
                 user_message=str(payload["user_message"]),
                 **reading,
                 request_id=request_id,
                 context_mode="reading",
+            )
+            control.checkpoint("synthesis_result")
+            self._emit(
+                event_sink,
+                "synthesis_ready",
+                {
+                    "provider": answer.provider,
+                    "model": answer.model,
+                    "request_id": answer.request_id,
+                    "duration_ms": _duration_ms(synthesis_started),
+                },
             )
             return ProductAgentRunResult(
                 status="completed",
@@ -163,7 +197,59 @@ class ProductAgentService:
             if key in _ALLOWED_PLANNER_ARGUMENTS:
                 execution_payload[key] = value
 
-        tool_result = self._registry.execute(spec.name, **execution_payload)
+        tool_started = monotonic()
+        if spec.effect == "write":
+            # A confirmed write is deliberately synchronous and never retried.
+            # Once it starts, reporting the real result is safer than pretending
+            # an in-flight side effect was cancelled.
+            control.checkpoint(f"write_tool:{spec.name}")
+            tool_result = self._registry.execute(spec.name, **execution_payload)
+        else:
+            max_attempts = 1 + control.policy.max_safe_retries
+            tool_result: AgentToolExecutionResult | None = None
+            last_error: Exception | None = None
+            for attempt in range(1, max_attempts + 1):
+                control.checkpoint(f"tool:{spec.name}:attempt:{attempt}")
+                try:
+                    tool_result = run_safe_tool_with_timeout(
+                        lambda: self._registry.execute(spec.name, **execution_payload),
+                        control=control,
+                        tool_name=spec.name,
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    retryable = _retryable_tool_error(exc)
+                    if not retryable or attempt >= max_attempts:
+                        if isinstance(exc, AgentRuntimeError):
+                            raise
+                        raise AgentToolError(
+                            f"Agent tool {spec.name} failed after {attempt} attempt(s): {exc}",
+                            stage="tool",
+                            fallback_reason=(
+                                "safe_tool_retries_exhausted"
+                                if retryable
+                                else "tool_failure_not_retryable"
+                            ),
+                        ) from exc
+                    self._emit(
+                        event_sink,
+                        "retry",
+                        {
+                            "tool_name": spec.name,
+                            "attempt": attempt + 1,
+                            "max_attempts": max_attempts,
+                            "reason": str(exc) or type(exc).__name__,
+                            "request_id": request_id,
+                        },
+                    )
+            if tool_result is None:
+                raise AgentToolError(
+                    f"Agent tool {spec.name} failed without a result: {last_error}",
+                    stage="tool",
+                    fallback_reason="safe_tool_retries_exhausted",
+                )
+
         self._emit(
             event_sink,
             "tool_result",
@@ -175,6 +261,7 @@ class ProductAgentService:
                 "model": tool_result.model,
                 "request_id": tool_result.request_id,
                 "data": tool_result.data or {},
+                "duration_ms": _duration_ms(tool_started),
             },
         )
         if spec.effect == "write":
@@ -188,6 +275,7 @@ class ProductAgentService:
                 tool_result=tool_result,
             )
 
+        control.checkpoint("synthesis")
         observation = json.dumps(
             {
                 "tool_name": tool_result.tool_name,
@@ -196,6 +284,7 @@ class ProductAgentService:
             },
             ensure_ascii=False,
         )
+        synthesis_started = monotonic()
         answer = self._chat_service.send(
             session_id=str(payload.get("session_id", "agent-session")),
             user_message=str(payload["user_message"]),
@@ -204,6 +293,17 @@ class ProductAgentService:
             context_mode="reading",
             tool_name=tool_result.tool_name,
             tool_context=observation,
+        )
+        control.checkpoint("synthesis_result")
+        self._emit(
+            event_sink,
+            "synthesis_ready",
+            {
+                "provider": answer.provider,
+                "model": answer.model,
+                "request_id": answer.request_id,
+                "duration_ms": _duration_ms(synthesis_started),
+            },
         )
         return ProductAgentRunResult(
             status="completed",

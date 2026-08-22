@@ -26,8 +26,8 @@ const ACTION_RESERVE: Record<OverlayActionPresentation, number> = {
   compact: 154,
   expanded: 194,
   result: 224,
-  // Interactive Translation now owns an editable source, language/provider
-  // controls, translated output and the persistent companion composer.
+  // Interactive Translation owns editable source, language/provider controls,
+  // translated output and the persistent companion composer.
   chat: 430,
 }
 
@@ -58,11 +58,11 @@ export function computeOverlayWindowSize({
   } else if (phase === "idle") {
     height = READY_MIN_HEIGHT
   } else if (phase === "loading") {
-    height = actionPresentation === "chat" ? 560 : 230
+    height = actionPresentation === "chat" ? 520 : 230
   } else if (phase === "error") {
     const messageLines = Math.max(1, wrappedLineCount(message, 42, 4))
     const errorHeight = 184 + messageLines * 22
-    height = actionPresentation === "chat" ? Math.max(560, errorHeight) : errorHeight
+    height = actionPresentation === "chat" ? Math.max(520, errorHeight) : errorHeight
   } else {
     const translationLines = Math.max(1, wrappedLineCount(translatedText, 45, 11))
     const sourceLines = wrappedLineCount(sourceText, 54, 3)

@@ -14,6 +14,7 @@ import { deriveAgentWorkspaceState } from "./agent-workspace-state"
 import { AgentHeader } from "./components/AgentHeader"
 import { AgentInputComposer } from "./components/AgentInputComposer"
 import { AgentMessage } from "./components/AgentMessage"
+import { AgentObservabilityPanel } from "./components/AgentObservabilityPanel"
 import { AgentTrace } from "./components/AgentTrace"
 import { ContextCard } from "./components/ContextCard"
 
@@ -25,6 +26,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
   const [cancelRequested, setCancelRequested] = useState(false)
   const [cancelledMessage, setCancelledMessage] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
+  const [observabilityRefresh, setObservabilityRefresh] = useState(0)
   const sessionId = useRef(`agent-workspace-${Date.now().toString(36)}`)
   const requestId = useRef(0)
   const lastPayload = useRef<AgentRunRequest | null>(null)
@@ -63,6 +65,10 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
     [cancelRequested, cancelledMessage, errorMessage, liveEvents, pending, trace],
   )
 
+  function refreshObservability() {
+    setObservabilityRefresh((current) => current + 1)
+  }
+
   function execute(payload: AgentRunRequest) {
     streamHandle.current?.close()
     streamHandle.current = null
@@ -92,6 +98,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
           setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
+          refreshObservability()
           return
         }
 
@@ -101,6 +108,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
           setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
+          refreshObservability()
           return
         }
 
@@ -110,6 +118,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
           setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
+          refreshObservability()
         }
       },
       onTransportError(error) {
@@ -197,6 +206,11 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
         errorMessage={viewState.errorMessage}
         onConfirm={confirmWriteTool}
         confirming={pending}
+      />
+
+      <AgentObservabilityPanel
+        refreshToken={observabilityRefresh}
+        currentRunId={viewState.runId}
       />
 
       <AgentInputComposer

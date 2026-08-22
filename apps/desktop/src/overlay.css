@@ -102,6 +102,64 @@ html[data-ait-view="overlay"] .ait-overlay-action-surface {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.022);
 }
 
+/*
+ * Assistant-first overlay layout.
+ *
+ * In assistant mode the companion chat is the overlay itself, not a secondary
+ * panel under the old translation body. Keep the native window compact,
+ * remove duplicate chrome, and make the composer visible immediately. The
+ * selected text remains in the textarea through the runtime's initialDraft.
+ */
+html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > div.min-h-0.flex-1,
+html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > footer {
+  display: none !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > header p.mt-1 {
+  display: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  border-top: 0 !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  border-bottom: 0 !important;
+  background: transparent;
+}
+
+/* The outer AITranslator header is the only title bar in assistant mode. */
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div:first-child {
+  display: none !important;
+}
+
+/* Keep a small scrollable conversation viewport instead of a 220px empty pad. */
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.relative {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.relative > div:first-child {
+  height: 104px !important;
+  min-height: 72px;
+  max-height: 128px;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.relative + div,
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary > div[data-ait-selection-scope="internal"] > div.border-t {
+  flex: 0 0 auto;
+}
+
 html[data-ait-view="overlay"] .ait-overlay-action-bar {
   min-height: 50px;
   background: rgba(255, 255, 255, 0.012);

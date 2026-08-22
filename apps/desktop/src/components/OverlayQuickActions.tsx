@@ -115,8 +115,11 @@ export default function OverlayQuickActions({
   }, [onPresentationChange])
 
   useEffect(() => {
-    if (chatOpen) setPresentation("chat")
-  }, [chatOpen, setPresentation])
+    // Assistant mode is already the primary surface and must fit inside the
+    // compact native overlay immediately. Do not wait for a child effect to
+    // resize the window to the legacy 600px chat presentation.
+    if (chatOpen && state.mode !== "assistant") setPresentation("chat")
+  }, [chatOpen, setPresentation, state.mode])
 
   const collapseTransientPanels = useCallback(() => {
     setMoreOpen(false)
@@ -204,13 +207,16 @@ export default function OverlayQuickActions({
     setResultOpen(false)
     setMoreOpen(false)
     setChatOpen(true)
-    setPresentation("chat")
-  }, [setPresentation])
+    if (state.mode !== "assistant") setPresentation("chat")
+  }, [setPresentation, state.mode])
 
   const closeChat = useCallback(() => {
+    // Assistant mode is not a nested chat panel. It is the overlay itself, so
+    // collapsing it would expose the old translation quick-action shell.
+    if (state.mode === "assistant") return
     setChatOpen(false)
     setPresentation("compact")
-  }, [setPresentation])
+  }, [setPresentation, state.mode])
 
   const toggleMore = useCallback(() => {
     if (resultOpen) setResultOpen(false)
@@ -283,7 +289,7 @@ export default function OverlayQuickActions({
   if (state.phase !== "ready") return null
 
   return (
-    <section className={`ait-overlay-action-surface relative border-t border-white/10 ${resultOpen && activeResult ? "is-result-open" : ""} ${moreOpen ? "is-more-open" : ""} ${chatOpen ? "is-chat-open" : ""}`}>
+    <section className={`ait-overlay-action-surface relative border-t border-white/10 ${state.mode === "assistant" ? "is-assistant-primary" : ""} ${resultOpen && activeResult ? "is-result-open" : ""} ${moreOpen ? "is-more-open" : ""} ${chatOpen ? "is-chat-open" : ""}`}>
       {chatOpen ? (
         <OverlayCompactChat state={state} aiResult={activeResult} onClose={closeChat} />
       ) : (

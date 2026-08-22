@@ -12,6 +12,7 @@ from backend.api.dependencies import (
     get_product_agent_service,
     get_reading_selection_resolver,
 )
+from backend.services.agent_trace_store_service import AgentTraceStoreService
 from backend.services.product_agent_service import ProductAgentService
 from backend.services.reading_selection_resolver import ReadingSelectionResolver
 
@@ -23,11 +24,16 @@ ReadingSelectionResolverDependency = Annotated[
     ReadingSelectionResolver,
     Depends(get_reading_selection_resolver),
 ]
+AgentTraceStoreDependency = Annotated[
+    AgentTraceStoreService,
+    Depends(get_agent_trace_store_service),
+]
 
 
 def get_agent_runtime(
     service: ProductAgentServiceDependency,
     resolver: ReadingSelectionResolverDependency,
+    trace_store: AgentTraceStoreDependency,
 ) -> AgentRuntime:
     """Build one lightweight Agent Core runtime for the current API request.
 
@@ -37,7 +43,6 @@ def get_agent_runtime(
     requests. Observability persistence is shared and privacy-preserving.
     """
 
-    trace_store = get_agent_trace_store_service()
     return AgentRuntime(
         context_provider=ReadingContextProvider(resolver),
         workflow_adapter=ProductAgentRuntimeAdapter(service),

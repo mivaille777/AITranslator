@@ -25,7 +25,7 @@ ReadingSelectionResolverDependency = Annotated[
     Depends(get_reading_selection_resolver),
 ]
 AgentTraceStoreDependency = Annotated[
-    AgentTraceStoreService,
+    AgentTraceStoreService | None,
     Depends(get_agent_trace_store_service),
 ]
 
@@ -33,20 +33,20 @@ AgentTraceStoreDependency = Annotated[
 def get_agent_runtime(
     service: ProductAgentServiceDependency,
     resolver: ReadingSelectionResolverDependency,
-    trace_store: AgentTraceStoreDependency,
+    trace_store: AgentTraceStoreDependency = None,
 ) -> AgentRuntime:
     """Build one lightweight Agent Core runtime for the current API request.
 
-    The underlying product services remain shared through the existing backend
-    dependency providers. The runtime itself is request-scoped because its
-    event list is mutable execution state and must never leak across concurrent
-    requests. Observability persistence is shared and privacy-preserving.
+    FastAPI injects the shared local trace store. Direct unit-test calls may omit
+    it and remain side-effect free. The runtime itself is request-scoped because
+    its event list is mutable execution state and must never leak across
+    concurrent requests.
     """
 
     return AgentRuntime(
         context_provider=ReadingContextProvider(resolver),
         workflow_adapter=ProductAgentRuntimeAdapter(service),
-        run_recorder=trace_store.record,
+        run_recorder=trace_store.record if trace_store is not None else None,
     )
 
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { isExplicitOverlayTranslationIntent } from "./overlay-translation-intent"
+import {
+  isExplicitOverlayTranslationIntent,
+  resolveExplicitOverlayTranslationIntent,
+} from "./overlay-translation-intent"
 
 describe("overlay translation intent fast path", () => {
   it.each([
@@ -9,11 +12,19 @@ describe("overlay translation intent fast path", () => {
     "我要你翻译一下",
     "请翻译这段",
     "把这段翻译一下",
-    "翻成英文",
     "translate this",
     "please translate the selection",
   ])("routes explicit translation command %s", (message) => {
     expect(isExplicitOverlayTranslationIntent(message)).toBe(true)
+  })
+
+  it("maps an explicit target-language command", () => {
+    expect(resolveExplicitOverlayTranslationIntent("翻成英文")).toEqual({
+      targetLanguage: "en",
+    })
+    expect(resolveExplicitOverlayTranslationIntent("翻成中文")).toEqual({
+      targetLanguage: "zh-CN",
+    })
   })
 
   it.each([

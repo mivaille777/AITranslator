@@ -83,6 +83,14 @@ export function streamAgentRun(
   socket.addEventListener("open", () => {
     if (cancelRequested) {
       terminal = true
+      handlers.onEvent({
+        type: "cancelled",
+        request_id: requestId,
+        session_id: payload.session_id,
+        run_id: "",
+        trace_id: payload.trace_id ?? "",
+        message: "Agent run cancelled before start.",
+      })
       socket.close(1000, "cancelled-before-start")
       return
     }
@@ -129,8 +137,6 @@ export function streamAgentRun(
       cancelRequested = true
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: "cancel", request_id: requestId }))
-      } else if (socket.readyState === WebSocket.CONNECTING) {
-        socket.close(1000, "cancelled-before-start")
       }
     },
     close() {

@@ -30,7 +30,7 @@ const TARGET_LANGUAGE_ALIASES: Record<string, string> = {
 }
 
 const TARGET_LANGUAGE_COMMAND = new RegExp(
-  `^(?:请|帮我|我要你|能不能|可以(?:帮我)?)?(?:把)?(?:这段|这个|它|选中的内容)?(?:翻译|翻|译)?(?:一下|下)?(?:成|为)?(${Object.keys(TARGET_LANGUAGE_ALIASES).join("|")})[吗呢]?[？?。！! ]*$`,
+  `^(?:请|帮我|我要你|能不能|可以(?:帮我)?)?(?:把)?(?:这段|这个|它|选中的内容)?(?:翻译|翻|译)(?:一下|下)?(?:成|为)?(${Object.keys(TARGET_LANGUAGE_ALIASES).join("|")})[吗呢]?[？?。！! ]*$`,
   "i",
 )
 

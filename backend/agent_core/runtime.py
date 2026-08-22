@@ -81,6 +81,7 @@ class AgentRuntime:
         self._active_state = state
         self._control = control or AgentRunControl()
         self.events.clear()
+        state.sync_contract()
 
         try:
             active_control = self._control
@@ -97,7 +98,9 @@ class AgentRuntime:
 
             active_control.checkpoint("context_resolution")
             if self.context_provider:
-                state.browser_context = self.context_provider(state)
+                state.apply_reading_context(self.context_provider(state))
+            else:
+                state.sync_contract()
             active_control.checkpoint("context_ready")
             self._emit(AgentEventType.CONTEXT_READY, state.browser_context)
 
@@ -116,6 +119,7 @@ class AgentRuntime:
                     for result in state.tool_results[previous_result_count:]:
                         self._emit(AgentEventType.TOOL_RESULT, result)
 
+                state.sync_contract()
                 # Do not re-check cancellation after a workflow has returned a
                 # completed result. A confirmed write may have finished while a
                 # late cancel request was arriving; reporting the real side
@@ -136,6 +140,7 @@ class AgentRuntime:
                 state.planned_action = self.planner(state)
                 active_control.checkpoint("planner_result")
                 state.intent = state.planned_action.get("intent", state.intent)
+                state.sync_contract()
                 self._emit(AgentEventType.PLAN_READY, state.planned_action)
 
             if self.tool_executor:
@@ -150,14 +155,17 @@ class AgentRuntime:
                 result = self.tool_executor(state)
                 active_control.checkpoint("tool_result")
                 state.tool_results.append(result)
+                state.sync_contract()
                 self._emit(AgentEventType.TOOL_RESULT, result)
 
+            state.sync_contract()
             self._emit(
                 AgentEventType.AGENT_END,
                 {"intent": state.intent, "total_duration_ms": active_control.elapsed_ms},
             )
             return state
         except AgentCancelledError as exc:
+            state.sync_contract()
             self._emit(
                 AgentEventType.CANCELLED,
                 {
@@ -177,6 +185,7 @@ class AgentRuntime:
             )
             raise
         except Exception as exc:
+            state.sync_contract()
             self._emit(
                 AgentEventType.FAILURE,
                 {

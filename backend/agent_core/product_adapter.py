@@ -68,14 +68,14 @@ class ProductAgentRuntimeAdapter:
     @staticmethod
     def _apply_result(state: AgentState, result: Any) -> AgentState:
         plan = _structured(result.plan)
-        state.planned_action = plan
+        state.apply_plan(plan)
 
         action = str(plan.get("action", "answer") or "answer")
         tool_name = str(plan.get("tool_name", "") or "")
         state.intent = tool_name if action == "tool" and tool_name else "answer"
 
         if tool_name:
-            state.tool_calls.append(
+            state.record_tool_call(
                 {
                     "name": tool_name,
                     "arguments": dict(plan.get("arguments", {}) or {}),
@@ -84,16 +84,18 @@ class ProductAgentRuntimeAdapter:
 
         tool_result = getattr(result, "tool_result", None)
         if tool_result is not None:
-            state.tool_results.append(_structured(tool_result))
+            state.record_tool_result(_structured(tool_result))
 
-        state.response = {
-            "status": str(getattr(result, "status", "completed") or "completed"),
-            "output_text": str(getattr(result, "output_text", "") or ""),
-            "provider": str(getattr(result, "provider", "") or ""),
-            "model": str(getattr(result, "model", "") or ""),
-            "request_id": max(0, int(getattr(result, "request_id", 0) or 0)),
-        }
         state.ui_mode = _UI_MODE_BY_TOOL.get(tool_name, "assistant")
+        state.apply_response(
+            {
+                "status": str(getattr(result, "status", "completed") or "completed"),
+                "output_text": str(getattr(result, "output_text", "") or ""),
+                "provider": str(getattr(result, "provider", "") or ""),
+                "model": str(getattr(result, "model", "") or ""),
+                "request_id": max(0, int(getattr(result, "request_id", 0) or 0)),
+            }
+        )
         return state
 
     def __call__(self, state: AgentState) -> AgentState:

@@ -68,7 +68,7 @@ function App() {
               />
               <Route path="/reading" element={<ReadingWorkspace workspace={workspace} />} />
               <Route path="/chat" element={<CompanionWorkspaceV2 />} />
-              <Route path="/agent" element={<AgentWorkspace />} />
+              <Route path="/agent" element={<AgentWorkspace workspace={workspace} />} />
               <Route path="/research" element={<ResearchRoute backendState={workspace.backendState} />} />
               <Route path="/settings" element={<SettingsWorkspace workspace={workspace} />} />
               <Route path="*" element={<Navigate to="/translation" replace />} />

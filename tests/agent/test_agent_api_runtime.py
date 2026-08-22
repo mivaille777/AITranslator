@@ -16,18 +16,19 @@ class FakeRuntime:
         self.received: AgentState | None = None
         self.events: list[AgentEvent] = []
 
-    def execute(self, state: AgentState) -> AgentState:
+    def execute(self, state: AgentState, *, event_sink=None) -> AgentState:
         self.received = state
-        self.events = [
-            AgentEvent(
-                event_type=AgentEventType.AGENT_START,
-                payload={"session_id": state.session_id},
-            ),
-            AgentEvent(
-                event_type=AgentEventType.CONTEXT_READY,
-                payload={"source_text": state.selected_text},
-            ),
-        ]
+        self.events = []
+
+        def emit(event_type: AgentEventType, payload: dict) -> None:
+            event = AgentEvent(event_type=event_type, payload=payload)
+            self.events.append(event)
+            if event_sink is not None:
+                event_sink(event)
+
+        emit(AgentEventType.AGENT_START, {"session_id": state.session_id})
+        emit(AgentEventType.CONTEXT_READY, {"source_text": state.selected_text})
+
         if self.confirmation_required:
             state.planned_action = {
                 "action": "tool",
@@ -50,21 +51,15 @@ class FakeRuntime:
                 "request_id": 12,
             }
             state.ui_mode = "note"
-            self.events.extend(
-                [
-                    AgentEvent(
-                        event_type=AgentEventType.TOOL_CALL,
-                        payload={"name": "save_research_note"},
-                    ),
-                    AgentEvent(
-                        event_type=AgentEventType.AGENT_END,
-                        payload={
-                            "intent": state.intent,
-                            "status": "confirmation_required",
-                            "ui_mode": state.ui_mode,
-                        },
-                    ),
-                ]
+            emit(AgentEventType.PLAN_READY, dict(state.planned_action))
+            emit(AgentEventType.TOOL_CALL, {"name": "save_research_note"})
+            emit(
+                AgentEventType.AGENT_END,
+                {
+                    "intent": state.intent,
+                    "status": "confirmation_required",
+                    "ui_mode": state.ui_mode,
+                },
             )
             return state
 
@@ -103,25 +98,16 @@ class FakeRuntime:
             "request_id": 12,
         }
         state.ui_mode = "translation"
-        self.events.extend(
-            [
-                AgentEvent(
-                    event_type=AgentEventType.TOOL_CALL,
-                    payload={"name": "translate_selection"},
-                ),
-                AgentEvent(
-                    event_type=AgentEventType.TOOL_RESULT,
-                    payload={"tool_name": "translate_selection"},
-                ),
-                AgentEvent(
-                    event_type=AgentEventType.AGENT_END,
-                    payload={
-                        "intent": state.intent,
-                        "status": "completed",
-                        "ui_mode": state.ui_mode,
-                    },
-                ),
-            ]
+        emit(AgentEventType.PLAN_READY, dict(state.planned_action))
+        emit(AgentEventType.TOOL_CALL, {"name": "translate_selection"})
+        emit(AgentEventType.TOOL_RESULT, {"tool_name": "translate_selection"})
+        emit(
+            AgentEventType.AGENT_END,
+            {
+                "intent": state.intent,
+                "status": "completed",
+                "ui_mode": state.ui_mode,
+            },
         )
         return state
 
@@ -187,10 +173,11 @@ def test_agent_trace_response_keeps_run_contract_and_orders_events() -> None:
     assert response.session_id == "session-12"
     assert response.ui_mode == "translation"
     assert response.run.output_text == "贝叶斯优化"
-    assert [event.sequence for event in response.events] == list(range(5))
+    assert [event.sequence for event in response.events] == list(range(6))
     assert [event.event_type for event in response.events] == [
         "agent_start",
         "context_ready",
+        "plan_ready",
         "tool_call",
         "tool_result",
         "agent_end",
@@ -209,6 +196,7 @@ def test_agent_trace_confirmation_has_no_tool_result_event() -> None:
     assert [event.event_type for event in response.events] == [
         "agent_start",
         "context_ready",
+        "plan_ready",
         "tool_call",
         "agent_end",
     ]
@@ -229,6 +217,67 @@ def test_agent_trace_http_endpoint_is_additive_to_existing_run_api() -> None:
     assert body["run"]["tool_result"]["tool_name"] == "translate_selection"
     assert body["events"][0]["event_type"] == "agent_start"
     assert body["events"][-1]["event_type"] == "agent_end"
+
+
+def test_agent_websocket_streams_activity_before_terminal_trace() -> None:
+    runtime = FakeRuntime()
+    app = create_app()
+    app.dependency_overrides[get_agent_runtime] = lambda: runtime
+    client = TestClient(app)
+
+    with client.websocket_connect("/api/agent/stream") as websocket:
+        websocket.send_json({"type": "start", "request": _request().model_dump()})
+        accepted = websocket.receive_json()
+        assert accepted == {
+            "type": "accepted",
+            "request_id": 12,
+            "session_id": "session-12",
+        }
+
+        activity_types = []
+        terminal = None
+        while terminal is None:
+            event = websocket.receive_json()
+            if event["type"] == "activity":
+                activity_types.append(event["event"]["event_type"])
+            else:
+                terminal = event
+
+    assert activity_types == [
+        "agent_start",
+        "context_ready",
+        "plan_ready",
+        "tool_call",
+        "tool_result",
+        "agent_end",
+    ]
+    assert terminal is not None
+    assert terminal["type"] == "done"
+    assert terminal["trace"]["run"]["output_text"] == "贝叶斯优化"
+    assert terminal["trace"]["events"][-1]["event_type"] == "agent_end"
+
+
+def test_agent_websocket_confirmation_never_streams_tool_result() -> None:
+    runtime = FakeRuntime(confirmation_required=True)
+    app = create_app()
+    app.dependency_overrides[get_agent_runtime] = lambda: runtime
+    client = TestClient(app)
+
+    with client.websocket_connect("/api/agent/stream") as websocket:
+        websocket.send_json({"type": "start", "request": _request().model_dump()})
+        assert websocket.receive_json()["type"] == "accepted"
+        activity_types = []
+        while True:
+            event = websocket.receive_json()
+            if event["type"] == "activity":
+                activity_types.append(event["event"]["event_type"])
+                continue
+            assert event["type"] == "done"
+            assert event["trace"]["run"]["status"] == "confirmation_required"
+            break
+
+    assert "tool_call" in activity_types
+    assert "tool_result" not in activity_types
 
 
 class FakeProductAgentService:

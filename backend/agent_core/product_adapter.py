@@ -4,6 +4,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Callable
 
 from backend.agent_core.events import AgentEventType
+from backend.agent_core.reliability import AgentRunControl
 from backend.agent_core.state import AgentState
 
 
@@ -34,12 +35,7 @@ def _structured(value: Any) -> dict[str, Any]:
 
 
 class ProductAgentRuntimeAdapter:
-    """Map the existing bounded ProductAgentService loop onto AgentState.
-
-    ProductAgentService remains the owner of Plan -> Validate -> Execute ->
-    Synthesize behavior. This adapter only translates between that established
-    service contract and the state/event-oriented Agent Core contract.
-    """
+    """Map the existing bounded ProductAgentService loop onto AgentState."""
 
     def __init__(self, service: Any) -> None:
         self._service = service
@@ -108,6 +104,8 @@ class ProductAgentRuntimeAdapter:
         self,
         state: AgentState,
         emit: Callable[[AgentEventType, dict[str, Any]], None],
+        *,
+        control: AgentRunControl | None = None,
     ) -> AgentState:
         emitted: set[AgentEventType] = set()
 
@@ -119,11 +117,14 @@ class ProductAgentRuntimeAdapter:
             emitted.add(core_type)
             emit(core_type, payload)
 
-        result = self._service.run(event_sink=forward, **self._payload(state))
+        result = self._service.run(
+            event_sink=forward,
+            control=control,
+            **self._payload(state),
+        )
         state = self._apply_result(state, result)
 
-        # Keep compatibility with lightweight mocks or alternative services that
-        # accept event_sink through **kwargs but do not emit lifecycle callbacks.
+        # Compatibility fallback for lightweight mocks or alternative services.
         if AgentEventType.PLAN_READY not in emitted:
             emit(AgentEventType.PLAN_READY, dict(state.planned_action))
         if state.tool_calls and AgentEventType.TOOL_CALL not in emitted:

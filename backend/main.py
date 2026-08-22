@@ -32,6 +32,7 @@ from backend.api.quick_actions import router as quick_actions_router
 from backend.api.reading import router as reading_router
 from backend.api.research import router as research_router
 from backend.api.translation import router as translation_router
+from backend.api.translation_cascade import router as translation_cascade_router
 
 DEV_ORIGINS = [
     "http://localhost:5173",
@@ -76,7 +77,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.16.0",
+        version="0.17.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
         lifespan=lifespan,
     )
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(translation_router)
+    app.include_router(translation_cascade_router)
     app.include_router(browser_context_router)
     app.include_router(reading_router)
     app.include_router(overlay_router)

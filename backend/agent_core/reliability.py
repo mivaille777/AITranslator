@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from threading import Event
+from queue import Empty, Queue
+from threading import Event, Thread
 from time import monotonic
+from typing import Callable, TypeVar
 
-from backend.agent_core.exceptions import AgentBudgetExceededError, AgentCancelledError
+from backend.agent_core.exceptions import (
+    AgentBudgetExceededError,
+    AgentCancelledError,
+    AgentToolTimeoutError,
+)
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,4 +69,57 @@ class AgentRunControl:
         return min(self.policy.tool_timeout_seconds, self.remaining_seconds)
 
 
-__all__ = ["AgentExecutionPolicy", "AgentRunControl"]
+def run_safe_tool_with_timeout(
+    operation: Callable[[], T],
+    *,
+    control: AgentRunControl,
+    tool_name: str,
+) -> T:
+    """Run a read/compute tool with cooperative cancellation and a hard wait bound.
+
+    The worker is daemonized because Python cannot safely interrupt a blocking
+    provider call. This helper must therefore never wrap write tools or other
+    side-effectful operations.
+    """
+
+    control.checkpoint(f"tool:{tool_name}")
+    timeout = control.bounded_tool_timeout()
+    if timeout <= 0:
+        raise AgentBudgetExceededError(
+            f"Agent execution budget exhausted before tool {tool_name}."
+        )
+
+    queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
+
+    def worker() -> None:
+        try:
+            queue.put((True, operation()))
+        except BaseException as exc:  # propagate provider failures to caller
+            queue.put((False, exc))
+
+    Thread(target=worker, name=f"agent-tool-{tool_name}", daemon=True).start()
+    started = monotonic()
+    while True:
+        control.checkpoint(f"tool:{tool_name}")
+        elapsed = monotonic() - started
+        remaining = timeout - elapsed
+        if remaining <= 0:
+            raise AgentToolTimeoutError(
+                f"Agent tool {tool_name} exceeded {timeout:.2f}s timeout."
+            )
+        try:
+            ok, value = queue.get(timeout=min(0.05, remaining))
+        except Empty:
+            continue
+        if ok:
+            return value  # type: ignore[return-value]
+        if isinstance(value, BaseException):
+            raise value
+        raise RuntimeError(f"Agent tool {tool_name} failed without an exception.")
+
+
+__all__ = [
+    "AgentExecutionPolicy",
+    "AgentRunControl",
+    "run_safe_tool_with_timeout",
+]

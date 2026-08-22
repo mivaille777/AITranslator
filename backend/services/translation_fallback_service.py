@@ -116,7 +116,7 @@ class TranslationFallbackService:
                 attempts.append(TranslationAttempt(provider_name, "success"))
                 notice = ""
                 if fallback_level == 1:
-                    notice = "Youdao translation is unavailable; switched to Google."
+                    notice = "有道翻译当前不可用，已自动切换到 Google 翻译。"
                 return TranslationCascadeResult(
                     source_text=request.source_text,
                     translated_text=result.translated_text,
@@ -161,7 +161,7 @@ class TranslationFallbackService:
             model=ai_result.model,
             request_id=request.request_id,
             fallback_level=2,
-            notice="Youdao and Google translation are unavailable; AI translation was used.",
+            notice="有道和 Google 翻译当前不可用，已使用 AI 翻译。",
             attempts=tuple(attempts),
         )
 

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from threading import RLock
+from typing import Any
 
 from app.ai.client import DeepSeekClient, DEFAULT_DEEPSEEK_MODEL, SUPPORTED_DEEPSEEK_MODELS
 from app.ai.errors import AIConfigurationError
+from app.ai.models import AITextRequest, AITextResult
 from app.ai.provider import DeepSeekTextProvider
 from app.ai.service import AITextService
 
@@ -35,6 +38,55 @@ _ENV_BY_ROLE = {
 }
 
 
+class RoutedAITextService:
+    """Lazy AITextService facade bound to one immutable LLM route."""
+
+    def __init__(self, route: LLMRoute) -> None:
+        self.route = route
+        self._service: AITextService | None = None
+        self._lock = RLock()
+
+    def _ensure(self) -> AITextService:
+        if self._service is not None:
+            return self._service
+        with self._lock:
+            if self._service is None:
+                client = DeepSeekClient(
+                    model=self.route.model,
+                    thinking_enabled=self.route.thinking_enabled,
+                )
+                self._service = AITextService(DeepSeekTextProvider(client=client))
+            return self._service
+
+    @property
+    def provider_name(self) -> str:
+        return self.route.provider
+
+    @property
+    def model(self) -> str:
+        return self.route.model
+
+    @property
+    def provider(self) -> Any:
+        return self._ensure().provider
+
+    def execute(self, request: AITextRequest) -> AITextResult:
+        return self._ensure().execute(request)
+
+    def translate(self, *args: Any, **kwargs: Any) -> AITextResult:
+        return self._ensure().translate(*args, **kwargs)
+
+    def polish(self, *args: Any, **kwargs: Any) -> AITextResult:
+        return self._ensure().polish(*args, **kwargs)
+
+    def close(self) -> None:
+        with self._lock:
+            service = self._service
+            self._service = None
+        if service is not None:
+            service.close()
+
+
 class LLMGateway:
     """Resolve model routes from a code-side allowlist.
 
@@ -61,16 +113,11 @@ class LLMGateway:
             thinking_enabled=False,
         )
 
-    def create_text_service(self, role: str) -> AITextService:
-        route = self.route(role)
-        client = DeepSeekClient(
-            model=route.model,
-            thinking_enabled=route.thinking_enabled,
-        )
-        return AITextService(DeepSeekTextProvider(client=client))
+    def create_text_service(self, role: str) -> RoutedAITextService:
+        return RoutedAITextService(self.route(role))
 
     def describe_routes(self) -> tuple[LLMRoute, ...]:
         return tuple(self.route(role) for role in _DEFAULT_MODELS)
 
 
-__all__ = ["LLMGateway", "LLMRoute"]
+__all__ = ["LLMGateway", "LLMRoute", "RoutedAITextService"]

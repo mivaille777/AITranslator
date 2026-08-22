@@ -99,6 +99,19 @@ export function streamCompanionChat(
       }
     },
     close() {
+      if (terminal) return
+
+      // Closing a live surface (for example because a new external selection
+      // remounts the overlay conversation) is a cancellation boundary, not a
+      // silent disconnect. Ask the backend to stop before closing the socket so
+      // stale work cannot continue and later race the new reading context.
+      if (!cancelRequested && socket.readyState === WebSocket.OPEN) {
+        cancelRequested = true
+        socket.send(JSON.stringify({ type: "cancel", request_id: requestId }))
+      } else if (!cancelRequested && socket.readyState === WebSocket.CONNECTING) {
+        cancelRequested = true
+      }
+
       terminal = true
       if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
         socket.close(1000, "client-close")

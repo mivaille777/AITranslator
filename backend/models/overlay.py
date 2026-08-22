@@ -31,6 +31,11 @@ class OverlayStateResponse(OverlayReadingContext):
     companion_conversation_id: str = ""
 
 
+class OverlayModeRequest(BaseModel):
+    context_id: str = Field(min_length=1, max_length=128)
+    mode: OverlayMode
+
+
 class OverlayAssistantRequest(OverlayReadingContext):
     context_id: str = Field(min_length=1, max_length=128)
     source_text: str = Field(min_length=1, max_length=20_000)

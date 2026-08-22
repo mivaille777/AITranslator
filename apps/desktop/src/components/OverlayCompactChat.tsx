@@ -23,7 +23,7 @@ export default function OverlayCompactChat({
   const notice = (state as OverlayWithTranslationNotice).translation_notice?.trim() ?? ""
 
   return (
-    <>
+    <div className="ait-overlay-chat-panel min-h-0">
       {notice && (
         <div
           data-ait-selection-scope="internal"
@@ -34,7 +34,7 @@ export default function OverlayCompactChat({
       )}
       <Suspense
         fallback={(
-          <div className="flex h-[320px] items-center justify-center gap-2 border-b border-white/10 bg-black/10 text-[10px] text-slate-500">
+          <div className="flex h-[240px] items-center justify-center gap-2 bg-black/10 text-[10px] text-slate-500">
             <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/70" />
             Loading AI Chat…
           </div>
@@ -46,6 +46,6 @@ export default function OverlayCompactChat({
           onClose={onClose}
         />
       </Suspense>
-    </>
+    </div>
   )
 }

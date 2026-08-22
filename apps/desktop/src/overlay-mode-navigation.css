@@ -1,0 +1,90 @@
+/* Batch 9.5 — unified overlay mode navigation. */
+
+html[data-ait-view="overlay"] .ait-overlay-inline-actions {
+  min-height: 42px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-chat-panel {
+  min-height: 0;
+  background: transparent;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] {
+  background: transparent !important;
+  border-bottom: 0 !important;
+}
+
+/* The outer AITranslator header + mode tabs are the only chrome. */
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div:first-child {
+  display: none !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  border-top: 0 !important;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.relative {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.relative > div:first-child {
+  height: 104px !important;
+  min-height: 72px;
+  max-height: 128px;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.relative > div:first-child {
+  height: 142px !important;
+  min-height: 112px;
+  max-height: 156px;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel {
+  background: rgba(0, 0, 0, 0.055);
+}
+
+/* Keep the composer and its shortcut row pinned inside the native window. */
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"] > div.border-t {
+  flex: 0 0 auto;
+  background: rgba(12, 12, 14, 0.18);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface .ait-overlay-action-button {
+  min-height: 28px;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-inline-actions {
+  border-top: 0;
+}
+
+/* Existing assistant-first rules hide the legacy body/footer through :has(). */
+html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > header {
+  flex: 0 0 auto;
+}

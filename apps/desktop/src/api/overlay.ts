@@ -69,6 +69,21 @@ export function getOverlayState(): Promise<UnifiedOverlayStateResponse> {
   return apiGet<UnifiedOverlayStateResponse>("/api/overlay")
 }
 
+export async function switchOverlayMode(
+  contextId: string,
+  mode: OverlayMode,
+): Promise<UnifiedOverlayStateResponse> {
+  const response = await apiPost<
+    UnifiedOverlayStateResponse,
+    { context_id: string; mode: OverlayMode }
+  >(
+    "/api/overlay/mode",
+    { context_id: contextId, mode },
+  )
+  await notifyOverlayStateChanged(contextId)
+  return response
+}
+
 export async function showOverlayAssistant(payload: OverlayAssistantRequest): Promise<UnifiedOverlayStateResponse> {
   const response = await apiPost<UnifiedOverlayStateResponse, OverlayAssistantRequest & ReadingContextFields>(
     "/api/overlay/assistant",
@@ -96,13 +111,22 @@ export async function presentOverlay(payload: UnifiedOverlayPresentRequest): Pro
   return response
 }
 
-export async function showOverlayError(payload: OverlayErrorRequest): Promise<UnifiedOverlayStateResponse> {
+export async function showOverlayTranslationFailure(payload: OverlayErrorRequest): Promise<UnifiedOverlayStateResponse> {
   const response = await apiPost<UnifiedOverlayStateResponse, OverlayErrorRequest & ReadingContextFields>(
-    "/api/overlay/error",
+    "/api/overlay/translation-failure",
     withReadingContext(payload),
   )
   await notifyOverlayStateChanged(payload.context_id)
   return response
+}
+
+/**
+ * Interactive overlay translation failures must keep the AI composer mounted.
+ * Keep this legacy helper as an alias so existing natural-language handoff code
+ * receives the new non-destructive failure semantics without duplicating paths.
+ */
+export function showOverlayError(payload: OverlayErrorRequest): Promise<UnifiedOverlayStateResponse> {
+  return showOverlayTranslationFailure(payload)
 }
 
 export async function bindOverlayCompanionConversation(

@@ -10,6 +10,7 @@ import { queryKeys } from "./shared/query/query-keys"
 import "./index.css"
 import "./overlay.css"
 import "./overlay-fix.css"
+import "./overlay-mode-navigation.css"
 
 document.documentElement.dataset.aitView = "overlay"
 

@@ -8,6 +8,7 @@ from backend.models.overlay import (
     OverlayCompanionBindingRequest,
     OverlayErrorRequest,
     OverlayLoadingRequest,
+    OverlayModeRequest,
     OverlayPresentRequest,
     OverlayStateResponse,
 )
@@ -60,6 +61,21 @@ def overlay_state(service: OverlayStateServiceDependency) -> OverlayStateRespons
     return _response(service.snapshot())
 
 
+@router.post("/mode", response_model=OverlayStateResponse)
+def overlay_mode(
+    payload: OverlayModeRequest,
+    service: OverlayStateServiceDependency,
+) -> OverlayStateResponse:
+    try:
+        state = service.switch_mode(context_id=payload.context_id, mode=payload.mode)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return _response(state)
+
+
 @router.post("/assistant", response_model=OverlayStateResponse)
 def overlay_assistant(
     payload: OverlayAssistantRequest,
@@ -106,6 +122,23 @@ def overlay_present(
             target_language=payload.target_language,
             provider=payload.provider,
             translation_notice=payload.translation_notice,
+            **_reading_kwargs(payload),
+        )
+    )
+
+
+@router.post("/translation-failure", response_model=OverlayStateResponse)
+def overlay_translation_failure(
+    payload: OverlayErrorRequest,
+    service: OverlayStateServiceDependency,
+) -> OverlayStateResponse:
+    return _response(
+        service.show_translation_failure(
+            context_id=payload.context_id,
+            source_text=payload.source_text,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
+            message=payload.message,
             **_reading_kwargs(payload),
         )
     )

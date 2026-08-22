@@ -38,6 +38,39 @@ class OverlayStateService:
         with self._lock:
             return self._state
 
+    def switch_mode(self, *, context_id: str, mode: str) -> OverlayState:
+        """Switch presentation without resetting the reading interaction."""
+        normalized_context_id = str(context_id or "").strip()
+        normalized_mode = str(mode or "").strip().lower()
+        if normalized_mode not in {"assistant", "translation"}:
+            raise ValueError("Unsupported overlay mode.")
+
+        with self._lock:
+            current = self._state
+            if not normalized_context_id or normalized_context_id != current.context_id:
+                raise ValueError("Overlay context changed before mode switch.")
+
+            if normalized_mode == "assistant":
+                phase = "ready"
+            elif current.translated_text:
+                phase = "ready"
+            elif current.phase in {"loading", "error"}:
+                phase = current.phase
+            else:
+                phase = "ready"
+
+            if current.mode == normalized_mode and current.phase == phase and current.visible:
+                return current
+
+            self._state = replace(
+                current,
+                revision=current.revision + 1,
+                visible=True,
+                mode=normalized_mode,
+                phase=phase,
+            )
+            return self._state
+
     def show_assistant(
         self,
         *,
@@ -163,6 +196,48 @@ class OverlayStateService:
                 context_after=context_after or current.context_after,
                 source_kind=source_kind or current.source_kind,
                 companion_conversation_id=current.companion_conversation_id,
+            )
+            return self._state
+
+    def show_translation_failure(
+        self,
+        *,
+        context_id: str,
+        source_text: str,
+        source_language: str,
+        target_language: str,
+        message: str,
+        resource_url: str = "",
+        resource_title: str = "",
+        section_heading: str = "",
+        context_before: str = "",
+        context_after: str = "",
+        source_kind: str = "browser_selection",
+    ) -> OverlayState:
+        """Report translation failure without unmounting the AI conversation."""
+        with self._lock:
+            if self._state.context_id and context_id != self._state.context_id:
+                return self._state
+            current = self._state
+            normalized_message = message or "Translation failed"
+            self._state = replace(
+                current,
+                revision=current.revision + 1,
+                visible=True,
+                mode="translation",
+                phase="ready",
+                context_id=context_id,
+                source_text=source_text or current.source_text,
+                source_language=source_language or current.source_language,
+                target_language=target_language or current.target_language,
+                message=normalized_message,
+                translation_notice=f"翻译暂时不可用：{normalized_message}",
+                resource_url=resource_url or current.resource_url,
+                resource_title=resource_title or current.resource_title,
+                section_heading=section_heading or current.section_heading,
+                context_before=context_before or current.context_before,
+                context_after=context_after or current.context_after,
+                source_kind=source_kind or current.source_kind,
             )
             return self._state
 

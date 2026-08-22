@@ -2,10 +2,16 @@ import { useCallback, useEffect, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import {
+  presentOverlay,
+  showOverlayTranslationFailure,
+  switchOverlayMode,
+} from "../api/overlay"
+import {
   getQuickActionStatus,
   runQuickAction,
   saveResearchNote,
 } from "../api/quick-actions"
+import { translateTextWithFallback } from "../api/translation"
 import type {
   OverlayStateResponse,
   QuickActionKey,
@@ -43,27 +49,30 @@ type FeedbackState = {
   message: string
 }
 
-type ResultView = "translation" | "ai"
 export type OverlayCompletedInteraction = "copy" | "handoff"
 
-const actions: ActionSpec[] = [
-  { key: "reading_context_translate", label: "译", title: "结合当前阅读上下文 AI 翻译" },
+type OverlayQuickActionsProps = {
+  state: OverlayStateResponse
+  onPresentationChange?: (presentation: OverlayActionPresentation) => void
+  onCompletedInteraction?: (interaction: OverlayCompletedInteraction) => void
+}
+
+const explainAction: ActionSpec = {
+  key: "reading_explain",
+  label: "解释",
+  title: "结合上下文解释选中内容",
+}
+
+const summarizeAction: ActionSpec = {
+  key: "reading_summarize",
+  label: "总结",
+  title: "总结当前选中的内容",
+}
+
+const moreActions: ActionSpec[] = [
   { key: "ai_polish", label: "润色", title: "保持原意和原语言进行 AI 润色" },
-  { key: "reading_explain", label: "解释", title: "结合上下文解释选中内容" },
-  { key: "reading_summarize", label: "总结", title: "总结当前选中的内容" },
   { key: "reading_section_role", label: "段落", title: "分析这段内容在当前章节中的作用" },
 ]
-
-const primaryActions = actions.slice(0, 4)
-const secondaryAction = actions[4]
-
-const actionLabels: Record<QuickActionKey, string> = {
-  ai_polish: "AI 润色",
-  reading_context_translate: "上下文翻译",
-  reading_explain: "解释",
-  reading_summarize: "总结",
-  reading_section_role: "段落作用",
-}
 
 function baseContext(state: OverlayStateResponse) {
   return {
@@ -83,21 +92,11 @@ function baseContext(state: OverlayStateResponse) {
 export default function OverlayQuickActions({
   state,
   onPresentationChange,
-  onCompletedInteraction,
-}: {
-  state: OverlayStateResponse
-  onPresentationChange?: (presentation: OverlayActionPresentation) => void
-  onCompletedInteraction?: (interaction: OverlayCompletedInteraction) => void
-}) {
+}: OverlayQuickActionsProps) {
   const [resultState, setResultState] = useState<ResultState | null>(null)
-  const [resultOpen, setResultOpen] = useState(false)
   const [feedback, setFeedback] = useState<FeedbackState | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [resultView, setResultView] = useState<ResultView>("translation")
   const [moreOpen, setMoreOpen] = useState(false)
-  // Assistant is the primary overlay surface. Translation and AI results are
-  // modes layered around the same persistent companion conversation.
-  const [chatOpen, setChatOpen] = useState(true)
+  const mode = state.mode ?? "assistant"
 
   const statusQuery = useQuery({
     queryKey: ["quick-action-status"],
@@ -114,35 +113,19 @@ export default function OverlayQuickActions({
     onPresentationChange?.(presentation)
   }, [onPresentationChange])
 
-  useEffect(() => {
-    // Assistant mode is already the primary surface and must fit inside the
-    // compact native overlay immediately. Do not wait for a child effect to
-    // resize the window to the legacy 600px chat presentation.
-    if (chatOpen && state.mode !== "assistant") setPresentation("chat")
-  }, [chatOpen, setPresentation, state.mode])
-
-  const collapseTransientPanels = useCallback(() => {
-    setMoreOpen(false)
-    setResultOpen(false)
-    setChatOpen(false)
-    setPresentation("compact")
-  }, [setPresentation])
-
   const actionMutation = useMutation({
     mutationFn: ({ payload }: ActionVariables) => runQuickAction(payload),
     onMutate: ({ contextId }) => {
       if (contextId !== state.context_id) return
-      collapseTransientPanels()
       setFeedback(null)
-      setCopied(false)
     },
     onSuccess: (result, variables) => {
       if (variables.contextId !== state.context_id) return
       setResultState({ contextId: variables.contextId, result })
-      setResultView("ai")
-      setResultOpen(true)
-      setPresentation("result")
-      setCopied(false)
+      setFeedback({
+        contextId: variables.contextId,
+        message: `${result.action.replaceAll("_", " ")} completed`,
+      })
     },
     onError: (error, variables) => {
       if (variables.contextId !== state.context_id) return
@@ -175,10 +158,75 @@ export default function OverlayQuickActions({
     },
   })
 
+  const modeMutation = useMutation({
+    mutationFn: (nextMode: "assistant" | "translation") =>
+      switchOverlayMode(state.context_id, nextMode),
+    onError: (error) => {
+      setFeedback({
+        contextId: state.context_id,
+        message: error instanceof Error ? error.message : "Unable to switch overlay mode.",
+      })
+    },
+  })
+
+  const translationMutation = useMutation({
+    mutationFn: async (targetLanguage: string) => {
+      // Keep the overlay interactive while the provider cascade runs. Mode
+      // navigation is presentation state; it must not unmount the companion UI.
+      await switchOverlayMode(state.context_id, "translation")
+
+      try {
+        const result = await translateTextWithFallback({
+          source_text: state.source_text,
+          source_language: state.source_language,
+          target_language: targetLanguage,
+        })
+        return await presentOverlay({
+          context_id: state.context_id,
+          source_text: result.source_text,
+          translated_text: result.translated_text,
+          source_language: result.source_language,
+          target_language: result.target_language,
+          provider: result.provider === "ai" && result.model
+            ? `ai/${result.model}`
+            : result.provider,
+          translation_notice: result.notice,
+          resource_url: state.resource_url,
+          resource_title: state.resource_title,
+          section_heading: state.section_heading,
+          context_before: state.context_before,
+          context_after: state.context_after,
+          source_kind: state.source_kind,
+        })
+      } catch (error) {
+        await showOverlayTranslationFailure({
+          context_id: state.context_id,
+          source_text: state.source_text,
+          source_language: state.source_language,
+          target_language: targetLanguage,
+          message: error instanceof Error ? error.message : "Translation failed.",
+          resource_url: state.resource_url,
+          resource_title: state.resource_title,
+          section_heading: state.section_heading,
+          context_before: state.context_before,
+          context_after: state.context_after,
+          source_kind: state.source_kind,
+        }).catch(() => undefined)
+        throw error
+      }
+    },
+    onError: (error) => {
+      setFeedback({
+        contextId: state.context_id,
+        message: error instanceof Error ? error.message : "Translation failed.",
+      })
+    },
+  })
+
   const mutateAction = actionMutation.mutate
   const mutateNote = noteMutation.mutate
-  const busy = actionMutation.isPending || noteMutation.isPending
-  const activeAction = activeResult?.action ?? null
+  const mutateMode = modeMutation.mutate
+  const mutateTranslation = translationMutation.mutate
 
   const runAction = useCallback((action: QuickActionKey) => {
     mutateAction({
@@ -202,170 +250,190 @@ export default function OverlayQuickActions({
     })
   }, [activeResult, mutateNote, state])
 
-  const openChat = useCallback(() => {
-    setFeedback(null)
-    setResultOpen(false)
+  const openAssistant = useCallback(() => {
     setMoreOpen(false)
-    setChatOpen(true)
-    if (state.mode !== "assistant") setPresentation("chat")
-  }, [setPresentation, state.mode])
-
-  const closeChat = useCallback(() => {
-    // Assistant mode is not a nested chat panel. It is the overlay itself, so
-    // collapsing it would expose the old translation quick-action shell.
-    if (state.mode === "assistant") return
-    setChatOpen(false)
     setPresentation("compact")
-  }, [setPresentation, state.mode])
+    if (mode !== "assistant") mutateMode("assistant")
+  }, [mode, mutateMode, setPresentation])
 
-  const toggleMore = useCallback(() => {
-    if (resultOpen) setResultOpen(false)
-    const next = !moreOpen
-    setMoreOpen(next)
-    setPresentation(next ? "expanded" : "compact")
-  }, [moreOpen, resultOpen, setPresentation])
-
-  const closeResult = useCallback(() => {
-    setResultOpen(false)
-    setPresentation(moreOpen ? "expanded" : "compact")
-  }, [moreOpen, setPresentation])
-
-  const copyActiveView = useCallback(async () => {
-    const text = resultView === "ai" ? activeResult?.output_text ?? "" : state.translated_text
-    if (!text) return
-
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-      onCompletedInteraction?.("copy")
-      window.setTimeout(() => setCopied(false), 900)
-    } catch {
-      setCopied(false)
+  const openTranslation = useCallback(() => {
+    setMoreOpen(false)
+    setPresentation("chat")
+    if (state.translated_text.trim()) {
+      if (mode !== "translation") mutateMode("translation")
+      return
     }
-  }, [activeResult, onCompletedInteraction, resultView, state.translated_text])
+    if (!translationMutation.isPending) mutateTranslation(state.target_language)
+  }, [
+    mode,
+    mutateMode,
+    mutateTranslation,
+    setPresentation,
+    state.target_language,
+    state.translated_text,
+    translationMutation.isPending,
+  ])
+
+  useEffect(() => {
+    setPresentation(
+      mode === "translation"
+        ? (moreOpen ? "expanded" : "chat")
+        : (moreOpen ? "expanded" : "compact"),
+    )
+  }, [mode, moreOpen, setPresentation])
+
+  useEffect(() => {
+    const handleModeIntent = (event: Event) => {
+      const detail = (event as CustomEvent<{ mode?: string }>).detail
+      if (detail?.mode === "assistant") openAssistant()
+      if (detail?.mode === "translation") openTranslation()
+    }
+    window.addEventListener("ait-overlay-mode-intent", handleModeIntent)
+    return () => window.removeEventListener("ait-overlay-mode-intent", handleModeIntent)
+  }, [openAssistant, openTranslation])
 
   useEffect(() => subscribeOverlayCommands((command) => {
     if (command === "escape") {
-      if (chatOpen) {
-        closeChat()
-      } else if (resultOpen) {
-        closeResult()
-      } else if (moreOpen) {
+      if (moreOpen) {
         setMoreOpen(false)
-        setPresentation("compact")
+        setPresentation(mode === "translation" ? "chat" : "compact")
+      } else if (mode === "translation") {
+        openAssistant()
       }
       return
     }
 
-    if (command === "copy") {
-      if (resultOpen && activeResult) void copyActiveView()
-      return
-    }
-
     if (command === "more") {
-      if (!busy && !chatOpen) toggleMore()
+      setMoreOpen((current) => !current)
       return
     }
 
-    if (chatOpen || !aiAvailable || busy) return
-    const index = Number(command.slice(-1)) - 1
-    const action = primaryActions[index]
-    if (action) runAction(action.key)
+    if (actionMutation.isPending || noteMutation.isPending || translationMutation.isPending) return
+    if (command === "action-1") openTranslation()
+    if (command === "action-2" && aiAvailable) runAction(explainAction.key)
+    if (command === "action-3" && aiAvailable) runAction(summarizeAction.key)
+    if (command === "action-4" && aiAvailable) runAction("ai_polish")
   }), [
-    activeResult,
+    actionMutation.isPending,
     aiAvailable,
-    busy,
-    chatOpen,
-    closeChat,
-    closeResult,
-    copyActiveView,
+    mode,
     moreOpen,
-    resultOpen,
+    noteMutation.isPending,
+    openAssistant,
+    openTranslation,
     runAction,
     setPresentation,
-    toggleMore,
+    translationMutation.isPending,
   ])
 
-  if (state.phase !== "ready") return null
+  if (!state.visible || state.phase === "hidden") return null
+
+  const busy = actionMutation.isPending || noteMutation.isPending || translationMutation.isPending || modeMutation.isPending
+  const translationLabel = translationMutation.isPending
+    ? "翻译中"
+    : state.message && mode === "translation" && !state.translated_text
+      ? "重试"
+      : "译"
 
   return (
-    <section className={`ait-overlay-action-surface relative border-t border-white/10 ${state.mode === "assistant" ? "is-assistant-primary" : ""} ${resultOpen && activeResult ? "is-result-open" : ""} ${moreOpen ? "is-more-open" : ""} ${chatOpen ? "is-chat-open" : ""}`}>
-      {chatOpen ? (
-        <OverlayCompactChat state={state} aiResult={activeResult} onClose={closeChat} />
-      ) : (
-        <>
-          <div className="ait-overlay-result-morph">
-            <div className="ait-overlay-result-morph-inner">
-              {activeResult && (
-                <div className="border-b border-white/10 px-3 pb-3 pt-2.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="ait-overlay-result-tabs flex items-center gap-1 rounded-full p-0.5">
-                      <ViewTab active={resultView === "translation"} label="译文" onClick={() => { setResultView("translation"); setCopied(false) }} />
-                      <ViewTab active={resultView === "ai"} label="AI 结果" onClick={() => { setResultView("ai"); setCopied(false) }} />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button type="button" data-tauri-drag-region="false" className="ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px]" onClick={openChat}>追问</button>
-                      <button type="button" data-tauri-drag-region="false" aria-live="polite" className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] ${copied ? "is-copied" : ""}`} onClick={() => void copyActiveView()}>{copied ? "✓ 已复制" : "复制"}</button>
-                      <button type="button" data-tauri-drag-region="false" aria-label="Collapse AI result" className="ait-overlay-quiet-button flex h-6 w-6 items-center justify-center rounded-full text-xs" onClick={closeResult}>×</button>
-                    </div>
-                  </div>
+    <section
+      className={`ait-overlay-action-surface relative ${mode === "assistant" ? "is-assistant-primary" : "is-translation-primary"}`}
+      data-overlay-mode={mode}
+    >
+      <div className="ait-overlay-inline-actions flex items-center gap-1.5 border-b border-white/[0.065] px-3 py-2">
+        <ActionButton
+          active={mode === "translation"}
+          disabled={translationMutation.isPending || !state.source_text.trim()}
+          label={translationLabel}
+          title="翻译当前选区 · 1"
+          onClick={openTranslation}
+        />
+        <ActionButton
+          active={activeResult?.action === explainAction.key}
+          disabled={!aiAvailable || busy}
+          label={explainAction.label}
+          title={`${aiAvailable ? explainAction.title : statusQuery.data?.detail || "AI provider is not configured"} · 2`}
+          onClick={() => runAction(explainAction.key)}
+        />
+        <ActionButton
+          active={activeResult?.action === summarizeAction.key}
+          disabled={!aiAvailable || busy}
+          label={summarizeAction.label}
+          title={`${aiAvailable ? summarizeAction.title : statusQuery.data?.detail || "AI provider is not configured"} · 3`}
+          onClick={() => runAction(summarizeAction.key)}
+        />
+        <button
+          type="button"
+          data-tauri-drag-region="false"
+          aria-expanded={moreOpen}
+          disabled={busy}
+          className={`ait-overlay-action-button ml-auto flex h-7 min-w-8 items-center justify-center rounded-full px-2 text-[11px] ${moreOpen ? "is-active" : ""}`}
+          title="更多操作 · M"
+          onClick={() => setMoreOpen((current) => !current)}
+        >
+          •••
+        </button>
+      </div>
 
-                  <div className="ait-overlay-result-content mt-2.5 max-h-[150px] overflow-y-auto pr-1">
-                    {resultView === "ai" ? (
-                      <>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{actionLabels[activeResult.action]} · {activeResult.provider} / {activeResult.model}</p>
-                        <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-200">{activeResult.output_text}</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Translation · {state.provider || "provider"}</p>
-                        <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-200">{state.translated_text}</p>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {activeFeedback && !busy && <div className="ait-overlay-action-toast pointer-events-none absolute inset-x-3 bottom-[58px] z-20 rounded-full px-3 py-1.5 text-center text-[10px]">{activeFeedback}</div>}
-
-          <div className="ait-overlay-action-bar flex items-center gap-1.5 px-3 py-2.5">
-            <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-              {primaryActions.map((action, index) => (
-                <ActionButton key={action.key} active={activeAction === action.key && resultOpen} disabled={!aiAvailable || busy} label={action.label} title={`${aiAvailable ? action.title : statusQuery.data?.detail || "AI provider is not configured"} · ${index + 1}`} onClick={() => runAction(action.key)} />
-              ))}
-            </div>
-            <div className="h-5 w-px shrink-0 bg-white/10" />
-            <button type="button" data-tauri-drag-region="false" aria-label="More contextual actions" aria-expanded={moreOpen} title="更多操作 · M" disabled={busy} className={`ait-overlay-action-button relative flex h-8 min-w-9 shrink-0 items-center justify-center rounded-full px-2 text-sm ${moreOpen ? "is-active" : ""}`} onClick={toggleMore}>
-              {busy ? <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/70" /> : <span className="tracking-[0.12em]">•••</span>}
-              {!aiAvailable && statusQuery.isSuccess && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-300/70" />}
-            </button>
-          </div>
-
-          <div className="ait-overlay-more-morph">
-            <div className="ait-overlay-more-morph-inner">
-              <div className="flex items-center gap-1.5 border-t border-white/10 px-3 py-2.5">
-                {secondaryAction && <ActionButton active={activeAction === secondaryAction.key && resultOpen} disabled={!aiAvailable || busy} label={secondaryAction.label} title={aiAvailable ? secondaryAction.title : statusQuery.data?.detail || "AI provider is not configured"} onClick={() => runAction(secondaryAction.key)} />}
-                <ActionButton disabled={busy} label="笔记" title="加入研究笔记" onClick={saveNote} />
-                <ActionButton disabled={!aiAvailable || busy} label="AI Chat" title="在悬浮窗中继续 AI Chat" onClick={openChat} wide />
-              </div>
-            </div>
-          </div>
-        </>
+      {moreOpen && (
+        <div className="flex items-center gap-1.5 border-b border-white/[0.065] px-3 py-2">
+          {moreActions.map((action) => (
+            <ActionButton
+              key={action.key}
+              active={activeResult?.action === action.key}
+              disabled={!aiAvailable || busy}
+              label={action.label}
+              title={aiAvailable ? action.title : statusQuery.data?.detail || "AI provider is not configured"}
+              onClick={() => runAction(action.key)}
+            />
+          ))}
+          <ActionButton
+            disabled={busy}
+            label="笔记"
+            title="加入研究笔记"
+            onClick={saveNote}
+          />
+        </div>
       )}
+
+      {activeFeedback && !busy && (
+        <div className="border-b border-white/[0.055] px-3 py-1.5 text-[9px] text-slate-500">
+          {activeFeedback}
+        </div>
+      )}
+
+      <OverlayCompactChat
+        state={state}
+        aiResult={activeResult}
+        onClose={mode === "translation" ? openAssistant : () => undefined}
+      />
     </section>
   )
 }
 
-function ActionButton({ label, title, active = false, disabled = false, wide = false, onClick }: { label: string; title: string; active?: boolean; disabled?: boolean; wide?: boolean; onClick: () => void }) {
+function ActionButton({
+  label,
+  title,
+  active = false,
+  disabled = false,
+  onClick,
+}: {
+  label: string
+  title: string
+  active?: boolean
+  disabled?: boolean
+  onClick: () => void
+}) {
   return (
-    <button type="button" data-tauri-drag-region="false" title={title} disabled={disabled} className={`ait-overlay-action-button shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium ${wide ? "px-3.5" : ""} ${active ? "is-active" : ""}`} onClick={onClick}>{label}</button>
-  )
-}
-
-function ViewTab({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return (
-    <button type="button" data-tauri-drag-region="false" className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition ${active ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`} onClick={onClick}>{label}</button>
+    <button
+      type="button"
+      data-tauri-drag-region="false"
+      title={title}
+      disabled={disabled}
+      className={`ait-overlay-action-button shrink-0 rounded-full px-3 py-1.5 text-[10px] font-medium ${active ? "is-active" : ""}`}
+      onClick={onClick}
+    >
+      {label}
+    </button>
   )
 }

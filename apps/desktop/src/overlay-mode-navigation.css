@@ -1,4 +1,4 @@
-/* Batch 9.6.3 — source-first overlay chrome. */
+/* Batch 9.6.5 — source-first overlay + interactive translation workspace. */
 
 html[data-ait-view="overlay"] .ait-overlay-chat-panel {
   min-height: 0;
@@ -8,6 +8,21 @@ html[data-ait-view="overlay"] .ait-overlay-chat-panel {
 html[data-ait-view="overlay"] .ait-overlay-source-context {
   flex: 0 0 auto;
   background: rgba(255, 255, 255, 0.012);
+}
+
+/* The old translation body is superseded by OverlayTranslationWorkspace. */
+html[data-ait-view="overlay"] .ait-overlay-shell > div[data-ait-selection-scope="internal"] {
+  display: none !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-workspace {
+  flex: 0 0 auto;
+  max-height: 286px;
+  overflow-y: auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-select {
+  color-scheme: dark;
 }
 
 /* The outer AITranslator header + compact source strip are the only chrome.
@@ -59,17 +74,22 @@ html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .
 }
 
 html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.relative > div:first-child {
-  height: 142px !important;
-  min-height: 112px;
-  max-height: 156px;
+  height: 104px !important;
+  min-height: 76px;
+  max-height: 120px;
 }
 
 html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary {
-  flex: 0 0 auto;
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
   background: rgba(255, 255, 255, 0.015);
 }
 
 html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel {
+  min-height: 0;
+  flex: 1 1 auto;
   background: rgba(0, 0, 0, 0.055);
 }
 

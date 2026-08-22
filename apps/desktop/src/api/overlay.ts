@@ -9,6 +9,24 @@ import type {
 } from "./types"
 import { desktop } from "../desktop"
 
+export type OverlayMode = "assistant" | "translation"
+export type UnifiedOverlayStateResponse = OverlayStateResponse & {
+  mode: OverlayMode
+  translation_notice: string
+  companion_conversation_id?: string
+}
+
+export interface OverlayAssistantRequest extends Partial<ReadingContextFields> {
+  context_id: string
+  source_text: string
+  source_language: string
+  target_language: string
+}
+
+export interface UnifiedOverlayPresentRequest extends OverlayPresentRequest {
+  translation_notice?: string
+}
+
 const emptyReadingContext: ReadingContextFields = {
   resource_url: "",
   resource_title: "",
@@ -47,12 +65,21 @@ async function notifyOverlayStateChanged(contextId = ""): Promise<void> {
   }
 }
 
-export function getOverlayState(): Promise<OverlayStateResponse> {
-  return apiGet<OverlayStateResponse>("/api/overlay")
+export function getOverlayState(): Promise<UnifiedOverlayStateResponse> {
+  return apiGet<UnifiedOverlayStateResponse>("/api/overlay")
 }
 
-export async function showOverlayLoading(payload: OverlayLoadingRequest): Promise<OverlayStateResponse> {
-  const response = await apiPost<OverlayStateResponse, OverlayLoadingRequest & ReadingContextFields>(
+export async function showOverlayAssistant(payload: OverlayAssistantRequest): Promise<UnifiedOverlayStateResponse> {
+  const response = await apiPost<UnifiedOverlayStateResponse, OverlayAssistantRequest & ReadingContextFields>(
+    "/api/overlay/assistant",
+    withReadingContext(payload),
+  )
+  await notifyOverlayStateChanged(payload.context_id)
+  return response
+}
+
+export async function showOverlayLoading(payload: OverlayLoadingRequest): Promise<UnifiedOverlayStateResponse> {
+  const response = await apiPost<UnifiedOverlayStateResponse, OverlayLoadingRequest & ReadingContextFields>(
     "/api/overlay/loading",
     withReadingContext(payload),
   )
@@ -60,8 +87,8 @@ export async function showOverlayLoading(payload: OverlayLoadingRequest): Promis
   return response
 }
 
-export async function presentOverlay(payload: OverlayPresentRequest): Promise<OverlayStateResponse> {
-  const response = await apiPost<OverlayStateResponse, OverlayPresentRequest & ReadingContextFields>(
+export async function presentOverlay(payload: UnifiedOverlayPresentRequest): Promise<UnifiedOverlayStateResponse> {
+  const response = await apiPost<UnifiedOverlayStateResponse, UnifiedOverlayPresentRequest & ReadingContextFields>(
     "/api/overlay/present",
     withReadingContext(payload),
   )
@@ -69,8 +96,8 @@ export async function presentOverlay(payload: OverlayPresentRequest): Promise<Ov
   return response
 }
 
-export async function showOverlayError(payload: OverlayErrorRequest): Promise<OverlayStateResponse> {
-  const response = await apiPost<OverlayStateResponse, OverlayErrorRequest & ReadingContextFields>(
+export async function showOverlayError(payload: OverlayErrorRequest): Promise<UnifiedOverlayStateResponse> {
+  const response = await apiPost<UnifiedOverlayStateResponse, OverlayErrorRequest & ReadingContextFields>(
     "/api/overlay/error",
     withReadingContext(payload),
   )
@@ -81,9 +108,9 @@ export async function showOverlayError(payload: OverlayErrorRequest): Promise<Ov
 export async function bindOverlayCompanionConversation(
   contextId: string,
   conversationId: string,
-): Promise<OverlayStateResponse> {
+): Promise<UnifiedOverlayStateResponse> {
   const response = await apiPost<
-    OverlayStateResponse,
+    UnifiedOverlayStateResponse,
     { context_id: string; conversation_id: string }
   >(
     "/api/overlay/companion",
@@ -93,8 +120,8 @@ export async function bindOverlayCompanionConversation(
   return response
 }
 
-export async function dismissOverlay(): Promise<OverlayStateResponse> {
-  const response = await apiPost<OverlayStateResponse, Record<string, never>>("/api/overlay/dismiss", {})
+export async function dismissOverlay(): Promise<UnifiedOverlayStateResponse> {
+  const response = await apiPost<UnifiedOverlayStateResponse, Record<string, never>>("/api/overlay/dismiss", {})
   await notifyOverlayStateChanged("")
   return response
 }

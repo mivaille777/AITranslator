@@ -51,6 +51,7 @@ export default function OverlayCompactChat({
   const messageScrollRef = useRef<HTMLDivElement | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const followTailRef = useRef(true)
+  const syncedTranslationRef = useRef("")
   const [showJumpToLatest, setShowJumpToLatest] = useState(false)
   const [translationHandoffBusy, setTranslationHandoffBusy] = useState(false)
   const context = contextFromOverlay(state, aiResult)
@@ -119,6 +120,37 @@ export default function OverlayCompactChat({
     if (!scroll || !followTailRef.current) return
     scroll.scrollTop = scroll.scrollHeight
   }, [runtime.messages, runtime.activeRequestId])
+
+  useEffect(() => {
+    const translatedText = state.translated_text.trim()
+    if (!translatedText || runtime.activeRequestId !== null || runtime.contextUpdating) return
+    if (
+      runtime.context.source_text === state.source_text &&
+      runtime.context.translated_text === state.translated_text
+    ) {
+      return
+    }
+
+    const signature = `${state.context_id}\u001f${state.translated_text}`
+    if (syncedTranslationRef.current === signature) return
+    syncedTranslationRef.current = signature
+
+    // Translation is a presentation mode of the same reading interaction, not
+    // a new selection. Once the in-flight chat reply reaches a safe boundary,
+    // update the existing conversation context so follow-up AI turns can see
+    // the translated text without remounting or clearing the composer.
+    void runtime.attachReadingContext(context)
+  }, [
+    context,
+    runtime.activeRequestId,
+    runtime.attachReadingContext,
+    runtime.context.source_text,
+    runtime.context.translated_text,
+    runtime.contextUpdating,
+    state.context_id,
+    state.source_text,
+    state.translated_text,
+  ])
 
   const handoffMutation = useMutation({
     mutationFn: (payload: CompanionHandoffRequest) => createCompanionHandoff(payload),

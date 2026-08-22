@@ -83,15 +83,24 @@ def overlay_assistant(
     payload: OverlayAssistantRequest,
     service: OverlayStateServiceDependency,
 ) -> OverlayStateResponse:
-    return _response(
-        service.show_assistant(
-            context_id=payload.context_id,
-            source_text=payload.source_text,
-            source_language=payload.source_language,
-            target_language=payload.target_language,
-            **_reading_kwargs(payload),
-        )
+    # A fresh external selection updates Reading Context; it does not own the
+    # current presentation mode. If Translation is already active, keep the
+    # user in that workspace while replacing the source/context and clearing
+    # stale translation output. A hidden/dismissed overlay still reopens in
+    # Assistant on the next selection.
+    previous = service.snapshot()
+    preserve_translation_mode = previous.visible and previous.mode == "translation"
+
+    state = service.show_assistant(
+        context_id=payload.context_id,
+        source_text=payload.source_text,
+        source_language=payload.source_language,
+        target_language=payload.target_language,
+        **_reading_kwargs(payload),
     )
+    if preserve_translation_mode:
+        state = service.switch_mode(context_id=payload.context_id, mode="translation")
+    return _response(state)
 
 
 @router.post("/loading", response_model=OverlayStateResponse)

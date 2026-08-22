@@ -37,6 +37,7 @@ def _response(state: OverlayState) -> OverlayStateResponse:
         translation_notice=state.translation_notice,
         resource_url=state.resource_url,
         resource_title=state.resource_title,
+        application=state.application,
         section_heading=state.section_heading,
         context_before=state.context_before,
         context_after=state.context_after,
@@ -49,6 +50,7 @@ def _reading_kwargs(payload: OverlayAssistantRequest | OverlayLoadingRequest | O
     return {
         "resource_url": payload.resource_url,
         "resource_title": payload.resource_title,
+        "application": payload.application,
         "section_heading": payload.section_heading,
         "context_before": payload.context_before,
         "context_after": payload.context_after,

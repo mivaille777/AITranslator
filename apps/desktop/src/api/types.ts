@@ -69,17 +69,21 @@ export interface BrowserPageEnvelope {
 export interface ReadingContextFields {
   resource_url: string
   resource_title: string
+  /** Local UI/source identity only. It is not part of the LLM prompt-safe reading context. */
+  application?: string
   section_heading: string
   context_before: string
   context_after: string
   source_kind: string
 }
 
-export type OverlayPhase = "hidden" | "loading" | "ready" | "error"
+export type OverlayMode = "assistant" | "translation"
+export type OverlayPhase = "hidden" | "idle" | "loading" | "ready" | "error"
 
 export interface OverlayStateResponse extends ReadingContextFields {
   revision: number
   visible: boolean
+  mode?: OverlayMode
   phase: OverlayPhase
   context_id: string
   source_text: string
@@ -88,6 +92,8 @@ export interface OverlayStateResponse extends ReadingContextFields {
   target_language: string
   provider: string
   message: string
+  translation_notice?: string
+  companion_conversation_id?: string
 }
 
 export interface OverlayLoadingRequest extends Partial<ReadingContextFields> {
@@ -398,6 +404,7 @@ export interface ConversationContextUpdate {
   target_language?: string
   resource_url?: string
   resource_title?: string
+  application?: string
   section_heading?: string
   context_before?: string
   context_after?: string

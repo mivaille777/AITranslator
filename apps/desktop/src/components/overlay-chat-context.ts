@@ -5,14 +5,8 @@ import type {
 } from "../api/types"
 import type { CompanionContextSnapshot } from "../features/companion/companion-runtime"
 
-type OverlayStateWithCompanion = OverlayStateResponse & {
-  companion_conversation_id?: string
-}
-
 export function overlayCompanionConversationId(state: OverlayStateResponse): string {
-  return String(
-    (state as OverlayStateWithCompanion).companion_conversation_id ?? "",
-  ).trim()
+  return String(state.companion_conversation_id ?? "").trim()
 }
 
 export function contextFromOverlay(
@@ -26,6 +20,7 @@ export function contextFromOverlay(
     target_language: state.target_language,
     resource_url: state.resource_url,
     resource_title: state.resource_title,
+    application: state.application ?? "",
     section_heading: state.section_heading,
     context_before: state.context_before,
     context_after: state.context_after,
@@ -48,6 +43,7 @@ export function buildOverlayChatHandoff(
     target_language: state.target_language,
     resource_url: state.resource_url,
     resource_title: state.resource_title,
+    application: state.application ?? "",
     section_heading: state.section_heading,
     context_before: state.context_before,
     context_after: state.context_after,

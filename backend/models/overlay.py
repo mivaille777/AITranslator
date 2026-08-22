@@ -9,6 +9,8 @@ OverlayPhase = Literal["hidden", "idle", "loading", "ready", "error"]
 class OverlayReadingContext(BaseModel):
     resource_url: str = Field(default="", max_length=4096)
     resource_title: str = Field(default="", max_length=1024)
+    # Local source identity for UI only. Do not copy this into LLM prompts.
+    application: str = Field(default="", max_length=512)
     section_heading: str = Field(default="", max_length=1024)
     context_before: str = Field(default="", max_length=4000)
     context_after: str = Field(default="", max_length=4000)

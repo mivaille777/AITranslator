@@ -20,6 +20,7 @@ class OverlayState:
     translation_notice: str = ""
     resource_url: str = ""
     resource_title: str = ""
+    application: str = ""
     section_heading: str = ""
     context_before: str = ""
     context_after: str = ""
@@ -80,6 +81,7 @@ class OverlayStateService:
         target_language: str,
         resource_url: str = "",
         resource_title: str = "",
+        application: str = "",
         section_heading: str = "",
         context_before: str = "",
         context_after: str = "",
@@ -105,6 +107,7 @@ class OverlayStateService:
                 target_language=target_language,
                 resource_url=resource_url,
                 resource_title=resource_title,
+                application=application,
                 section_heading=section_heading,
                 context_before=context_before,
                 context_after=context_after,
@@ -122,6 +125,7 @@ class OverlayStateService:
         target_language: str,
         resource_url: str = "",
         resource_title: str = "",
+        application: str = "",
         section_heading: str = "",
         context_before: str = "",
         context_after: str = "",
@@ -146,6 +150,7 @@ class OverlayStateService:
                 message="Translating…",
                 resource_url=resource_url,
                 resource_title=resource_title,
+                application=application or current.application,
                 section_heading=section_heading,
                 context_before=context_before,
                 context_after=context_after,
@@ -166,6 +171,7 @@ class OverlayStateService:
         translation_notice: str = "",
         resource_url: str = "",
         resource_title: str = "",
+        application: str = "",
         section_heading: str = "",
         context_before: str = "",
         context_after: str = "",
@@ -189,6 +195,7 @@ class OverlayStateService:
                 translation_notice=translation_notice,
                 resource_url=resource_url or current.resource_url,
                 resource_title=resource_title or current.resource_title,
+                application=application or current.application,
                 section_heading=section_heading or current.section_heading,
                 context_before=context_before or current.context_before,
                 context_after=context_after or current.context_after,
@@ -207,6 +214,7 @@ class OverlayStateService:
         message: str,
         resource_url: str = "",
         resource_title: str = "",
+        application: str = "",
         section_heading: str = "",
         context_before: str = "",
         context_after: str = "",
@@ -232,6 +240,7 @@ class OverlayStateService:
                 translation_notice=f"翻译暂时不可用：{normalized_message}",
                 resource_url=resource_url or current.resource_url,
                 resource_title=resource_title or current.resource_title,
+                application=application or current.application,
                 section_heading=section_heading or current.section_heading,
                 context_before=context_before or current.context_before,
                 context_after=context_after or current.context_after,
@@ -249,6 +258,7 @@ class OverlayStateService:
         message: str,
         resource_url: str = "",
         resource_title: str = "",
+        application: str = "",
         section_heading: str = "",
         context_before: str = "",
         context_after: str = "",
@@ -270,6 +280,7 @@ class OverlayStateService:
                 message=message or "Translation failed",
                 resource_url=resource_url or current.resource_url,
                 resource_title=resource_title or current.resource_title,
+                application=application or current.application,
                 section_heading=section_heading or current.section_heading,
                 context_before=context_before or current.context_before,
                 context_after=context_after or current.context_after,

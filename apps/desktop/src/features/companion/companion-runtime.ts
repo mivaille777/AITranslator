@@ -26,6 +26,7 @@ export interface CompanionContextSnapshot {
   target_language: string
   resource_url: string
   resource_title: string
+  application?: string
   section_heading: string
   context_before: string
   context_after: string
@@ -41,6 +42,7 @@ export const EMPTY_COMPANION_CONTEXT: CompanionContextSnapshot = {
   target_language: "zh-CN",
   resource_url: "",
   resource_title: "",
+  application: "",
   section_heading: "",
   context_before: "",
   context_after: "",
@@ -57,6 +59,7 @@ export function companionContextSnapshot(
     target_language: context.target_language,
     resource_url: context.resource_url,
     resource_title: context.resource_title,
+    application: context.application ?? "",
     section_heading: context.section_heading,
     context_before: context.context_before,
     context_after: context.context_after,
@@ -168,6 +171,7 @@ export function buildCompanionChatRequest({
     target_language: resolvedContext.target_language,
     resource_url: resolvedContext.resource_url,
     resource_title: resolvedContext.resource_title,
+    application: resolvedContext.application ?? "",
     section_heading: resolvedContext.section_heading,
     context_before: resolvedContext.context_before,
     context_after: resolvedContext.context_after,

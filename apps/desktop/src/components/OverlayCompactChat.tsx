@@ -4,12 +4,9 @@ import type {
   OverlayStateResponse,
   QuickActionResponse,
 } from "../api/types"
+import OverlaySourceContext from "./OverlaySourceContext"
 
 const OverlayCompactChatContent = lazy(() => import("./OverlayCompactChatContent"))
-
-type OverlayWithTranslationNotice = OverlayStateResponse & {
-  translation_notice?: string
-}
 
 export default function OverlayCompactChat({
   state,
@@ -20,10 +17,11 @@ export default function OverlayCompactChat({
   aiResult: QuickActionResponse | null
   onClose: () => void
 }) {
-  const notice = (state as OverlayWithTranslationNotice).translation_notice?.trim() ?? ""
+  const notice = state.translation_notice?.trim() ?? ""
 
   return (
     <div className="ait-overlay-chat-panel min-h-0">
+      <OverlaySourceContext state={state} />
       {notice && (
         <div
           data-ait-selection-scope="internal"

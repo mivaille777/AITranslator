@@ -10,11 +10,7 @@ import type {
 import { desktop } from "../desktop"
 
 export type OverlayMode = "assistant" | "translation"
-export type UnifiedOverlayStateResponse = OverlayStateResponse & {
-  mode: OverlayMode
-  translation_notice: string
-  companion_conversation_id?: string
-}
+export type UnifiedOverlayStateResponse = OverlayStateResponse
 
 export interface OverlayAssistantRequest extends Partial<ReadingContextFields> {
   context_id: string
@@ -30,6 +26,7 @@ export interface UnifiedOverlayPresentRequest extends OverlayPresentRequest {
 const emptyReadingContext: ReadingContextFields = {
   resource_url: "",
   resource_title: "",
+  application: "",
   section_heading: "",
   context_before: "",
   context_after: "",
@@ -43,6 +40,7 @@ function readingContextFor(contextId: string): ReadingContextFields {
   return {
     resource_url: selection.resource_url,
     resource_title: selection.resource_title,
+    application: selection.application,
     section_heading: selection.section_heading,
     context_before: selection.context_before,
     context_after: selection.context_after,

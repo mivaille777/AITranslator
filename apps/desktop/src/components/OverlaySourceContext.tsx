@@ -1,0 +1,38 @@
+import type { OverlayStateResponse } from "../api/types"
+import { resolveOverlaySourceIdentity } from "./overlay-source-identity"
+
+export default function OverlaySourceContext({ state }: { state: OverlayStateResponse }) {
+  const identity = resolveOverlaySourceIdentity({
+    application: state.application,
+    sourceKind: state.source_kind,
+    resourceUrl: state.resource_url,
+    resourceTitle: state.resource_title,
+    sectionHeading: state.section_heading,
+  })
+
+  return (
+    <div
+      className="border-b border-white/[0.065] px-4 py-2.5"
+      data-ait-selection-scope="internal"
+      title={identity.tooltip || undefined}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" aria-hidden="true" />
+        <span className="truncate text-[11px] font-semibold text-slate-200">
+          {identity.applicationLabel}
+        </span>
+        <span className="shrink-0 rounded-full bg-white/[0.055] px-2 py-0.5 text-[8px] font-semibold tracking-[0.12em] text-slate-500">
+          {identity.badge}
+        </span>
+        {identity.detail && (
+          <span className="ml-auto max-w-[42%] truncate text-[9px] text-slate-600">
+            {identity.detail}
+          </span>
+        )}
+      </div>
+      <p className="mt-1 truncate pl-4 text-[10px] text-slate-500">
+        {identity.title}
+      </p>
+    </div>
+  )
+}

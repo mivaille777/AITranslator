@@ -6,7 +6,12 @@ from time import monotonic
 from typing import Any, Callable
 
 from app.ai.errors import AIConfigurationError, AIError
-from backend.agent_core.exceptions import AgentRuntimeError, AgentToolError
+from backend.agent_core.exceptions import (
+    AgentBudgetExceededError,
+    AgentCancelledError,
+    AgentRuntimeError,
+    AgentToolError,
+)
 from backend.agent_core.reliability import AgentRunControl, run_safe_tool_with_timeout
 from backend.models.agent_tools import AgentPlan
 from backend.services.agent_planner_service import AgentPlannerService
@@ -36,7 +41,7 @@ def _duration_ms(started: float) -> int:
 
 
 def _retryable_tool_error(exc: Exception) -> bool:
-    if isinstance(exc, AIConfigurationError):
+    if isinstance(exc, (AIConfigurationError, AgentCancelledError, AgentBudgetExceededError)):
         return False
     return isinstance(exc, (AIError, OSError, TimeoutError, AgentRuntimeError))
 

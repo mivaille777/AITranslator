@@ -56,8 +56,8 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
       return {
         sequence: event.sequence,
         eventType: event.event_type,
-        label: `Calling ${toolName}`,
-        detail: "Executing a bounded Agent tool.",
+        label: `Tool planned: ${toolName}`,
+        detail: "The Agent selected a bounded tool. Execution is confirmed by a tool result.",
         tone: "neutral",
       }
     }

@@ -6,13 +6,15 @@ import type { AgentWorkspacePhase } from "../agent-workspace-state"
 const phaseLabel: Record<AgentWorkspacePhase, string> = {
   idle: "Ready",
   running: "Running",
+  cancelling: "Cancelling",
+  cancelled: "Cancelled",
   completed: "Completed",
   confirmation_required: "Waiting for confirmation",
   error: "Error",
 }
 
 export function AgentHeader({ phase, uiMode }: { phase: AgentWorkspacePhase; uiMode: string }) {
-  const running = phase === "running"
+  const running = phase === "running" || phase === "cancelling"
 
   return (
     <AITPanel className="p-5">

@@ -95,7 +95,9 @@ export default function OverlayQuickActions({
   const [copied, setCopied] = useState(false)
   const [resultView, setResultView] = useState<ResultView>("translation")
   const [moreOpen, setMoreOpen] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
+  // Assistant is the primary overlay surface. Translation and AI results are
+  // modes layered around the same persistent companion conversation.
+  const [chatOpen, setChatOpen] = useState(true)
 
   const statusQuery = useQuery({
     queryKey: ["quick-action-status"],
@@ -111,6 +113,10 @@ export default function OverlayQuickActions({
   const setPresentation = useCallback((presentation: OverlayActionPresentation) => {
     onPresentationChange?.(presentation)
   }, [onPresentationChange])
+
+  useEffect(() => {
+    if (chatOpen) setPresentation("chat")
+  }, [chatOpen, setPresentation])
 
   const collapseTransientPanels = useCallback(() => {
     setMoreOpen(false)
@@ -219,10 +225,7 @@ export default function OverlayQuickActions({
   }, [moreOpen, setPresentation])
 
   const copyActiveView = useCallback(async () => {
-    const text =
-      resultView === "ai"
-        ? activeResult?.output_text ?? ""
-        : state.translated_text
+    const text = resultView === "ai" ? activeResult?.output_text ?? "" : state.translated_text
     if (!text) return
 
     try {
@@ -282,11 +285,7 @@ export default function OverlayQuickActions({
   return (
     <section className={`ait-overlay-action-surface relative border-t border-white/10 ${resultOpen && activeResult ? "is-result-open" : ""} ${moreOpen ? "is-more-open" : ""} ${chatOpen ? "is-chat-open" : ""}`}>
       {chatOpen ? (
-        <OverlayCompactChat
-          state={state}
-          aiResult={activeResult}
-          onClose={closeChat}
-        />
+        <OverlayCompactChat state={state} aiResult={activeResult} onClose={closeChat} />
       ) : (
         <>
           <div className="ait-overlay-result-morph">
@@ -295,71 +294,26 @@ export default function OverlayQuickActions({
                 <div className="border-b border-white/10 px-3 pb-3 pt-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="ait-overlay-result-tabs flex items-center gap-1 rounded-full p-0.5">
-                      <ViewTab
-                        active={resultView === "translation"}
-                        label="译文"
-                        onClick={() => {
-                          setResultView("translation")
-                          setCopied(false)
-                        }}
-                      />
-                      <ViewTab
-                        active={resultView === "ai"}
-                        label="AI 结果"
-                        onClick={() => {
-                          setResultView("ai")
-                          setCopied(false)
-                        }}
-                      />
+                      <ViewTab active={resultView === "translation"} label="译文" onClick={() => { setResultView("translation"); setCopied(false) }} />
+                      <ViewTab active={resultView === "ai"} label="AI 结果" onClick={() => { setResultView("ai"); setCopied(false) }} />
                     </div>
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        data-tauri-drag-region="false"
-                        className="ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px]"
-                        onClick={openChat}
-                      >
-                        追问
-                      </button>
-                      <button
-                        type="button"
-                        data-tauri-drag-region="false"
-                        aria-live="polite"
-                        className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] ${copied ? "is-copied" : ""}`}
-                        onClick={() => void copyActiveView()}
-                      >
-                        {copied ? "✓ 已复制" : "复制"}
-                      </button>
-                      <button
-                        type="button"
-                        data-tauri-drag-region="false"
-                        aria-label="Collapse AI result"
-                        className="ait-overlay-quiet-button flex h-6 w-6 items-center justify-center rounded-full text-xs"
-                        onClick={closeResult}
-                      >
-                        ×
-                      </button>
+                      <button type="button" data-tauri-drag-region="false" className="ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px]" onClick={openChat}>追问</button>
+                      <button type="button" data-tauri-drag-region="false" aria-live="polite" className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] ${copied ? "is-copied" : ""}`} onClick={() => void copyActiveView()}>{copied ? "✓ 已复制" : "复制"}</button>
+                      <button type="button" data-tauri-drag-region="false" aria-label="Collapse AI result" className="ait-overlay-quiet-button flex h-6 w-6 items-center justify-center rounded-full text-xs" onClick={closeResult}>×</button>
                     </div>
                   </div>
 
                   <div className="ait-overlay-result-content mt-2.5 max-h-[150px] overflow-y-auto pr-1">
                     {resultView === "ai" ? (
                       <>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          {actionLabels[activeResult.action]} · {activeResult.provider} / {activeResult.model}
-                        </p>
-                        <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-200">
-                          {activeResult.output_text}
-                        </p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{actionLabels[activeResult.action]} · {activeResult.provider} / {activeResult.model}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-200">{activeResult.output_text}</p>
                       </>
                     ) : (
                       <>
-                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Translation · {state.provider || "provider"}
-                        </p>
-                        <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-200">
-                          {state.translated_text}
-                        </p>
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Translation · {state.provider || "provider"}</p>
+                        <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-200">{state.translated_text}</p>
                       </>
                     )}
                   </div>
@@ -368,78 +322,27 @@ export default function OverlayQuickActions({
             </div>
           </div>
 
-          {activeFeedback && !busy && (
-            <div className="ait-overlay-action-toast pointer-events-none absolute inset-x-3 bottom-[58px] z-20 rounded-full px-3 py-1.5 text-center text-[10px]">
-              {activeFeedback}
-            </div>
-          )}
+          {activeFeedback && !busy && <div className="ait-overlay-action-toast pointer-events-none absolute inset-x-3 bottom-[58px] z-20 rounded-full px-3 py-1.5 text-center text-[10px]">{activeFeedback}</div>}
 
           <div className="ait-overlay-action-bar flex items-center gap-1.5 px-3 py-2.5">
             <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
               {primaryActions.map((action, index) => (
-                <ActionButton
-                  key={action.key}
-                  active={activeAction === action.key && resultOpen}
-                  disabled={!aiAvailable || busy}
-                  label={action.label}
-                  title={`${aiAvailable ? action.title : statusQuery.data?.detail || "AI provider is not configured"} · ${index + 1}`}
-                  onClick={() => runAction(action.key)}
-                />
+                <ActionButton key={action.key} active={activeAction === action.key && resultOpen} disabled={!aiAvailable || busy} label={action.label} title={`${aiAvailable ? action.title : statusQuery.data?.detail || "AI provider is not configured"} · ${index + 1}`} onClick={() => runAction(action.key)} />
               ))}
             </div>
-
             <div className="h-5 w-px shrink-0 bg-white/10" />
-
-            <button
-              type="button"
-              data-tauri-drag-region="false"
-              aria-label="More contextual actions"
-              aria-expanded={moreOpen}
-              title="更多操作 · M"
-              disabled={busy}
-              className={`ait-overlay-action-button relative flex h-8 min-w-9 shrink-0 items-center justify-center rounded-full px-2 text-sm ${moreOpen ? "is-active" : ""}`}
-              onClick={toggleMore}
-            >
-              {busy ? (
-                <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/70" />
-              ) : (
-                <span className="tracking-[0.12em]">•••</span>
-              )}
-              {!aiAvailable && statusQuery.isSuccess && (
-                <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-300/70" />
-              )}
+            <button type="button" data-tauri-drag-region="false" aria-label="More contextual actions" aria-expanded={moreOpen} title="更多操作 · M" disabled={busy} className={`ait-overlay-action-button relative flex h-8 min-w-9 shrink-0 items-center justify-center rounded-full px-2 text-sm ${moreOpen ? "is-active" : ""}`} onClick={toggleMore}>
+              {busy ? <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/70" /> : <span className="tracking-[0.12em]">•••</span>}
+              {!aiAvailable && statusQuery.isSuccess && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-300/70" />}
             </button>
           </div>
 
           <div className="ait-overlay-more-morph">
             <div className="ait-overlay-more-morph-inner">
               <div className="flex items-center gap-1.5 border-t border-white/10 px-3 py-2.5">
-                {secondaryAction && (
-                  <ActionButton
-                    active={activeAction === secondaryAction.key && resultOpen}
-                    disabled={!aiAvailable || busy}
-                    label={secondaryAction.label}
-                    title={
-                      aiAvailable
-                        ? secondaryAction.title
-                        : statusQuery.data?.detail || "AI provider is not configured"
-                    }
-                    onClick={() => runAction(secondaryAction.key)}
-                  />
-                )}
-                <ActionButton
-                  disabled={busy}
-                  label="笔记"
-                  title="加入研究笔记"
-                  onClick={saveNote}
-                />
-                <ActionButton
-                  disabled={!aiAvailable || busy}
-                  label="AI Chat"
-                  title="在悬浮窗中继续 AI Chat"
-                  onClick={openChat}
-                  wide
-                />
+                {secondaryAction && <ActionButton active={activeAction === secondaryAction.key && resultOpen} disabled={!aiAvailable || busy} label={secondaryAction.label} title={aiAvailable ? secondaryAction.title : statusQuery.data?.detail || "AI provider is not configured"} onClick={() => runAction(secondaryAction.key)} />}
+                <ActionButton disabled={busy} label="笔记" title="加入研究笔记" onClick={saveNote} />
+                <ActionButton disabled={!aiAvailable || busy} label="AI Chat" title="在悬浮窗中继续 AI Chat" onClick={openChat} wide />
               </div>
             </div>
           </div>
@@ -449,56 +352,14 @@ export default function OverlayQuickActions({
   )
 }
 
-function ActionButton({
-  label,
-  title,
-  active = false,
-  disabled = false,
-  wide = false,
-  onClick,
-}: {
-  label: string
-  title: string
-  active?: boolean
-  disabled?: boolean
-  wide?: boolean
-  onClick: () => void
-}) {
+function ActionButton({ label, title, active = false, disabled = false, wide = false, onClick }: { label: string; title: string; active?: boolean; disabled?: boolean; wide?: boolean; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      data-tauri-drag-region="false"
-      title={title}
-      disabled={disabled}
-      className={`ait-overlay-action-button shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium ${wide ? "px-3.5" : ""} ${active ? "is-active" : ""}`}
-      onClick={onClick}
-    >
-      {label}
-    </button>
+    <button type="button" data-tauri-drag-region="false" title={title} disabled={disabled} className={`ait-overlay-action-button shrink-0 rounded-full px-3 py-1.5 text-[11px] font-medium ${wide ? "px-3.5" : ""} ${active ? "is-active" : ""}`} onClick={onClick}>{label}</button>
   )
 }
 
-function ViewTab({
-  active,
-  label,
-  onClick,
-}: {
-  active: boolean
-  label: string
-  onClick: () => void
-}) {
+function ViewTab({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
-      data-tauri-drag-region="false"
-      className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition ${
-        active
-          ? "bg-white/10 text-white"
-          : "text-slate-500 hover:text-slate-300"
-      }`}
-      onClick={onClick}
-    >
-      {label}
-    </button>
+    <button type="button" data-tauri-drag-region="false" className={`rounded-full px-2.5 py-1 text-[10px] font-medium transition ${active ? "bg-white/10 text-white" : "text-slate-500 hover:text-slate-300"}`} onClick={onClick}>{label}</button>
   )
 }

@@ -3,7 +3,7 @@ export interface OverlayWindowSize {
   height: number
 }
 
-export type OverlayVisualPhase = "hidden" | "loading" | "ready" | "error"
+export type OverlayVisualPhase = "hidden" | "idle" | "loading" | "ready" | "error"
 export type OverlayActionPresentation = "compact" | "expanded" | "result" | "chat"
 
 export interface OverlaySizingInput {
@@ -56,6 +56,10 @@ export function computeOverlayWindowSize({
 
   if (phase === "hidden") {
     height = 190
+  } else if (phase === "idle") {
+    // Idle is the Assistant-ready shell before any loading/result state. Keep
+    // it compact while still reserving room for the composer.
+    height = READY_MIN_HEIGHT
   } else if (phase === "loading") {
     // Translation loading no longer hides the AI composer.
     height = actionPresentation === "chat" ? 520 : 230

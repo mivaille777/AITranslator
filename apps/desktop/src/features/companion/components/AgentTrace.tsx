@@ -12,24 +12,37 @@ function ActivityIcon({ item }: { item: AgentActivityItem }) {
 export function AgentTrace({
   activities,
   running,
+  runId,
+  traceId,
+  totalDurationMs,
 }: {
   activities: AgentActivityItem[]
   running: boolean
+  runId: string
+  traceId: string
+  totalDurationMs: number
 }) {
   return (
     <AITPanel className="p-5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Agent Trace</p>
           <p className="mt-1 text-sm font-medium text-slate-800">Runtime activity</p>
+          {runId || traceId ? (
+            <p className="mt-1 max-w-[520px] truncate font-mono text-[10px] text-slate-400">
+              {[runId, traceId].filter(Boolean).join(" · ")}
+            </p>
+          ) : null}
         </div>
-        {running ? <span className="text-xs text-slate-500">Processing…</span> : null}
+        <div className="text-right text-xs text-slate-500">
+          {running ? <span>Processing…</span> : totalDurationMs > 0 ? <span>{totalDurationMs} ms</span> : null}
+        </div>
       </div>
 
       <div className="mt-4 space-y-2">
         {activities.length === 0 ? (
           <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-sm text-slate-500">
-            Run the Agent to inspect context, tool calls, results, and completion state.
+            Run the Agent to inspect context, planning, retries, tools, synthesis, and completion state.
           </div>
         ) : (
           activities.map((item) => (

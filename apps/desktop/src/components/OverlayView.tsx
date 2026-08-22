@@ -73,6 +73,7 @@ export default function OverlayView() {
   const overlayVisible = state?.visible ?? false
   const overlayContextId = state?.context_id ?? ""
   const overlayRevision = state?.revision ?? 0
+  const overlayMode = state?.mode ?? "assistant"
   const menuOpen = menuPosition !== null
   const actionPresentation =
     actionPresentationState.contextId === overlayContextId
@@ -224,7 +225,7 @@ export default function OverlayView() {
         event.preventDefault()
         if (actionPresentation === "result") {
           dispatchOverlayCommand("copy")
-        } else {
+        } else if (overlayMode === "translation") {
           void handleCopy()
         }
         return
@@ -249,6 +250,7 @@ export default function OverlayView() {
     dismiss,
     handleCopy,
     menuOpen,
+    overlayMode,
     overlayVisible,
     state?.phase,
   ])
@@ -355,58 +357,17 @@ export default function OverlayView() {
             onPointerDown={(event) => event.stopPropagation()}
           >
             <MenuHeading>Position</MenuHeading>
-            <MenuItem
-              label="Near cursor"
-              active={preferences.positionMode === "mouse_follow"}
-              disabled={preferences.locked}
-              onClick={() => void applyPreferences({ positionMode: "mouse_follow" })}
-            />
-            <MenuItem
-              label="Fix here"
-              active={preferences.positionMode === "custom_fixed_position"}
-              disabled={preferences.locked}
-              onClick={() => void fixAtCurrentPosition()}
-            />
-            <MenuItem
-              label="Screen top"
-              active={preferences.positionMode === "desktop_lyrics_top"}
-              disabled={preferences.locked}
-              onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_top" })}
-            />
-            <MenuItem
-              label="Screen center"
-              active={preferences.positionMode === "desktop_lyrics_center"}
-              disabled={preferences.locked}
-              onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_center" })}
-            />
-            <MenuItem
-              label="Screen bottom"
-              active={preferences.positionMode === "desktop_lyrics_bottom"}
-              disabled={preferences.locked}
-              onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_bottom" })}
-            />
+            <MenuItem label="Near cursor" active={preferences.positionMode === "mouse_follow"} disabled={preferences.locked} onClick={() => void applyPreferences({ positionMode: "mouse_follow" })} />
+            <MenuItem label="Fix here" active={preferences.positionMode === "custom_fixed_position"} disabled={preferences.locked} onClick={() => void fixAtCurrentPosition()} />
+            <MenuItem label="Screen top" active={preferences.positionMode === "desktop_lyrics_top"} disabled={preferences.locked} onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_top" })} />
+            <MenuItem label="Screen center" active={preferences.positionMode === "desktop_lyrics_center"} disabled={preferences.locked} onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_center" })} />
+            <MenuItem label="Screen bottom" active={preferences.positionMode === "desktop_lyrics_bottom"} disabled={preferences.locked} onClick={() => void applyPreferences({ positionMode: "desktop_lyrics_bottom" })} />
 
             <div className="my-1 border-t border-white/10" />
-            <MenuItem
-              label="Always on top"
-              active={preferences.alwaysOnTop}
-              onClick={() => void applyPreferences({ alwaysOnTop: !preferences.alwaysOnTop })}
-            />
-            <MenuItem
-              label="Lock position"
-              active={preferences.locked}
-              onClick={() => void togglePositionLock()}
-            />
-            <MenuItem
-              label="Click-through"
-              active={preferences.clickThrough}
-              onClick={() => void applyPreferences({ clickThrough: !preferences.clickThrough })}
-            />
-            <MenuItem
-              label="Smart auto-dismiss"
-              active={preferences.smartAutoDismiss}
-              onClick={() => void applyPreferences({ smartAutoDismiss: !preferences.smartAutoDismiss })}
-            />
+            <MenuItem label="Always on top" active={preferences.alwaysOnTop} onClick={() => void applyPreferences({ alwaysOnTop: !preferences.alwaysOnTop })} />
+            <MenuItem label="Lock position" active={preferences.locked} onClick={() => void togglePositionLock()} />
+            <MenuItem label="Click-through" active={preferences.clickThrough} onClick={() => void applyPreferences({ clickThrough: !preferences.clickThrough })} />
+            <MenuItem label="Smart auto-dismiss" active={preferences.smartAutoDismiss} onClick={() => void applyPreferences({ smartAutoDismiss: !preferences.smartAutoDismiss })} />
 
             <div className="my-1 border-t border-white/10" />
             <MenuHeading>Shortcuts</MenuHeading>
@@ -424,13 +385,13 @@ export default function OverlayView() {
         <OverlayHeader
           sourceLanguage={state.source_language}
           targetLanguage={state.target_language}
-          provider={state.provider}
+          provider={overlayMode === "assistant" ? "AI Assistant" : state.provider}
           locked={preferences.locked}
           dragEnabled={!preferences.locked && !preferences.clickThrough}
           onClose={() => dismiss()}
         />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" data-ait-selection-scope="internal">
           {state.phase === "loading" && (
             <div key={`loading:${overlayRevision}`} className="ait-overlay-state-enter flex min-h-16 items-center gap-3 rounded-[18px] bg-white/[0.035] px-4 py-3 text-sm text-slate-300">
               <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />
@@ -441,15 +402,18 @@ export default function OverlayView() {
             </div>
           )}
 
-          {state.phase === "ready" && (
-            <div key={`ready:${overlayRevision}`} className="ait-overlay-state-enter">
-              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">
-                {state.translated_text}
-              </p>
+          {state.phase === "ready" && overlayMode === "assistant" && (
+            <div key={`assistant:${overlayRevision}`} className="ait-overlay-state-enter rounded-[16px] border border-cyan-300/10 bg-cyan-300/[0.045] px-3.5 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-200/55">Selected context</p>
+              <p className="mt-1.5 line-clamp-2 text-xs leading-5 text-slate-400">{state.source_text}</p>
+            </div>
+          )}
+
+          {state.phase === "ready" && overlayMode === "translation" && (
+            <div key={`translation:${overlayRevision}`} className="ait-overlay-state-enter">
+              <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{state.translated_text}</p>
               {state.source_text && (
-                <p className="mt-4 line-clamp-3 border-t border-white/10 pt-3 text-xs leading-5 text-slate-500">
-                  {state.source_text}
-                </p>
+                <p className="mt-4 line-clamp-3 border-t border-white/10 pt-3 text-xs leading-5 text-slate-500">{state.source_text}</p>
               )}
             </div>
           )}
@@ -460,9 +424,7 @@ export default function OverlayView() {
                 <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-300/10 text-sm font-semibold text-rose-200">!</span>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-rose-100">Translation unavailable</p>
-                  <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">
-                    {state.message || "Translation failed"}
-                  </p>
+                  <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">{state.message || "Translation failed"}</p>
                 </div>
               </div>
             </div>
@@ -479,10 +441,8 @@ export default function OverlayView() {
         )}
 
         <footer className="flex items-center justify-between border-t border-white/10 px-4 py-3">
-          <span className="truncate text-[10px] text-slate-600">
-            {positionLabels[preferences.positionMode]} · Esc close · right-click
-          </span>
-          {state.phase === "ready" && (
+          <span className="truncate text-[10px] text-slate-600">{positionLabels[preferences.positionMode]} · Esc close · right-click</span>
+          {state.phase === "ready" && overlayMode === "translation" && state.translated_text && (
             <button
               type="button"
               data-tauri-drag-region="false"
@@ -500,20 +460,14 @@ export default function OverlayView() {
 }
 
 function MenuHeading({ children }: { children: string }) {
-  return (
-    <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-      {children}
-    </p>
-  )
+  return <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{children}</p>
 }
 
 function MenuShortcut({ label, keys }: { label: string; keys: string }) {
   return (
     <div className="flex items-center justify-between gap-3 px-2.5 py-1.5 text-[10px] text-slate-500">
       <span>{label}</span>
-      <kbd className="rounded-md border border-white/10 bg-white/[0.035] px-1.5 py-0.5 font-mono text-[9px] text-slate-400">
-        {keys}
-      </kbd>
+      <kbd className="rounded-md border border-white/10 bg-white/[0.035] px-1.5 py-0.5 font-mono text-[9px] text-slate-400">{keys}</kbd>
     </div>
   )
 }
@@ -536,11 +490,7 @@ function MenuItem({
       type="button"
       data-tauri-drag-region="false"
       disabled={disabled}
-      className={`ait-control-motion flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left disabled:cursor-not-allowed disabled:opacity-35 ${
-        danger
-          ? "text-rose-300 hover:bg-rose-400/10"
-          : "text-slate-300 hover:bg-white/10 hover:text-white"
-      }`}
+      className={`ait-control-motion flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left disabled:cursor-not-allowed disabled:opacity-35 ${danger ? "text-rose-300 hover:bg-rose-400/10" : "text-slate-300 hover:bg-white/10 hover:text-white"}`}
       onClick={onClick}
     >
       <span>{label}</span>

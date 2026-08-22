@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from time import sleep
 from types import SimpleNamespace
 
 import pytest
 
+from backend.agent_core.exceptions import AgentToolTimeoutError
 from backend.agent_core.reliability import AgentExecutionPolicy, AgentRunControl
 from backend.models.agent_tools import AgentPlan
 from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolSpec
@@ -41,9 +43,16 @@ class FakePlanner:
 
 
 class FakeRegistry:
-    def __init__(self, spec: AgentToolSpec, *, failures: int = 0) -> None:
+    def __init__(
+        self,
+        spec: AgentToolSpec,
+        *,
+        failures: int = 0,
+        delay_seconds: float = 0.0,
+    ) -> None:
         self.spec = spec
         self.failures = failures
+        self.delay_seconds = delay_seconds
         self.executions: list[tuple[str, dict]] = []
 
     def list_tools(self):
@@ -54,6 +63,8 @@ class FakeRegistry:
 
     def execute(self, name: str, **payload):
         self.executions.append((name, payload))
+        if self.delay_seconds > 0:
+            sleep(self.delay_seconds)
         if len(self.executions) <= self.failures:
             raise OSError("temporary provider failure")
         return AgentToolExecutionResult(
@@ -153,6 +164,29 @@ def test_safe_compute_tool_retries_once_after_transient_failure() -> None:
     assert retry["attempt"] == 2
     assert retry["max_attempts"] == 2
     assert "temporary provider failure" in retry["reason"]
+
+
+def test_hard_compute_timeout_is_not_automatically_retried() -> None:
+    registry = FakeRegistry(TRANSLATE_TOOL, delay_seconds=0.1)
+    service = service_for(TRANSLATE_TOOL, registry)
+    events: list[tuple[str, dict]] = []
+    control = AgentRunControl(
+        policy=AgentExecutionPolicy(
+            total_timeout_seconds=1.0,
+            tool_timeout_seconds=0.01,
+            max_safe_retries=3,
+        ),
+    )
+
+    with pytest.raises(AgentToolTimeoutError):
+        service.run(
+            event_sink=lambda event_type, data: events.append((event_type, data)),
+            control=control,
+            **payload(),
+        )
+
+    assert len(registry.executions) == 1
+    assert "retry" not in {event_type for event_type, _ in events}
 
 
 def test_product_agent_confirmation_stops_before_live_tool_result() -> None:

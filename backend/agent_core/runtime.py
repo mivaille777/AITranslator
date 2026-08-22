@@ -106,7 +106,10 @@ class AgentRuntime:
                     for result in state.tool_results[previous_result_count:]:
                         self._emit(AgentEventType.TOOL_RESULT, result)
 
-                active_control.checkpoint("agent_end")
+                # Do not re-check cancellation after a workflow has returned a
+                # completed result. A confirmed write may have finished while a
+                # late cancel request was arriving; reporting the real side
+                # effect is safer than claiming it was cancelled.
                 self._emit(
                     AgentEventType.AGENT_END,
                     {

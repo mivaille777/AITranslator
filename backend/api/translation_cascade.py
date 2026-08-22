@@ -34,16 +34,28 @@ def translate_with_fallback(
             source_language=payload.source_language,
             target_language=payload.target_language,
             request_id=payload.request_id,
+            provider_mode=payload.provider_mode,
         )
     except TextNormalizationError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
     except TranslationError as exc:
+        detail_by_mode = {
+            "youdao_web": "Youdao translation is unavailable.",
+            "google_web": "Google translation is unavailable.",
+            "ai": "AI translation is unavailable.",
+            "auto": "Youdao, Google, and AI translation are unavailable.",
+        }
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Youdao, Google, and AI translation are unavailable.",
+            detail=detail_by_mode[payload.provider_mode],
         ) from exc
 
     return TranslationCascadeResponse(

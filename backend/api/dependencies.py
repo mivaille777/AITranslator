@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from threading import Lock
 
+from backend.api.llm_dependencies import (
+    build_routed_product_agent_service,
+    build_routed_quick_action_service,
+)
 from backend.services.agent_tool_registry import AgentToolRegistry
 from backend.services.browser_context_service import BrowserContextService
 from backend.services.companion_chat_service import CompanionChatService
@@ -46,7 +50,6 @@ def get_translation_service() -> TranslationService:
     global _translation_service
     if _translation_service is not None:
         return _translation_service
-
     with _translation_service_lock:
         if _translation_service is None:
             _translation_service = TranslationService()
@@ -66,7 +69,6 @@ def get_browser_context_service() -> BrowserContextService:
     global _browser_context_service
     if _browser_context_service is not None:
         return _browser_context_service
-
     with _browser_context_service_lock:
         if _browser_context_service is None:
             _browser_context_service = BrowserContextService()
@@ -86,7 +88,6 @@ def get_reading_selection_resolver() -> ReadingSelectionResolver:
     global _reading_selection_resolver
     if _reading_selection_resolver is not None:
         return _reading_selection_resolver
-
     with _reading_selection_resolver_lock:
         if _reading_selection_resolver is None:
             _reading_selection_resolver = ReadingSelectionResolver(
@@ -108,7 +109,6 @@ def get_overlay_state_service() -> OverlayStateService:
     global _overlay_state_service
     if _overlay_state_service is not None:
         return _overlay_state_service
-
     with _overlay_state_service_lock:
         if _overlay_state_service is None:
             _overlay_state_service = OverlayStateService()
@@ -119,10 +119,9 @@ def get_quick_action_service() -> QuickActionService:
     global _quick_action_service
     if _quick_action_service is not None:
         return _quick_action_service
-
     with _quick_action_service_lock:
         if _quick_action_service is None:
-            _quick_action_service = QuickActionService()
+            _quick_action_service = build_routed_quick_action_service()
         return _quick_action_service
 
 
@@ -139,7 +138,6 @@ def get_research_note_service() -> ResearchNoteService:
     global _research_note_service
     if _research_note_service is not None:
         return _research_note_service
-
     with _research_note_service_lock:
         if _research_note_service is None:
             _research_note_service = ResearchNoteService(
@@ -152,7 +150,6 @@ def get_companion_handoff_service() -> CompanionHandoffService:
     global _companion_handoff_service
     if _companion_handoff_service is not None:
         return _companion_handoff_service
-
     with _companion_handoff_service_lock:
         if _companion_handoff_service is None:
             _companion_handoff_service = CompanionHandoffService(
@@ -165,7 +162,6 @@ def get_companion_chat_service() -> CompanionChatService:
     global _companion_chat_service
     if _companion_chat_service is not None:
         return _companion_chat_service
-
     with _companion_chat_service_lock:
         if _companion_chat_service is None:
             _companion_chat_service = CompanionChatService(
@@ -187,7 +183,6 @@ def get_conversation_store_service() -> ConversationStoreService:
     global _conversation_store_service
     if _conversation_store_service is not None:
         return _conversation_store_service
-
     with _conversation_store_service_lock:
         if _conversation_store_service is None:
             _conversation_store_service = ConversationLifecycleService()
@@ -204,7 +199,6 @@ def get_companion_ownership_service() -> CompanionConversationOwnershipService:
     global _companion_ownership_service
     if _companion_ownership_service is not None:
         return _companion_ownership_service
-
     with _companion_ownership_service_lock:
         if _companion_ownership_service is None:
             _companion_ownership_service = CompanionConversationOwnershipService()
@@ -224,7 +218,6 @@ def get_agent_tool_registry() -> AgentToolRegistry:
     global _agent_tool_registry
     if _agent_tool_registry is not None:
         return _agent_tool_registry
-
     with _agent_tool_registry_lock:
         if _agent_tool_registry is None:
             _agent_tool_registry = AgentToolRegistry(
@@ -245,12 +238,11 @@ def get_product_agent_service() -> ProductAgentService:
     global _product_agent_service
     if _product_agent_service is not None:
         return _product_agent_service
-
     with _product_agent_service_lock:
         if _product_agent_service is None:
-            _product_agent_service = ProductAgentService(
+            _product_agent_service = build_routed_product_agent_service(
                 registry=get_agent_tool_registry(),
-                chat_service=get_companion_chat_service(),
+                resolver=get_reading_selection_resolver(),
             )
         return _product_agent_service
 

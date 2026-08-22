@@ -86,7 +86,15 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
     "agent_start": frozenset({"budget_ms"}),
     "context_ready": frozenset({"source_kind"}),
     "plan_ready": frozenset(
-        {"action", "tool_name", "request_id", "duration_ms"}
+        {
+            "action",
+            "tool_name",
+            "request_id",
+            "duration_ms",
+            "provider",
+            "model",
+            "prompt_id",
+        }
     ),
     "tool_call": frozenset(
         {"name", "effect", "requires_confirmation", "request_id"}
@@ -103,7 +111,7 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
     "synthesis_ready": frozenset(
-        {"provider", "model", "request_id", "duration_ms"}
+        {"provider", "model", "prompt_id", "request_id", "duration_ms"}
     ),
     "failure": frozenset({"code", "stage", "fallback_reason"}),
     "cancelled": frozenset({"code", "fallback_reason"}),

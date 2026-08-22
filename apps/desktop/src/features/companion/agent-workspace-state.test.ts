@@ -58,7 +58,7 @@ describe("agent workspace state", () => {
     expect(state.activities.map((item) => item.label)).toEqual([
       "Agent started",
       "Context ready",
-      "Calling translate_selection",
+      "Tool planned: translate_selection",
       "Agent completed",
     ])
   })

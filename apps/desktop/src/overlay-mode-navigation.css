@@ -1,8 +1,11 @@
-/* Batch 9.6.5 — source-first overlay chrome + interactive translation workspace. */
+/* Batch 9.6.5.1 — explicit overlay layout model. */
 
-html[data-ait-view="overlay"] .ait-overlay-chat-panel {
+html[data-ait-view="overlay"] .ait-overlay-layout {
+  display: flex;
   min-height: 0;
-  background: transparent;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 html[data-ait-view="overlay"] .ait-overlay-source-context {
@@ -10,65 +13,14 @@ html[data-ait-view="overlay"] .ait-overlay-source-context {
   background: rgba(255, 255, 255, 0.012);
 }
 
-html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child {
-  background: transparent !important;
-  border-bottom: 0 !important;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div:first-child {
-  display: none !important;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary,
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary {
-  display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-  border-top: 0 !important;
-  background: transparent;
-  box-shadow: none;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-action-surface .ait-overlay-chat-panel {
-  display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-action-surface .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child {
-  display: flex;
-  min-height: 0;
-  flex: 1 1 auto;
-  flex-direction: column;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-action-surface .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.relative {
-  min-height: 0;
-  flex: 1 1 auto;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-assistant-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.relative > div:first-child {
-  height: 104px !important;
-  min-height: 72px;
-  max-height: 128px;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.relative > div:first-child {
-  height: 92px !important;
-  min-height: 72px;
-  max-height: 104px;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-action-surface.is-translation-primary .ait-overlay-chat-panel {
-  background: rgba(0, 0, 0, 0.04);
-}
-
 html[data-ait-view="overlay"] .ait-overlay-translation-workspace {
   flex: 0 0 auto;
-  max-height: 286px;
-  overflow-y: auto;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.055);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-workspace[hidden] {
+  display: none !important;
 }
 
 html[data-ait-view="overlay"] .ait-overlay-translation-select {
@@ -94,29 +46,57 @@ html[data-ait-view="overlay"] .ait-overlay-translation-select option {
 }
 
 html[data-ait-view="overlay"] .ait-overlay-translation-editor {
-  max-height: 92px;
+  height: 76px;
+  max-height: 76px;
   overflow-y: auto;
 }
 
-/* OverlayView still contains the legacy read-only translation body/footer.
- * The interactive workspace owns Translation presentation now, so remove the
- * old direct children from the visual tree without touching React state.
- */
-html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-translation-workspace:not([hidden])) > div[data-ait-selection-scope="internal"],
-html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-translation-workspace:not([hidden])) > footer {
-  display: none !important;
+html[data-ait-view="overlay"] .ait-overlay-translation-output {
+  display: block;
+  min-height: 48px;
+  max-height: 72px;
+  overflow-y: auto;
 }
 
-html[data-ait-view="overlay"] .ait-overlay-chat-panel > div[data-ait-selection-scope="internal"]:last-child > div.border-t {
+html[data-ait-view="overlay"] .ait-overlay-chat-panel {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-chat-panel > .ait-overlay-conversation {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-conversation-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-conversation-messages {
+  height: 100% !important;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-conversation-composer {
   flex: 0 0 auto;
-  background: rgba(12, 12, 14, 0.18);
+  background: rgba(12, 12, 14, 0.2);
 }
 
-html[data-ait-view="overlay"] .ait-overlay-action-surface .ait-overlay-action-button {
+html[data-ait-view="overlay"] .ait-overlay-conversation-divider {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button {
   min-height: 28px;
-}
-
-html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-assistant-primary) > header,
-html[data-ait-view="overlay"] .ait-overlay-shell:has(.ait-overlay-action-surface.is-translation-primary) > header {
-  flex: 0 0 auto;
 }

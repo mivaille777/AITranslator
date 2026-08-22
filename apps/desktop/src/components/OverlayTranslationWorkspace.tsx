@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 
+import { presentOverlay } from "../api/overlay"
 import {
   translateTextWithFallback,
   type TranslationProviderMode,
@@ -69,17 +70,27 @@ export default function OverlayTranslationWorkspace({
   ])
 
   useEffect(() => {
+    if (visible) return
+    requestSequenceRef.current += 1
+    setPending(false)
+  }, [visible])
+
+  useEffect(() => {
     if (!visible || userTouchedRef.current) return
     if (!state.translated_text.trim()) return
     if (workingText !== state.source_text) return
 
     setTranslatedText(state.translated_text)
     setActualProvider(state.provider)
+    setSourceLanguage(state.source_language || "auto")
+    setTargetLanguage(state.target_language || "zh-CN")
     setNotice(state.translation_notice ?? "")
     setErrorMessage("")
   }, [
     state.provider,
+    state.source_language,
     state.source_text,
+    state.target_language,
     state.translated_text,
     state.translation_notice,
     visible,
@@ -127,6 +138,25 @@ export default function OverlayTranslationWorkspace({
           )
           setNotice(result.notice)
           setErrorMessage("")
+
+          void presentOverlay({
+            context_id: state.context_id,
+            source_text: state.source_text,
+            translated_text: result.translated_text,
+            source_language: result.source_language || sourceLanguage,
+            target_language: result.target_language || targetLanguage,
+            provider: result.provider === "ai" && result.model
+              ? `ai/${result.model}`
+              : result.provider,
+            translation_notice: result.notice,
+            resource_url: state.resource_url,
+            resource_title: state.resource_title,
+            application: state.application,
+            section_heading: state.section_heading,
+            context_before: state.context_before,
+            context_after: state.context_after,
+            source_kind: state.source_kind,
+          }).catch(() => undefined)
         })
         .catch((error) => {
           if (requestSequenceRef.current !== requestSequence) return
@@ -143,11 +173,28 @@ export default function OverlayTranslationWorkspace({
     }, delay)
 
     return () => window.clearTimeout(timer)
-  }, [providerMode, sourceLanguage, targetLanguage, visible, workingText])
+  }, [
+    providerMode,
+    sourceLanguage,
+    state.application,
+    state.context_after,
+    state.context_before,
+    state.context_id,
+    state.resource_title,
+    state.resource_url,
+    state.section_heading,
+    state.source_kind,
+    state.source_text,
+    targetLanguage,
+    visible,
+    workingText,
+  ])
 
   function markUserChange(immediate = false) {
+    requestSequenceRef.current += 1
     userTouchedRef.current = true
     immediateRef.current = immediate
+    setPending(false)
   }
 
   function handleProviderChange(value: TranslationProviderMode) {
@@ -186,7 +233,7 @@ export default function OverlayTranslationWorkspace({
   return (
     <div
       hidden={!visible}
-      className="ait-overlay-translation-workspace border-b border-white/[0.07] bg-black/[0.06] px-3 py-3"
+      className="ait-overlay-translation-workspace shrink-0 border-b border-white/[0.07] bg-black/[0.055] px-3 py-2.5"
       data-ait-selection-scope="internal"
     >
       <div className="flex items-center gap-2">
@@ -240,16 +287,16 @@ export default function OverlayTranslationWorkspace({
         </label>
       </div>
 
-      <div className="mt-3 grid gap-2.5">
+      <div className="mt-2.5 grid gap-2">
         <section>
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Original</span>
-            <span className="text-[9px] text-slate-600">{workingText.length} chars</span>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[8px] font-semibold uppercase tracking-[0.14em] text-slate-500">Original</span>
+            <span className="text-[8px] text-slate-600">{workingText.length} chars · editable</span>
           </div>
           <textarea
             value={workingText}
             rows={3}
-            className="ait-overlay-translation-editor w-full resize-none rounded-[12px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] leading-4 text-slate-200 outline-none focus:border-white/[0.16] focus:bg-white/[0.055]"
+            className="ait-overlay-translation-editor w-full resize-none rounded-[11px] border border-white/[0.08] bg-white/[0.04] px-3 py-2 text-[11px] leading-4 text-slate-200 outline-none focus:border-white/[0.16] focus:bg-white/[0.055]"
             onChange={(event) => {
               markUserChange(false)
               setWorkingText(event.target.value)
@@ -257,14 +304,14 @@ export default function OverlayTranslationWorkspace({
           />
         </section>
 
-        <section className="rounded-[12px] border border-white/[0.07] bg-white/[0.025] px-3 py-2.5">
-          <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">Translation</span>
-            <span className="truncate text-[9px] text-slate-600">
+        <section className="rounded-[11px] border border-white/[0.07] bg-white/[0.025] px-3 py-2">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <span className="text-[8px] font-semibold uppercase tracking-[0.14em] text-slate-500">Translation</span>
+            <span className="truncate text-[8px] text-slate-600">
               {pending
                 ? "Translating…"
                 : actualProvider
-                  ? `Using ${translationProviderLabel(actualProvider)}`
+                  ? translationProviderLabel(actualProvider)
                   : providerMode === "auto"
                     ? "Auto"
                     : translationProviderLabel(providerMode)}
@@ -272,22 +319,22 @@ export default function OverlayTranslationWorkspace({
           </div>
 
           {pending && !translatedText ? (
-            <div className="flex min-h-12 items-center gap-2 text-[10px] text-slate-500">
+            <div className="ait-overlay-translation-output flex items-center gap-2 text-[10px] text-slate-500">
               <span className="h-3 w-3 animate-spin rounded-full border border-white/20 border-t-white/70" />
               Translating current text…
             </div>
           ) : errorMessage ? (
-            <p className="min-h-12 whitespace-pre-wrap text-[10px] leading-4 text-rose-200/85">{errorMessage}</p>
+            <p className="ait-overlay-translation-output whitespace-pre-wrap text-[10px] leading-4 text-rose-200/85">{errorMessage}</p>
           ) : translatedText ? (
-            <p className="max-h-24 overflow-y-auto whitespace-pre-wrap text-[11px] leading-4 text-slate-200">{translatedText}</p>
+            <p className="ait-overlay-translation-output overflow-y-auto whitespace-pre-wrap text-[11px] leading-4 text-slate-200">{translatedText}</p>
           ) : (
-            <p className="min-h-12 text-[10px] leading-4 text-slate-600">Edit the original text to translate in real time.</p>
+            <p className="ait-overlay-translation-output text-[10px] leading-4 text-slate-600">Edit the original text to translate in real time.</p>
           )}
         </section>
       </div>
 
       {notice && (
-        <p className="mt-2 rounded-[10px] border border-amber-300/10 bg-amber-300/[0.055] px-2.5 py-1.5 text-[9px] leading-4 text-amber-100/80">
+        <p className="mt-1.5 truncate text-[8px] leading-3 text-amber-100/65" title={notice}>
           {notice}
         </p>
       )}

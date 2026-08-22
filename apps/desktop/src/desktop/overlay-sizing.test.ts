@@ -10,56 +10,54 @@ describe("computeOverlayWindowSize", () => {
     })
   })
 
-  it("keeps the companion composer visible while translation is loading", () => {
-    const compactLoading = computeOverlayWindowSize({ phase: "loading" })
-    const translationLoading = computeOverlayWindowSize({
-      phase: "loading",
-      actionPresentation: "chat",
+  it("uses a stable assistant height independent of cached translation text", () => {
+    const plainAssistant = computeOverlayWindowSize({
+      phase: "ready",
+      mode: "assistant",
+    })
+    const assistantWithCachedTranslation = computeOverlayWindowSize({
+      phase: "ready",
+      mode: "assistant",
+      translatedText: "Long translated content ".repeat(200),
+      sourceText: "Long source content ".repeat(100),
     })
 
-    expect(compactLoading.height).toBe(230)
-    expect(translationLoading.height).toBe(520)
+    expect(plainAssistant).toEqual({ width: 420, height: 430 })
+    expect(assistantWithCachedTranslation).toEqual(plainAssistant)
   })
 
-  it("expands error height and keeps chat available in translation errors", () => {
-    const shortError = computeOverlayWindowSize({ phase: "error", message: "translation provider failed" })
-    const chatError = computeOverlayWindowSize({
-      phase: "error",
-      message: "translation provider failed",
-      actionPresentation: "chat",
+  it("reserves the full translation workspace while translation is active", () => {
+    expect(computeOverlayWindowSize({
+      phase: "ready",
+      mode: "translation",
+    })).toEqual({
+      width: 420,
+      height: 600,
     })
-
-    expect(shortError.height).toBeGreaterThanOrEqual(184)
-    expect(chatError.height).toBeGreaterThanOrEqual(520)
   })
 
-  it("reserves enough compact height for assistant composer-first layout", () => {
+  it("shrinks immediately when mode returns from translation to assistant", () => {
+    const translation = computeOverlayWindowSize({ phase: "ready", mode: "translation" })
     const assistant = computeOverlayWindowSize({
       phase: "ready",
-      sourceText: "A selected paragraph that should appear in the AI composer.",
-      actionPresentation: "compact",
+      mode: "assistant",
+      translatedText: "cached translation remains available",
     })
 
-    expect(assistant.height).toBeGreaterThanOrEqual(370)
-    expect(assistant.height).toBeLessThan(520)
+    expect(translation.height).toBe(600)
+    expect(assistant.height).toBe(430)
   })
 
-  it("grows ready state with translated content and caps long translation chat", () => {
-    const shortTranslation = computeOverlayWindowSize({
-      phase: "ready",
-      translatedText: "Short translation.",
-      sourceText: "Source text.",
-      actionPresentation: "chat",
-    })
-    const longTranslation = computeOverlayWindowSize({
-      phase: "ready",
-      translatedText: "Long translated content ".repeat(120),
-      sourceText: "Long source content ".repeat(20),
-      actionPresentation: "chat",
-    })
-
-    expect(shortTranslation.height).toBeGreaterThanOrEqual(500)
-    expect(longTranslation.height).toBe(600)
+  it("keeps translation loading and failures large enough for the persistent composer", () => {
+    expect(computeOverlayWindowSize({
+      phase: "loading",
+      mode: "translation",
+    }).height).toBe(560)
+    expect(computeOverlayWindowSize({
+      phase: "error",
+      mode: "translation",
+      message: "provider failed",
+    }).height).toBe(560)
   })
 
   it("temporarily expands compact states while the context menu is open", () => {

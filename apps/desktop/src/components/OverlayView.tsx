@@ -10,7 +10,6 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { dismissOverlay, getOverlayState } from "../api/overlay"
 import { desktop } from "../desktop"
-import type { OverlayPositionMode } from "../desktop"
 import { dispatchOverlayCommand } from "../desktop/overlay-commands"
 import {
   readOverlayPreferences,
@@ -18,39 +17,17 @@ import {
   updateOverlayPreferences,
   type OverlayPreferences,
 } from "../desktop/overlay-preferences"
-import {
-  computeOverlayWindowSize,
-  type OverlayActionPresentation,
-} from "../desktop/overlay-sizing"
+import { computeOverlayWindowSize } from "../desktop/overlay-sizing"
 import { queryKeys, queryPolling } from "../shared/query/query-keys"
-import OverlayQuickActions, {
-  type OverlayCompletedInteraction,
-} from "./OverlayQuickActions"
+import OverlayQuickActions from "./OverlayQuickActions"
 import OverlayHeader from "./OverlayHeader"
 import OverlayWindowShell from "./OverlayWindowShell"
 
 type MenuPosition = { x: number; y: number }
-type ActionPresentationState = {
-  contextId: string
-  presentation: OverlayActionPresentation
-}
-
-const positionLabels: Record<OverlayPositionMode, string> = {
-  mouse_follow: "Near cursor",
-  custom_fixed_position: "Fixed position",
-  desktop_lyrics_top: "Screen top",
-  desktop_lyrics_center: "Screen center",
-  desktop_lyrics_bottom: "Screen bottom",
-}
 
 export default function OverlayView() {
-  const [copied, setCopied] = useState(false)
   const [preferences, setPreferences] = useState(readOverlayPreferences)
   const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null)
-  const [actionPresentationState, setActionPresentationState] = useState<ActionPresentationState>({
-    contextId: "",
-    presentation: "compact",
-  })
   const autoDismissTimerRef = useRef<number | null>(null)
   const lastPlacedContextRef = useRef("")
   const lastSizeKeyRef = useRef("")
@@ -75,22 +52,16 @@ export default function OverlayView() {
   const overlayRevision = state?.revision ?? 0
   const overlayMode = state?.mode ?? "assistant"
   const menuOpen = menuPosition !== null
-  const actionPresentation =
-    actionPresentationState.contextId === overlayContextId
-      ? actionPresentationState.presentation
-      : "compact"
   const overlaySize = useMemo(
     () => state
       ? computeOverlayWindowSize({
           phase: state.phase,
-          translatedText: state.translated_text,
-          sourceText: state.source_text,
+          mode: overlayMode,
           message: state.message,
           menuOpen,
-          actionPresentation,
         })
       : null,
-    [actionPresentation, menuOpen, state],
+    [menuOpen, overlayMode, state],
   )
   const overlaySizeKey = overlaySize ? `${overlaySize.width}x${overlaySize.height}` : ""
 
@@ -101,30 +72,16 @@ export default function OverlayView() {
     }
   }, [])
 
-  const scheduleAutoDismiss = useCallback((delay: number) => {
-    cancelAutoDismiss()
-    if (!readOverlayPreferences().smartAutoDismiss) return
-
-    autoDismissTimerRef.current = window.setTimeout(() => {
-      autoDismissTimerRef.current = null
-      dismiss()
-    }, delay)
-  }, [cancelAutoDismiss, dismiss])
-
   const handleCopy = useCallback(async () => {
     if (!state?.translated_text) return
     try {
       await navigator.clipboard.writeText(state.translated_text)
-      setCopied(true)
-      scheduleAutoDismiss(1400)
-      window.setTimeout(() => setCopied(false), 900)
     } catch {
-      setCopied(false)
+      // Clipboard access can be unavailable during a dev reload.
     }
-  }, [scheduleAutoDismiss, state?.translated_text])
+  }, [state?.translated_text])
 
   useEffect(() => subscribeOverlayPreferences(setPreferences), [])
-
   useEffect(() => () => cancelAutoDismiss(), [cancelAutoDismiss])
 
   useEffect(() => {
@@ -209,7 +166,7 @@ export default function OverlayView() {
         event.preventDefault()
         if (menuOpen) {
           setMenuPosition(null)
-        } else if (actionPresentation !== "compact") {
+        } else if (overlayMode === "translation") {
           dispatchOverlayCommand("escape")
         } else {
           dismiss()
@@ -217,35 +174,22 @@ export default function OverlayView() {
         return
       }
 
-      if (state?.phase !== "ready") return
-
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+      if (
+        state?.phase === "ready" &&
+        overlayMode === "translation" &&
+        (event.ctrlKey || event.metaKey) &&
+        event.key.toLowerCase() === "c"
+      ) {
         const selectedText = window.getSelection()?.toString().trim() ?? ""
         if (selectedText) return
         event.preventDefault()
-        if (actionPresentation === "result") {
-          dispatchOverlayCommand("copy")
-        } else if (overlayMode === "translation") {
-          void handleCopy()
-        }
-        return
-      }
-
-      if (event.ctrlKey || event.metaKey || event.altKey) return
-
-      if (["1", "2", "3", "4"].includes(event.key)) {
-        event.preventDefault()
-        dispatchOverlayCommand(`action-${event.key}` as "action-1" | "action-2" | "action-3" | "action-4")
-      } else if (event.key.toLowerCase() === "m") {
-        event.preventDefault()
-        dispatchOverlayCommand("more")
+        void handleCopy()
       }
     }
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [
-    actionPresentation,
     cancelAutoDismiss,
     dismiss,
     handleCopy,
@@ -255,31 +199,13 @@ export default function OverlayView() {
     state?.phase,
   ])
 
-  function handleCompletedInteraction(interaction: OverlayCompletedInteraction) {
-    if (interaction === "handoff") {
-      scheduleAutoDismiss(600)
-    } else if (interaction === "copy") {
-      scheduleAutoDismiss(1400)
-    }
-  }
-
-  function handleActionPresentationChange(presentation: OverlayActionPresentation) {
-    cancelAutoDismiss()
-    setActionPresentationState((current) => {
-      if (current.contextId === overlayContextId && current.presentation === presentation) {
-        return current
-      }
-      return { contextId: overlayContextId, presentation }
-    })
-  }
-
   function handleContextMenu(event: ReactMouseEvent<HTMLElement>) {
     event.preventDefault()
     if (preferences.clickThrough) return
 
     cancelAutoDismiss()
     const width = 220
-    const estimatedVisibleHeight = Math.min(344, window.innerHeight - 16)
+    const estimatedVisibleHeight = Math.min(300, window.innerHeight - 16)
     setMenuPosition({
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
       y: Math.max(
@@ -334,9 +260,7 @@ export default function OverlayView() {
     })
   }
 
-  if (!state?.visible) {
-    return null
-  }
+  if (!state?.visible) return null
 
   return (
     <OverlayWindowShell
@@ -371,10 +295,8 @@ export default function OverlayView() {
 
             <div className="my-1 border-t border-white/10" />
             <MenuHeading>Shortcuts</MenuHeading>
-            <MenuShortcut label="Close / collapse" keys="Esc" />
-            <MenuShortcut label="Copy active view" keys="Ctrl+C" />
-            <MenuShortcut label="AI actions" keys="1–4" />
-            <MenuShortcut label="More actions" keys="M" />
+            <MenuShortcut label={overlayMode === "translation" ? "Back to assistant" : "Close overlay"} keys="Esc" />
+            {overlayMode === "translation" && <MenuShortcut label="Copy translation" keys="Ctrl+C" />}
 
             <div className="my-1 border-t border-white/10" />
             <MenuItem label="Hide overlay" danger onClick={() => dismiss()} />
@@ -382,87 +304,16 @@ export default function OverlayView() {
         )
       }
     >
-        <OverlayHeader
-          sourceLanguage={state.source_language}
-          targetLanguage={state.target_language}
-          provider={overlayMode === "assistant" ? "AI Assistant" : state.provider}
-          locked={preferences.locked}
-          dragEnabled={!preferences.locked && !preferences.clickThrough}
-          onClose={() => dismiss()}
-        />
+      <OverlayHeader
+        sourceLanguage={state.source_language}
+        targetLanguage={state.target_language}
+        provider={overlayMode === "assistant" ? "AI Assistant" : state.provider}
+        locked={preferences.locked}
+        dragEnabled={!preferences.locked && !preferences.clickThrough}
+        onClose={() => dismiss()}
+      />
 
-        {overlayMode === "translation" && (
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4" data-ait-selection-scope="internal">
-            {state.phase === "loading" && (
-              <div key={`loading:${overlayRevision}`} className="ait-overlay-state-enter flex min-h-16 items-center gap-3 rounded-[18px] bg-white/[0.035] px-4 py-3 text-sm text-slate-300">
-                <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-600 border-t-slate-200" />
-                <div>
-                  <p className="font-medium text-slate-200">Translating</p>
-                  <p className="mt-0.5 text-xs text-slate-500">Preparing the latest reading selection…</p>
-                </div>
-              </div>
-            )}
-
-            {state.phase === "ready" && state.translated_text && (
-              <div key={`translation:${overlayRevision}`} className="ait-overlay-state-enter">
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-100">{state.translated_text}</p>
-                {state.source_text && (
-                  <p className="mt-4 line-clamp-3 border-t border-white/10 pt-3 text-xs leading-5 text-slate-500">{state.source_text}</p>
-                )}
-              </div>
-            )}
-
-            {state.phase === "ready" && !state.translated_text && state.message && (
-              <div key={`translation-failure:${overlayRevision}`} className="ait-overlay-state-enter rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3.5">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-300/10 text-sm font-semibold text-rose-200">!</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-rose-100">Translation unavailable</p>
-                    <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">{state.message}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {state.phase === "error" && (
-              <div key={`error:${overlayRevision}`} className="ait-overlay-state-enter rounded-[18px] border border-rose-400/20 bg-rose-400/10 px-4 py-3.5">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-300/10 text-sm font-semibold text-rose-200">!</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-rose-100">Translation unavailable</p>
-                    <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">{state.message || "Translation failed"}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {state.phase === "ready" && (
-          <OverlayQuickActions
-            state={state}
-            onPresentationChange={handleActionPresentationChange}
-            onCompletedInteraction={handleCompletedInteraction}
-          />
-        )}
-
-        {overlayMode === "translation" && (
-          <footer className="flex items-center justify-between border-t border-white/10 px-4 py-3">
-            <span className="truncate text-[10px] text-slate-600">{positionLabels[preferences.positionMode]} · Esc close · right-click</span>
-            {state.phase === "ready" && state.translated_text && (
-              <button
-                type="button"
-                data-tauri-drag-region="false"
-                aria-live="polite"
-                title="复制当前译文 · Ctrl/Cmd+C"
-                className={`ait-overlay-copy-button ait-control-motion rounded-full px-3 py-1.5 text-xs font-medium ${copied ? "is-copied" : ""}`}
-                onClick={() => void handleCopy()}
-              >
-                {copied ? "✓ Copied" : "Copy"}
-              </button>
-            )}
-          </footer>
-        )}
+      {state.phase === "ready" && <OverlayQuickActions state={state} />}
     </OverlayWindowShell>
   )
 }

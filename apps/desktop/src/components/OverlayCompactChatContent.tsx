@@ -30,6 +30,7 @@ import {
   overlayCompanionConversationId,
 } from "./overlay-chat-context"
 import { resolveOverlayControlIntent } from "./overlay-interaction-intent"
+import { resolvePreferredTranslationTarget } from "./translation-workspace-config"
 
 export default function OverlayCompactChat({
   state,
@@ -65,6 +66,7 @@ export default function OverlayCompactChat({
   const runtimeConversationId = runtime.conversationId
   const openRuntimeConversation = runtime.openConversation
   const mode = state.mode ?? "assistant"
+  const lastModeRef = useRef(mode)
   const draftControlIntent = resolveOverlayControlIntent(runtime.draft, mode)
 
   useEffect(() => {
@@ -82,6 +84,8 @@ export default function OverlayCompactChat({
     void runtime.attachReadingContext(context).finally(() => {
       if (activeReadingContextRef.current !== nextContextId) return
       runtime.setDraft(state.source_text)
+      const scroll = messageScrollRef.current
+      if (scroll) scroll.scrollTop = scroll.scrollHeight
     })
   }, [
     context,
@@ -136,6 +140,19 @@ export default function OverlayCompactChat({
     if (!scroll || !followTailRef.current) return
     scroll.scrollTop = scroll.scrollHeight
   }, [runtime.messages, runtime.activeRequestId])
+
+  useEffect(() => {
+    if (lastModeRef.current === mode) return
+    lastModeRef.current = mode
+    followTailRef.current = true
+    setShowJumpToLatest(false)
+
+    const frame = window.requestAnimationFrame(() => {
+      const scroll = messageScrollRef.current
+      if (scroll) scroll.scrollTop = scroll.scrollHeight
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [mode])
 
   useEffect(() => {
     const translatedText = state.translated_text.trim()
@@ -309,7 +326,12 @@ export default function OverlayCompactChat({
       return
     }
     if (controlIntent?.action === "enter_translation") {
-      void runTranslationHandoff(controlIntent.targetLanguage || state.target_language)
+      const targetLanguage = controlIntent.targetLanguage ?? resolvePreferredTranslationTarget(
+        state.source_text,
+        state.source_language,
+        state.target_language,
+      )
+      void runTranslationHandoff(targetLanguage)
       return
     }
 
@@ -330,66 +352,27 @@ export default function OverlayCompactChat({
   const composerHasExecutableAction = runtime.chatAvailable || draftControlIntent !== null
 
   return (
-    <div className="border-b border-white/10 bg-black/10" data-ait-selection-scope="internal">
-      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-tauri-drag-region="false"
-              aria-label="Back to translation"
-              className="ait-overlay-quiet-button flex h-7 w-7 items-center justify-center rounded-full text-sm text-slate-300"
-              onClick={exitChat}
-            >
-              ‹
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs font-semibold text-slate-100">AI Chat</p>
-                {(runtime.activeRequestId !== null || translationHandoffBusy) && (
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
-                )}
-              </div>
-              <p className="truncate text-[10px] text-slate-500">
-                {runtime.contextMode === "reading"
-                  ? state.resource_title || state.section_heading || "Current reading"
-                  : "General conversation"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          data-tauri-drag-region="false"
-          disabled={
-            runtime.contextUpdating ||
-            runtime.activeRequestId !== null ||
-            runtime.openingConversation ||
-            runtime.conversationBusyElsewhere ||
-            recovering
-          }
-          className={`ait-overlay-quiet-button rounded-full px-2.5 py-1 text-[10px] font-medium ${
-            runtime.contextMode === "reading" ? "text-cyan-200" : "text-slate-400"
-          }`}
-          onClick={() => void (
-            runtime.contextMode === "reading"
-              ? runtime.detachReadingContext()
-              : runtime.attachSavedContext()
+    <div
+      className="ait-overlay-conversation flex min-h-0 flex-1 flex-col overflow-hidden bg-black/[0.035]"
+      data-ait-selection-scope="internal"
+    >
+      {mode === "translation" && (
+        <div className="ait-overlay-conversation-divider flex shrink-0 items-center gap-2 border-b border-white/[0.055] px-3 py-1.5">
+          <span className="text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-600">Conversation</span>
+          {(runtime.activeRequestId !== null || translationHandoffBusy) && (
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300" />
           )}
-        >
-          {runtime.contextMode === "reading" ? "Reading ●" : "General"}
-        </button>
-      </div>
+        </div>
+      )}
 
       {runtime.conversationBusyElsewhere && (
-        <div className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] text-amber-100/85">
+        <div className="mx-3 mt-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] text-amber-100/85">
           Replying in {peerSurface}… This view will refresh when the response finishes.
         </div>
       )}
 
       {runtime.recoveryState !== "idle" && recoveryLabel && (
-        <div className={`mx-3 mb-2 flex items-center justify-between gap-2 rounded-[12px] border px-3 py-2 text-[10px] leading-4 ${
+        <div className={`mx-3 mt-2 flex items-center justify-between gap-2 rounded-[12px] border px-3 py-2 text-[10px] leading-4 ${
           runtime.recoveryState === "recovering"
             ? "border-cyan-300/15 bg-cyan-300/[0.06] text-cyan-100/85"
             : "border-amber-300/15 bg-amber-300/[0.07] text-amber-100/85"
@@ -407,16 +390,16 @@ export default function OverlayCompactChat({
       )}
 
       {aiResult && recentMessages.length === 0 && !runtime.openingConversation && (
-        <div className="mx-3 mb-2.5 rounded-[14px] border border-cyan-300/10 bg-cyan-300/[0.055] px-3 py-2.5">
+        <div className="mx-3 mt-2 rounded-[14px] border border-cyan-300/10 bg-cyan-300/[0.055] px-3 py-2.5">
           <p className="text-[9px] font-semibold uppercase tracking-[0.14em] text-cyan-200/60">Existing AI result</p>
           <p className="mt-1.5 line-clamp-3 text-[11px] leading-4 text-slate-300">{aiResult.output_text}</p>
         </div>
       )}
 
-      <div className="relative">
+      <div className="ait-overlay-conversation-scroll relative min-h-0 flex-1 overflow-hidden">
         <div
           ref={messageScrollRef}
-          className="h-[220px] overflow-y-auto px-3 py-2"
+          className="ait-overlay-conversation-messages h-full overflow-y-auto px-3 py-2"
           onScroll={(event) => {
             const nearTail = overlayChatIsNearTail(event.currentTarget)
             followTailRef.current = nearTail
@@ -468,7 +451,7 @@ export default function OverlayCompactChat({
         <p className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] leading-4 text-amber-100/80">AI Chat unavailable · translation control commands remain available.</p>
       )}
 
-      <div className="border-t border-white/[0.07] px-3 py-2.5">
+      <div className="ait-overlay-conversation-composer shrink-0 border-t border-white/[0.07] px-3 py-2.5">
         <div className="flex items-end gap-2">
           <textarea
             ref={composerRef}
@@ -484,7 +467,8 @@ export default function OverlayCompactChat({
                 event.preventDefault()
                 event.stopPropagation()
                 if (runtime.activeRequestId !== null) runtime.cancelStream()
-                else exitChat()
+                else if (mode === "translation") exitChat()
+                else composerRef.current?.blur()
                 return
               }
               if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -506,7 +490,7 @@ export default function OverlayCompactChat({
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-3">
-          <span className="text-[9px] text-slate-600">Enter send · Shift+Enter newline · Esc back</span>
+          <span className="text-[9px] text-slate-600">Enter send · Shift+Enter newline · {mode === "translation" ? "Esc assistant" : "Esc blur"}</span>
           <button type="button" data-tauri-drag-region="false" disabled={handoffMutation.isPending || runtime.activeRequestId !== null || runtime.openingConversation || recovering} className="text-[9px] font-medium text-slate-500 hover:text-slate-300 disabled:opacity-40" onClick={openMainChat}>{mainChatLabel}</button>
         </div>
       </div>

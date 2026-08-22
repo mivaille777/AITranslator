@@ -34,8 +34,37 @@ export const TRANSLATION_TARGET_LANGUAGES = TRANSLATION_SOURCE_LANGUAGES.filter(
 export function translationProviderLabel(provider: string): string {
   if (provider === "youdao_web") return "Youdao"
   if (provider === "google_web") return "Google"
-  if (provider === "ai") return "AI"
+  if (provider === "ai" || provider.startsWith("ai/")) return "AI"
   return provider || "Unknown"
+}
+
+function looksChinese(text: string): boolean {
+  const normalized = text.replace(/\s+/g, "")
+  if (!normalized) return false
+  const hanCount = (normalized.match(/[\u3400-\u9fff]/g) ?? []).length
+  return hanCount >= Math.max(2, Math.ceil(normalized.length * 0.2))
+}
+
+/**
+ * Avoid a no-op first translation when the captured text is already in the
+ * configured target language. Explicit user target commands bypass this helper.
+ */
+export function resolvePreferredTranslationTarget(
+  sourceText: string,
+  sourceLanguage: string,
+  targetLanguage: string,
+): string {
+  const source = sourceLanguage.trim() || "auto"
+  const target = targetLanguage.trim() || "zh-CN"
+
+  if (source !== "auto") {
+    if (source !== target) return target
+    return source === "zh-CN" ? "en" : "zh-CN"
+  }
+
+  if (target === "zh-CN" && looksChinese(sourceText)) return "en"
+  if (target === "en" && !looksChinese(sourceText)) return "zh-CN"
+  return target
 }
 
 export function resolveTranslationLanguageSwap(

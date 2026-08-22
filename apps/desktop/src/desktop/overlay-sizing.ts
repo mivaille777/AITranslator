@@ -5,9 +5,11 @@ export interface OverlayWindowSize {
 
 export type OverlayVisualPhase = "hidden" | "idle" | "loading" | "ready" | "error"
 export type OverlayActionPresentation = "compact" | "expanded" | "result" | "chat"
+export type OverlaySizingMode = "assistant" | "translation"
 
 export interface OverlaySizingInput {
   phase: OverlayVisualPhase
+  mode?: OverlaySizingMode
   translatedText?: string
   sourceText?: string
   message?: string
@@ -19,17 +21,11 @@ export const OVERLAY_WINDOW_WIDTH = 420
 
 const MIN_HEIGHT = 184
 const MENU_MIN_HEIGHT = 360
-const READY_MIN_HEIGHT = 286
-const READY_MAX_HEIGHT = 600
-
-const ACTION_RESERVE: Record<OverlayActionPresentation, number> = {
-  compact: 154,
-  expanded: 194,
-  result: 224,
-  // Interactive Translation owns editable source, language/provider controls,
-  // translated output and the persistent companion composer.
-  chat: 430,
-}
+const ASSISTANT_IDLE_HEIGHT = 360
+const ASSISTANT_READY_HEIGHT = 430
+const ASSISTANT_ERROR_HEIGHT = 400
+const TRANSLATION_HEIGHT = 600
+const TRANSLATION_TRANSIENT_HEIGHT = 560
 
 function wrappedLineCount(text: string, charsPerLine: number, maxLines: number): number {
   const normalized = text.trim()
@@ -45,32 +41,27 @@ function wrappedLineCount(text: string, charsPerLine: number, maxLines: number):
 
 export function computeOverlayWindowSize({
   phase,
-  translatedText = "",
-  sourceText = "",
+  mode = "assistant",
   message = "",
   menuOpen = false,
-  actionPresentation = "compact",
 }: OverlaySizingInput): OverlayWindowSize {
   let height: number
 
   if (phase === "hidden") {
     height = 190
+  } else if (mode === "translation") {
+    height = phase === "ready" ? TRANSLATION_HEIGHT : TRANSLATION_TRANSIENT_HEIGHT
   } else if (phase === "idle") {
-    height = READY_MIN_HEIGHT
+    height = ASSISTANT_IDLE_HEIGHT
   } else if (phase === "loading") {
-    height = actionPresentation === "chat" ? 520 : 230
+    height = ASSISTANT_IDLE_HEIGHT
   } else if (phase === "error") {
     const messageLines = Math.max(1, wrappedLineCount(message, 42, 4))
-    const errorHeight = 184 + messageLines * 22
-    height = actionPresentation === "chat" ? Math.max(520, errorHeight) : errorHeight
+    height = Math.max(ASSISTANT_ERROR_HEIGHT, 300 + messageLines * 20)
   } else {
-    const translationLines = Math.max(1, wrappedLineCount(translatedText, 45, 11))
-    const sourceLines = wrappedLineCount(sourceText, 54, 3)
-    const translationHeight = translationLines * 24
-    const sourceHeight = sourceLines > 0 ? 24 + sourceLines * 20 : 0
-
-    height = 148 + translationHeight + sourceHeight + ACTION_RESERVE[actionPresentation]
-    height = Math.max(READY_MIN_HEIGHT, Math.min(READY_MAX_HEIGHT, height))
+    // Conversation content owns its own scroll viewport. Cached translation
+    // text must never keep the Assistant native window at Translation height.
+    height = ASSISTANT_READY_HEIGHT
   }
 
   if (menuOpen) height = Math.max(height, MENU_MIN_HEIGHT)

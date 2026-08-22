@@ -79,6 +79,7 @@ def test_agent_runtime_emits_tool_events_for_product_workflow():
         },
         workflow_adapter=ProductAgentRuntimeAdapter(service),
     )
+    observed = []
 
     result = runtime.execute(
         AgentState(
@@ -86,13 +87,16 @@ def test_agent_runtime_emits_tool_events_for_product_workflow():
             user_input="Translate this",
             selected_text="Gaussian Process",
             browser_context={"target_language": "zh-CN", "request_id": 11},
-        )
+        ),
+        event_sink=observed.append,
     )
 
     assert result.response["output_text"] == "高斯过程"
+    assert observed == runtime.events
     assert [event.event_type for event in runtime.events] == [
         AgentEventType.AGENT_START,
         AgentEventType.CONTEXT_READY,
+        AgentEventType.PLAN_READY,
         AgentEventType.TOOL_CALL,
         AgentEventType.TOOL_RESULT,
         AgentEventType.AGENT_END,

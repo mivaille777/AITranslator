@@ -5,6 +5,7 @@ from typing import Any
 
 from backend.services.quick_action_service import QuickActionService
 from backend.services.research_note_service import ResearchNoteService
+from backend.services.translation_fallback_service import TranslationFallbackService
 from backend.services.translation_service import TranslationService
 
 
@@ -45,7 +46,7 @@ _TOOL_SPECS = (
     AgentToolSpec(
         name="translate_selection",
         title="Translate selection",
-        description="Translate the current selected text with the configured deterministic translation provider.",
+        description="Translate the current selected text using the deterministic Youdao, Google, then AI fallback chain.",
         category="translation",
         effect="compute",
         requires_reading_context=True,
@@ -123,10 +124,19 @@ class AgentToolRegistry:
         self,
         *,
         translation_service: TranslationService | Any | None = None,
+        translation_fallback_service: TranslationFallbackService | Any | None = None,
         quick_action_service: QuickActionService | Any | None = None,
         research_note_service: ResearchNoteService | Any | None = None,
     ) -> None:
-        self._translation_service = translation_service or TranslationService()
+        # Explicit translation_service injection remains supported for existing
+        # deterministic tests/integrations. Production defaults to the same
+        # Youdao -> Google -> AI cascade used by the unified overlay.
+        self._translation_service = translation_service
+        self._translation_fallback_service = (
+            translation_fallback_service
+            if translation_fallback_service is not None
+            else None if translation_service is not None else TranslationFallbackService()
+        )
         self._quick_action_service = quick_action_service or QuickActionService()
         self._research_note_service = research_note_service or ResearchNoteService()
 
@@ -172,10 +182,38 @@ class AgentToolRegistry:
             )
 
         if spec.name == "translate_selection":
+            if self._translation_fallback_service is not None:
+                result = self._translation_fallback_service.translate(
+                    context["source_text"],
+                    source_language=context["source_language"],
+                    target_language=str(payload.get("target_language", context["target_language"]) or context["target_language"]),
+                    request_id=request_id,
+                )
+                return AgentToolExecutionResult(
+                    tool_name=spec.name,
+                    output_text=result.translated_text,
+                    effect=spec.effect,
+                    provider=result.provider,
+                    model=result.model,
+                    request_id=result.request_id,
+                    data={
+                        "source_language": result.source_language,
+                        "target_language": result.target_language,
+                        "fallback_level": result.fallback_level,
+                        "notice": result.notice,
+                        "attempts": [
+                            {"provider": item.provider, "status": item.status}
+                            for item in result.attempts
+                        ],
+                    },
+                )
+
+            if self._translation_service is None:
+                raise RuntimeError("Agent translation service is unavailable.")
             result = self._translation_service.translate(
                 context["source_text"],
                 source_language=context["source_language"],
-                target_language=context["target_language"],
+                target_language=str(payload.get("target_language", context["target_language"]) or context["target_language"]),
                 request_id=request_id,
             )
             return AgentToolExecutionResult(

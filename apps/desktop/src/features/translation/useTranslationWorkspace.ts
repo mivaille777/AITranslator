@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 
 import { getBrowserPage, getBrowserSelection, getBrowserStatus } from "../../api/browser"
 import { getHealth } from "../../api/health"
-import { presentOverlay, showOverlayError, showOverlayLoading } from "../../api/overlay"
+import { showOverlayAssistant } from "../../api/overlay"
 import { getReadingSelection, type ReadingSelection } from "../../api/reading"
 import {
   getTranslationStatus,
@@ -61,10 +61,11 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
   const [translation, setTranslation] = useState<TranslationResponse | null>(null)
   const [translationError, setTranslationError] = useState("")
   const [followBrowserSelection, setFollowBrowserSelection] = useState(true)
-  const [autoTranslateSelection, setAutoTranslateSelection] = useState(true)
-  const [autoTranslating, setAutoTranslating] = useState(false)
+  // Selection capture now opens the AI assistant first. Keep the preference
+  // field for settings/backward compatibility, but never let it steal the
+  // initial overlay presentation away from Assistant mode.
+  const [autoTranslateSelection, setAutoTranslateSelection] = useState(false)
   const lastSelectionId = useRef("")
-  const lastAutoSelectionId = useRef("")
 
   const healthQuery = useQuery({
     queryKey: queryKeys.health,
@@ -139,89 +140,34 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
   const translationProvider: TranslationProviderName =
     translationStatusQuery.data?.provider === "youdao_web" ? "youdao_web" : "google_web"
 
-  const translateReadingSelection = useCallback(
-    async (selection: ReadingSelection) => {
-      const contextId = selection.selection_id
-      lastAutoSelectionId.current = contextId
-      setAutoTranslating(true)
-      const readingContext = {
-        resource_url: selection.resource_url,
-        resource_title: selection.resource_title,
-        section_heading: selection.section_heading,
-        context_before: selection.context_before,
-        context_after: selection.context_after,
-        source_kind: selection.source_kind,
-      }
-
-      void showOverlayLoading({
-        context_id: contextId,
-        source_text: selection.text,
-        source_language: sourceLanguage,
-        target_language: targetLanguage,
-        ...readingContext,
-      }).catch(() => undefined)
-
-      try {
-        const result = await translateText({
-          source_text: selection.text,
-          source_language: sourceLanguage,
-          target_language: targetLanguage,
-        })
-        if (lastAutoSelectionId.current !== contextId) return
-
-        setTranslation(result)
-        setTranslationError("")
-        void presentOverlay({
-          context_id: contextId,
-          source_text: result.source_text,
-          translated_text: result.translated_text,
-          source_language: result.source_language,
-          target_language: result.target_language,
-          provider: result.provider,
-          ...readingContext,
-        }).catch(() => undefined)
-      } catch (error) {
-        if (lastAutoSelectionId.current !== contextId) return
-
-        const message = error instanceof Error ? error.message : "Translation failed."
-        setTranslation(null)
-        setTranslationError(message)
-        void showOverlayError({
-          context_id: contextId,
-          source_text: selection.text,
-          source_language: sourceLanguage,
-          target_language: targetLanguage,
-          message,
-          ...readingContext,
-        }).catch(() => undefined)
-      } finally {
-        if (lastAutoSelectionId.current === contextId) {
-          setAutoTranslating(false)
-        }
-      }
-    },
-    [sourceLanguage, targetLanguage],
-  )
-
   useEffect(() => {
     if (!followBrowserSelection || !readingSelection) return
     if (readingSelection.selection_id === lastSelectionId.current) return
 
     lastSelectionId.current = readingSelection.selection_id
+    const nextText = readingSelection.text
+
     queueMicrotask(() => {
-      setSourceText(readingSelection.text)
+      // A fresh external selection owns the composer seed. Clear any stale
+      // translation state, but do not auto-translate or mutate the selection.
+      setSourceText(nextText)
       setTranslation(null)
       setTranslationError("")
-      if (autoTranslateSelection) {
-        void translateReadingSelection(readingSelection)
-      }
+
+      void showOverlayAssistant({
+        context_id: readingSelection.selection_id,
+        source_text: nextText,
+        source_language: sourceLanguage,
+        target_language: targetLanguage,
+        resource_url: readingSelection.resource_url,
+        resource_title: readingSelection.resource_title,
+        section_heading: readingSelection.section_heading,
+        context_before: readingSelection.context_before,
+        context_after: readingSelection.context_after,
+        source_kind: readingSelection.source_kind,
+      }).catch(() => undefined)
     })
-  }, [
-    autoTranslateSelection,
-    followBrowserSelection,
-    readingSelection,
-    translateReadingSelection,
-  ])
+  }, [followBrowserSelection, readingSelection, sourceLanguage, targetLanguage])
 
   const backendState: BackendState = healthQuery.isPending
     ? "checking"
@@ -275,8 +221,6 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     setTranslation(null)
     setTranslationError("")
     lastSelectionId.current = readingSelection?.selection_id ?? ""
-    lastAutoSelectionId.current = ""
-    setAutoTranslating(false)
   }
 
   function useLatestSelection() {
@@ -304,7 +248,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     translationError,
     followBrowserSelection,
     autoTranslateSelection,
-    autoTranslating,
+    autoTranslating: false,
     manualTranslating: translationMutation.isPending,
     updateSourceText,
     setSourceLanguage,

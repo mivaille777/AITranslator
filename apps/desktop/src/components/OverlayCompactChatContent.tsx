@@ -3,7 +3,12 @@ import { useMutation } from "@tanstack/react-query"
 import ReactMarkdown from "react-markdown"
 
 import { createCompanionHandoff } from "../api/companion"
-import { bindOverlayCompanionConversation, presentOverlay, showOverlayError } from "../api/overlay"
+import {
+  bindOverlayCompanionConversation,
+  presentOverlay,
+  showOverlayTranslationFailure,
+  switchOverlayMode,
+} from "../api/overlay"
 import { translateTextWithFallback } from "../api/translation"
 import type {
   CompanionHandoffRequest,
@@ -24,7 +29,7 @@ import {
   contextFromOverlay,
   overlayCompanionConversationId,
 } from "./overlay-chat-context"
-import { resolveExplicitOverlayTranslationIntent } from "./overlay-translation-intent"
+import { resolveOverlayControlIntent } from "./overlay-interaction-intent"
 
 export default function OverlayCompactChat({
   state,
@@ -47,9 +52,6 @@ export default function OverlayCompactChat({
   const runtime = useCompanionConversationRuntime({
     initialContext: context,
     initialContextMode: "reading",
-    // Selection changes update this runtime in place. The first mount still
-    // starts with the selected text in the composer, while later selections
-    // replace the draft without creating a new conversation.
     initialDraft: state.source_text,
     initialSessionId: `overlay-${state.context_id}`,
     initialScopeId: `overlay:${state.context_id}`,
@@ -57,13 +59,13 @@ export default function OverlayCompactChat({
     onConversationAccepted: (conversationId) => {
       void bindOverlayCompanionConversation(state.context_id, conversationId).catch(() => {
         // The context may have changed while the first response was accepted.
-        // A stale binding must never overwrite the newer selection.
       })
     },
   })
   const runtimeConversationId = runtime.conversationId
   const openRuntimeConversation = runtime.openConversation
-  const draftTranslationIntent = resolveExplicitOverlayTranslationIntent(runtime.draft)
+  const mode = state.mode ?? "assistant"
+  const draftControlIntent = resolveOverlayControlIntent(runtime.draft, mode)
 
   useEffect(() => {
     const nextContextId = state.context_id.trim()
@@ -74,10 +76,6 @@ export default function OverlayCompactChat({
     followTailRef.current = true
     setShowJumpToLatest(false)
 
-    // A new external selection is a reading-context update, not a conversation
-    // boundary. Stop any stale generation, preserve the existing message
-    // history/conversation id, attach the new reading context, and replace the
-    // composer wholesale with the latest selection.
     runtime.closeActiveStream()
     runtime.setDraft(state.source_text)
 
@@ -160,10 +158,6 @@ export default function OverlayCompactChat({
     if (syncedTranslationRef.current === signature) return
     syncedTranslationRef.current = signature
 
-    // Translation is a presentation mode of the same reading interaction, not
-    // a new selection. Once the in-flight chat reply reaches a safe boundary,
-    // update the existing conversation context so follow-up AI turns can see
-    // the translated text without remounting or clearing the composer.
     void runtime.attachReadingContext(context)
   }, [
     context,
@@ -189,8 +183,7 @@ export default function OverlayCompactChat({
             handoffId: handoff.handoff_id,
           })
         } catch {
-          // Backend handoff polling remains the recovery path if native event
-          // delivery is unavailable during a dev reload or browser session.
+          // Backend handoff polling remains the recovery path.
         }
       }
       await desktop.window.focus()
@@ -248,19 +241,13 @@ export default function OverlayCompactChat({
     void runtime.rewriteFromUser(retryUser, retryUser.content)
   }
 
-  async function runTranslationHandoff(userMessage: string, targetLanguage: string) {
+  async function runTranslationHandoff(targetLanguage: string) {
     if (translationHandoffBusy || !state.source_text.trim()) return
     setTranslationHandoffBusy(true)
-
-    // Keep the command in the normal AI conversation when Chat is available.
-    // Translation itself uses the frozen reading source, never the command text.
-    if (runtime.chatAvailable) {
-      runtime.sendMessage(userMessage)
-    } else {
-      runtime.setDraft("")
-    }
+    runtime.setDraft("")
 
     try {
+      await switchOverlayMode(state.context_id, "translation")
       const result = await translateTextWithFallback({
         source_text: state.source_text,
         source_language: state.source_language,
@@ -276,13 +263,14 @@ export default function OverlayCompactChat({
         translation_notice: result.notice,
         resource_url: state.resource_url,
         resource_title: state.resource_title,
+        application: state.application,
         section_heading: state.section_heading,
         context_before: state.context_before,
         context_after: state.context_after,
         source_kind: state.source_kind,
       })
     } catch (error) {
-      await showOverlayError({
+      await showOverlayTranslationFailure({
         context_id: state.context_id,
         source_text: state.source_text,
         source_language: state.source_language,
@@ -290,6 +278,7 @@ export default function OverlayCompactChat({
         message: error instanceof Error ? error.message : "Translation failed.",
         resource_url: state.resource_url,
         resource_title: state.resource_title,
+        application: state.application,
         section_heading: state.section_heading,
         context_before: state.context_before,
         context_after: state.context_after,
@@ -300,17 +289,30 @@ export default function OverlayCompactChat({
     }
   }
 
+  async function exitTranslationMode(command: string) {
+    if (mode !== "translation") return
+    try {
+      await switchOverlayMode(state.context_id, "assistant")
+      runtime.setDraft("")
+    } catch {
+      runtime.setDraft(command)
+    }
+  }
+
   function submitComposer() {
     const message = runtime.draft.trim()
     if (!message) return
-    const translationIntent = resolveExplicitOverlayTranslationIntent(message)
-    if (translationIntent) {
-      void runTranslationHandoff(
-        message,
-        translationIntent.targetLanguage || state.target_language,
-      )
+
+    const controlIntent = resolveOverlayControlIntent(message, mode)
+    if (controlIntent?.action === "exit_translation") {
+      void exitTranslationMode(message)
       return
     }
+    if (controlIntent?.action === "enter_translation") {
+      void runTranslationHandoff(controlIntent.targetLanguage || state.target_language)
+      return
+    }
+
     runtime.sendMessage()
   }
 
@@ -325,7 +327,7 @@ export default function OverlayCompactChat({
           : "Open main chat ↗"
 
   const recovering = runtime.recoveryState === "recovering"
-  const composerHasExecutableAction = runtime.chatAvailable || draftTranslationIntent !== null
+  const composerHasExecutableAction = runtime.chatAvailable || draftControlIntent !== null
 
   return (
     <div className="border-b border-white/10 bg-black/10" data-ait-selection-scope="internal">
@@ -463,7 +465,7 @@ export default function OverlayCompactChat({
       )}
 
       {!runtime.chatAvailable && runtime.chatStatusLoaded && runtime.recoveryState === "idle" && (
-        <p className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] leading-4 text-amber-100/80">AI Chat unavailable · explicit translation commands can still use Youdao/Google.</p>
+        <p className="mx-3 mb-2 rounded-[12px] border border-amber-300/15 bg-amber-300/[0.07] px-3 py-2 text-[10px] leading-4 text-amber-100/80">AI Chat unavailable · translation control commands remain available.</p>
       )}
 
       <div className="border-t border-white/[0.07] px-3 py-2.5">

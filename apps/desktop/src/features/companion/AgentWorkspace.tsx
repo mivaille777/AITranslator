@@ -1,10 +1,14 @@
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
-import {
-  runAgentTrace,
-  type AgentRunRequest,
-  type AgentRunTraceResponse,
+import type {
+  AgentRunRequest,
+  AgentRunTraceResponse,
+  AgentTraceEvent,
 } from "../../api/agent"
+import {
+  streamAgentRun,
+  type AgentStreamHandle,
+} from "../../api/agent-stream"
 import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
 import { deriveAgentWorkspaceState } from "./agent-workspace-state"
 import { AgentHeader } from "./components/AgentHeader"
@@ -16,11 +20,20 @@ import { ContextCard } from "./components/ContextCard"
 export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceController }) {
   const [prompt, setPrompt] = useState("")
   const [trace, setTrace] = useState<AgentRunTraceResponse | null>(null)
+  const [liveEvents, setLiveEvents] = useState<AgentTraceEvent[]>([])
   const [pending, setPending] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const sessionId = useRef(`agent-workspace-${Date.now().toString(36)}`)
   const requestId = useRef(0)
   const lastPayload = useRef<AgentRunRequest | null>(null)
+  const streamHandle = useRef<AgentStreamHandle | null>(null)
+
+  useEffect(() => {
+    return () => {
+      streamHandle.current?.close()
+      streamHandle.current = null
+    }
+  }, [])
 
   const reading = workspace.readingSelection
   const sourceText = (reading?.text || workspace.sourceText).trim()
@@ -37,21 +50,47 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
   )
 
   const viewState = useMemo(
-    () => deriveAgentWorkspaceState({ trace, pending, errorMessage }),
-    [errorMessage, pending, trace],
+    () => deriveAgentWorkspaceState({ trace, liveEvents, pending, errorMessage }),
+    [errorMessage, liveEvents, pending, trace],
   )
 
-  async function execute(payload: AgentRunRequest) {
+  function execute(payload: AgentRunRequest) {
+    streamHandle.current?.close()
+    streamHandle.current = null
     setPending(true)
     setErrorMessage("")
-    try {
-      const result = await runAgentTrace(payload)
-      setTrace(result)
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Agent run failed.")
-    } finally {
-      setPending(false)
-    }
+    setLiveEvents([])
+
+    streamHandle.current = streamAgentRun(payload, {
+      onEvent(event) {
+        if (event.type === "activity") {
+          setLiveEvents((current) => {
+            if (current.some((item) => item.sequence === event.event.sequence)) return current
+            return [...current, event.event].sort((left, right) => left.sequence - right.sequence)
+          })
+          return
+        }
+
+        if (event.type === "done") {
+          setTrace(event.trace)
+          setLiveEvents(event.trace.events)
+          setPending(false)
+          streamHandle.current = null
+          return
+        }
+
+        if (event.type === "error") {
+          setErrorMessage(event.message || "Agent run failed.")
+          setPending(false)
+          streamHandle.current = null
+        }
+      },
+      onTransportError(error) {
+        setErrorMessage(error.message || "Agent stream failed.")
+        setPending(false)
+        streamHandle.current = null
+      },
+    })
   }
 
   function submitPrompt() {
@@ -76,7 +115,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
       request_id: requestId.current,
     }
     lastPayload.current = payload
-    void execute(payload)
+    execute(payload)
   }
 
   function confirmWriteTool() {
@@ -91,7 +130,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
       request_id: requestId.current,
     }
     lastPayload.current = payload
-    void execute(payload)
+    execute(payload)
   }
 
   return (

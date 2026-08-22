@@ -36,6 +36,7 @@ class AgentObservabilitySummaryResponse(BaseModel):
     cancelled_runs: int = Field(ge=0)
     confirmation_required_runs: int = Field(ge=0)
     success_rate: float = Field(ge=0.0, le=1.0)
+    schema_valid_rate: float = Field(ge=0.0, le=1.0)
     retry_rate: float = Field(ge=0.0, le=1.0)
     failure_rate: float = Field(ge=0.0, le=1.0)
     timeout_rate: float = Field(ge=0.0, le=1.0)

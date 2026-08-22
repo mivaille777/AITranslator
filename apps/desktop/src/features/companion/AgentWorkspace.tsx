@@ -22,6 +22,8 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
   const [trace, setTrace] = useState<AgentRunTraceResponse | null>(null)
   const [liveEvents, setLiveEvents] = useState<AgentTraceEvent[]>([])
   const [pending, setPending] = useState(false)
+  const [cancelRequested, setCancelRequested] = useState(false)
+  const [cancelledMessage, setCancelledMessage] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
   const sessionId = useRef(`agent-workspace-${Date.now().toString(36)}`)
   const requestId = useRef(0)
@@ -50,14 +52,23 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
   )
 
   const viewState = useMemo(
-    () => deriveAgentWorkspaceState({ trace, liveEvents, pending, errorMessage }),
-    [errorMessage, liveEvents, pending, trace],
+    () => deriveAgentWorkspaceState({
+      trace,
+      liveEvents,
+      pending,
+      cancelRequested,
+      cancelledMessage,
+      errorMessage,
+    }),
+    [cancelRequested, cancelledMessage, errorMessage, liveEvents, pending, trace],
   )
 
   function execute(payload: AgentRunRequest) {
     streamHandle.current?.close()
     streamHandle.current = null
     setPending(true)
+    setCancelRequested(false)
+    setCancelledMessage("")
     setErrorMessage("")
     setLiveEvents([])
 
@@ -71,22 +82,39 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
           return
         }
 
+        if (event.type === "cancel_requested") {
+          setCancelRequested(true)
+          return
+        }
+
+        if (event.type === "cancelled") {
+          setCancelledMessage(event.message || "Agent run cancelled.")
+          setCancelRequested(false)
+          setPending(false)
+          streamHandle.current = null
+          return
+        }
+
         if (event.type === "done") {
           setTrace(event.trace)
           setLiveEvents(event.trace.events)
+          setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
           return
         }
 
         if (event.type === "error") {
-          setErrorMessage(event.message || "Agent run failed.")
+          const fallback = event.fallback_reason ? ` (${event.fallback_reason})` : ""
+          setErrorMessage(`${event.message || "Agent run failed."}${fallback}`)
+          setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
         }
       },
       onTransportError(error) {
         setErrorMessage(error.message || "Agent stream failed.")
+        setCancelRequested(false)
         setPending(false)
         streamHandle.current = null
       },
@@ -105,6 +133,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
     const payload: AgentRunRequest = {
       ...context,
       session_id: sessionId.current,
+      trace_id: `trace-${sessionId.current}-${requestId.current}-${Date.now().toString(36)}`,
       user_message: userMessage,
       source_text: sourceText,
       translated_text: workspace.translation?.translated_text || "",
@@ -133,6 +162,12 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
     execute(payload)
   }
 
+  function cancelRun() {
+    if (!pending || cancelRequested) return
+    setCancelRequested(true)
+    streamHandle.current?.cancel()
+  }
+
   return (
     <div className="space-y-4">
       <AgentHeader phase={viewState.phase} uiMode={viewState.uiMode} />
@@ -144,7 +179,13 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
           section={context.section_heading}
           sourceKind={context.source_kind}
         />
-        <AgentTrace activities={viewState.activities} running={viewState.phase === "running"} />
+        <AgentTrace
+          activities={viewState.activities}
+          running={viewState.phase === "running" || viewState.phase === "cancelling"}
+          runId={viewState.runId}
+          traceId={viewState.traceId}
+          totalDurationMs={viewState.totalDurationMs}
+        />
       </div>
 
       <AgentMessage
@@ -162,8 +203,10 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
         value={prompt}
         onChange={setPrompt}
         onSubmit={submitPrompt}
+        onCancel={cancelRun}
         disabled={pending}
         busy={pending}
+        cancelling={cancelRequested}
       />
     </div>
   )

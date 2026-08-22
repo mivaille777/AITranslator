@@ -23,6 +23,7 @@ export function AgentMessage({
   confirming: boolean
 }) {
   const waitingForConfirmation = phase === "confirmation_required" && confirmationTool
+  const cancelled = phase === "cancelled"
 
   return (
     <AITPanel className="p-5">
@@ -41,12 +42,16 @@ export function AgentMessage({
         <p className="mt-4 text-sm leading-6 text-slate-500">Planning and executing the bounded workflow…</p>
       ) : null}
 
+      {phase === "cancelling" && !content ? (
+        <p className="mt-4 text-sm leading-6 text-slate-500">Cancellation requested. Waiting for a safe checkpoint…</p>
+      ) : null}
+
       {content ? (
         <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-800">{content}</p>
       ) : null}
 
       {errorMessage ? (
-        <div className="mt-4 rounded-[14px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className={`mt-4 rounded-[14px] border px-4 py-3 text-sm ${cancelled ? "border-amber-200 bg-amber-50 text-amber-800" : "border-rose-200 bg-rose-50 text-rose-700"}`}>
           {errorMessage}
         </div>
       ) : null}

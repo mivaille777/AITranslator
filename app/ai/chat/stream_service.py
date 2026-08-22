@@ -13,7 +13,7 @@ from openai import (
 )
 
 from app.ai.chat.models import ChatRequest
-from app.ai.chat.service import AIChatService, CHAT_SYSTEM_PROMPT, build_chat_prompt
+from app.ai.chat.service import AIChatService, build_chat_prompt
 from app.ai.errors import (
     AIAuthenticationError,
     AIConfigurationError,
@@ -26,17 +26,12 @@ from app.ai.errors import (
 
 
 class ProviderStreamingAIChatService(AIChatService):
-    """Stream chat completions without importing Qt, LangGraph, or desktop UI code.
-
-    Providers may expose a stable ``stream`` method on their application-facing
-    client wrapper. Older OpenAI-compatible wrappers that only expose the SDK
-    client remain supported during migration. Test/integration providers that
-    expose neither streaming surface fall back to the non-streaming chat core.
-    """
+    """Stream chat completions without importing Qt, LangGraph, or desktop UI code."""
 
     def stream(self, request: ChatRequest) -> Iterator[str]:
         validated = self._validate_request(request)
-        prompt = build_chat_prompt(validated)
+        prompt = build_chat_prompt(validated, context_budget=self._context_budget)
+        prompt_spec = self._prompt_registry.get("chat.reading")
         wrapper = self._client()
 
         stream_method = getattr(wrapper, "stream", None)
@@ -44,7 +39,7 @@ class ProviderStreamingAIChatService(AIChatService):
             received = False
             try:
                 for delta in stream_method(
-                    system_prompt=CHAT_SYSTEM_PROMPT,
+                    system_prompt=prompt_spec.system_prompt,
                     user_prompt=prompt,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
@@ -64,7 +59,12 @@ class ProviderStreamingAIChatService(AIChatService):
         completions = getattr(getattr(sdk_client, "chat", None), "completions", None)
         create = getattr(completions, "create", None)
         if callable(create):
-            yield from self._stream_openai_compatible(wrapper, create, prompt)
+            yield from self._stream_openai_compatible(
+                wrapper,
+                create,
+                prompt,
+                system_prompt=prompt_spec.system_prompt,
+            )
             return
 
         result = self.execute(validated)
@@ -76,6 +76,8 @@ class ProviderStreamingAIChatService(AIChatService):
         wrapper: Any,
         create: Any,
         prompt: str,
+        *,
+        system_prompt: str,
     ) -> Iterator[str]:
         model = str(getattr(wrapper, "model", self.model)).strip()
         if not model:
@@ -84,7 +86,7 @@ class ProviderStreamingAIChatService(AIChatService):
         payload: dict[str, Any] = {
             "model": model,
             "messages": [
-                {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
             ],
             "stream": True,

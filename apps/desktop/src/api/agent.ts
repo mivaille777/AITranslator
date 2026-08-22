@@ -9,7 +9,11 @@ export type AgentTraceEventType =
   | "context_ready"
   | "plan_ready"
   | "tool_call"
+  | "retry"
   | "tool_result"
+  | "synthesis_ready"
+  | "failure"
+  | "cancelled"
   | "agent_end"
 
 export interface AgentPlan {
@@ -31,6 +35,7 @@ export interface AgentToolExecuteResponse {
 
 export interface AgentRunRequest extends ReadingContextFields {
   session_id: string
+  trace_id?: string
   user_message: string
   source_text: string
   translated_text: string
@@ -56,12 +61,18 @@ export interface AgentTraceEvent {
   sequence: number
   event_type: AgentTraceEventType
   timestamp: string
+  run_id: string
+  trace_id: string
+  elapsed_ms: number
   payload: Record<string, unknown>
 }
 
 export interface AgentRunTraceResponse {
+  run_id: string
+  trace_id: string
   session_id: string
   ui_mode: string
+  total_duration_ms: number
   run: AgentRunResponse
   events: AgentTraceEvent[]
 }

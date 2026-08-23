@@ -1,6 +1,7 @@
 import OverlayPreferencesPanel from "../../components/OverlayPreferencesPanel"
 import TranslationProviderSelector from "../translation/TranslationProviderSelector"
 import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
+import { LocalModelManager } from "./LocalModelManager"
 
 export default function SettingsWorkspace({
   workspace,
@@ -47,6 +48,8 @@ export default function SettingsWorkspace({
           )}
         </div>
       </section>
+
+      <LocalModelManager />
 
       <OverlayPreferencesPanel />
     </div>

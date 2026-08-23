@@ -11,6 +11,7 @@ import {
 } from "../../../api/agent-stream"
 import type { ReadingContextFields } from "../../../api/types"
 import type { TranslationWorkspaceController } from "../../translation/useTranslationWorkspace"
+import { deriveAgentDecision } from "../decision/agent-decision"
 import { buildAgentRunRequest } from "../runtime/agent-run-request"
 import { deriveAgentWorkspaceState } from "../state/agent-workspace-state"
 
@@ -22,6 +23,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
   const [cancelRequested, setCancelRequested] = useState(false)
   const [cancelledMessage, setCancelledMessage] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
+  const [fallbackReason, setFallbackReason] = useState("")
   const [observabilityRefresh, setObservabilityRefresh] = useState(0)
   const sessionId = useRef(`agent-workspace-${Date.now().toString(36)}`)
   const conversationId = useRef("")
@@ -62,6 +64,17 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     [cancelRequested, cancelledMessage, errorMessage, liveEvents, pending, trace],
   )
 
+  const decision = useMemo(
+    () => deriveAgentDecision({
+      phase: viewState.phase,
+      confirmationTool: viewState.confirmationTool,
+      errorMessage: viewState.errorMessage,
+      fallbackReason,
+      activities: viewState.activities,
+    }),
+    [fallbackReason, viewState],
+  )
+
   function refreshObservability() {
     setObservabilityRefresh((current) => current + 1)
   }
@@ -85,6 +98,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     setCancelRequested(false)
     setCancelledMessage("")
     setErrorMessage("")
+    setFallbackReason("")
     setLiveEvents([])
 
     streamHandle.current = streamAgentRun(payload, {
@@ -104,6 +118,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
 
         if (event.type === "cancelled") {
           setCancelledMessage(event.message || "Agent run cancelled.")
+          setFallbackReason("")
           setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
@@ -115,6 +130,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
           rememberConversation(event.trace.run.conversation_id || "")
           setTrace(event.trace)
           setLiveEvents(event.trace.events)
+          setFallbackReason("")
           setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
@@ -123,8 +139,8 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
         }
 
         if (event.type === "error") {
-          const fallback = event.fallback_reason ? ` (${event.fallback_reason})` : ""
-          setErrorMessage(`${event.message || "Agent run failed."}${fallback}`)
+          setErrorMessage(event.message || "Agent run failed.")
+          setFallbackReason(event.fallback_reason || "")
           setCancelRequested(false)
           setPending(false)
           streamHandle.current = null
@@ -133,6 +149,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
       },
       onTransportError(error) {
         setErrorMessage(error.message || "Agent stream failed.")
+        setFallbackReason("")
         setCancelRequested(false)
         setPending(false)
         streamHandle.current = null
@@ -144,6 +161,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     const userMessage = prompt.trim()
     if (!userMessage || pending) return
     if (!sourceText) {
+      setFallbackReason("")
       setErrorMessage("Capture a reading selection or enter source text before running the Agent.")
       return
     }
@@ -193,6 +211,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     sourceText,
     context,
     viewState,
+    decision,
     pending,
     cancelRequested,
     observabilityRefresh,

@@ -5,6 +5,7 @@ import { AgentMessage } from "../companion/components/AgentMessage"
 import { AgentObservabilityPanel } from "../companion/components/AgentObservabilityPanel"
 import { ContextCard } from "../companion/components/ContextCard"
 import { agentWorkspaceAreas } from "./agent-workspace-layout"
+import { AgentDecisionPanel } from "./components/AgentDecisionPanel"
 import { AgentTimeline } from "./components/AgentTimeline"
 import { useAgentRuntime } from "./hooks/useAgentRuntime"
 
@@ -27,7 +28,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
             </p>
           </div>
           <p className="max-w-md text-xs leading-5 text-slate-400">
-            Stage 9.3 turns low-level runtime events into a visible Plan → Tool Call → Observation → Result execution path.
+            Stage 9.4 separates Agent decisions from final answers so approval, retries, fallbacks, cancellation, and failures remain explicit.
           </p>
         </div>
 
@@ -68,15 +69,17 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
         />
       </div>
 
+      <AgentDecisionPanel
+        notice={runtime.decision}
+        onConfirm={runtime.confirmWriteTool}
+        confirming={runtime.pending}
+      />
+
       <AgentMessage
         content={runtime.viewState.outputText}
         phase={runtime.viewState.phase}
         provider={runtime.viewState.provider}
         model={runtime.viewState.model}
-        confirmationTool={runtime.viewState.confirmationTool}
-        errorMessage={runtime.viewState.errorMessage}
-        onConfirm={runtime.confirmWriteTool}
-        confirming={runtime.pending}
       />
 
       <AgentObservabilityPanel

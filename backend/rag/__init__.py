@@ -35,6 +35,7 @@ from backend.rag.exceptions import (
     RagEmbeddingError,
     RagError,
     RagInvariantError,
+    RagModelManagerError,
     RagParsingError,
     RagRetrievalError,
     RagVectorStoreError,
@@ -42,6 +43,12 @@ from backend.rag.exceptions import (
 )
 from backend.rag.index_manifest import IndexManifest, IndexManifestRecord, IndexStatus
 from backend.rag.index_service import IndexDocumentResult, IndexService
+from backend.rag.model_manager import (
+    EMBEDDING_MODEL_ID,
+    RERANKER_MODEL_ID,
+    ModelManager,
+    default_models_root,
+)
 from backend.rag.models import (
     DocumentChunk,
     DocumentPage,
@@ -67,6 +74,8 @@ from backend.rag.tokenization import (
 
 __all__ = [
     "CHUNKER_VERSION",
+    "EMBEDDING_MODEL_ID",
+    "RERANKER_MODEL_ID",
     "AdvancedParserWithFallback",
     "CitationService",
     "DoclingDocumentParser",
@@ -85,6 +94,7 @@ __all__ = [
     "IndexService",
     "IndexStatus",
     "KnowledgeDocument",
+    "ModelManager",
     "NormalizedDocument",
     "Qwen3EmbeddingProvider",
     "RagAdvancedParsingConfig",
@@ -101,6 +111,7 @@ __all__ = [
     "RagEvaluationPrediction",
     "RagEvaluationReport",
     "RagInvariantError",
+    "RagModelManagerError",
     "RagParsingError",
     "RagQueryPlan",
     "RagQueryPlanner",
@@ -121,6 +132,7 @@ __all__ = [
     "build_stable_chunk_id",
     "chunk_document",
     "create_embedding_provider",
+    "default_models_root",
     "evaluate_rag",
     "get_parser_for_path",
     "load_evaluation_dataset",

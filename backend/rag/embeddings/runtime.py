@@ -7,6 +7,7 @@ from typing import Any
 from backend.rag.config import RagEmbeddingConfig
 from backend.rag.embeddings.base import EmbeddingProvider
 from backend.rag.exceptions import RagConfigurationError
+from backend.rag.model_manager import ModelManager
 
 
 class EmbeddingRuntimeStatus(str, Enum):
@@ -45,14 +46,18 @@ def resolve_embedding_device(configured_device: str, torch_module: Any) -> str:
     )
 
 
-def create_embedding_provider(config: RagEmbeddingConfig) -> EmbeddingProvider:
+def create_embedding_provider(
+    config: RagEmbeddingConfig,
+    *,
+    model_manager: ModelManager | None = None,
+) -> EmbeddingProvider:
     if config.provider != "qwen3":
         raise RagConfigurationError(
             f"unsupported RAG embedding provider: {config.provider!r}"
         )
     from backend.rag.embeddings.qwen3 import Qwen3EmbeddingProvider
 
-    return Qwen3EmbeddingProvider(config)
+    return Qwen3EmbeddingProvider(config, model_manager=model_manager)
 
 
 __all__ = [

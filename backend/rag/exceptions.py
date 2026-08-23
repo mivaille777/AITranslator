@@ -29,6 +29,10 @@ class RagRetrievalError(RagError):
     """Raised when no configured retrieval path can serve a query."""
 
 
+class RagModelManagerError(RagError):
+    """Raised when a managed local model operation cannot complete safely."""
+
+
 class UnsupportedDocumentTypeError(RagParsingError):
     """Raised when no basic ingestion parser supports a document type."""
 
@@ -38,6 +42,7 @@ __all__ = [
     "RagEmbeddingError",
     "RagError",
     "RagInvariantError",
+    "RagModelManagerError",
     "RagParsingError",
     "RagRetrievalError",
     "RagVectorStoreError",

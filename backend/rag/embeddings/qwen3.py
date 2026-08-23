@@ -13,6 +13,7 @@ from backend.rag.embeddings.runtime import (
     resolve_embedding_device,
 )
 from backend.rag.exceptions import RagConfigurationError, RagEmbeddingError
+from backend.rag.model_manager import EMBEDDING_MODEL_ID, ModelManager
 
 ModelFactory = Callable[..., Any]
 
@@ -44,6 +45,7 @@ class Qwen3EmbeddingProvider:
         *,
         model_factory: ModelFactory | None = None,
         torch_module: Any | None = None,
+        model_manager: ModelManager | None = None,
     ) -> None:
         self._config = config or RagEmbeddingConfig()
         if not self._config.normalize:
@@ -52,6 +54,7 @@ class Qwen3EmbeddingProvider:
             )
         self._model_factory = model_factory or _default_model_factory
         self._torch = torch_module
+        self._model_manager = model_manager
         self._model: Any | None = None
         self._lock = RLock()
         self._status = EmbeddingRuntimeStatus.UNINITIALIZED
@@ -123,11 +126,22 @@ class Qwen3EmbeddingProvider:
                     self._config.device,
                     torch_module,
                 )
-                model_source = self._config.model_path.strip() or self._config.model
+                configured_path = self._config.model_path.strip()
+                if configured_path:
+                    model_source = configured_path
+                    local_files_only = self._config.local_files_only
+                elif self._model_manager is not None:
+                    model_source = str(
+                        self._model_manager.get_model_path(EMBEDDING_MODEL_ID)
+                    )
+                    local_files_only = True
+                else:
+                    model_source = self._config.model
+                    local_files_only = self._config.local_files_only
                 model = self._model_factory(
                     model_source,
                     device=self._device,
-                    local_files_only=self._config.local_files_only,
+                    local_files_only=local_files_only,
                 )
                 if self._config.warmup:
                     warmup_vectors = self._encode_query(model, "warmup")

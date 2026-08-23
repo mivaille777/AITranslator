@@ -31,6 +31,8 @@ from backend.api.knowledge import router as knowledge_router
 from backend.api.knowledge_dependencies import close_rag_runtime
 from backend.api.overlay import router as overlay_router
 from backend.api.quick_actions import router as quick_actions_router
+from backend.api.rag_model_dependencies import close_rag_model_manager
+from backend.api.rag_models import router as rag_models_router
 from backend.api.reading import router as reading_router
 from backend.api.research import router as research_router
 from backend.api.translation import router as translation_router
@@ -75,6 +77,7 @@ async def lifespan(_: FastAPI):
         close_translation_service()
         close_agent_trace_store_service()
         close_rag_runtime()
+        close_rag_model_manager()
 
 
 def create_app() -> FastAPI:
@@ -101,6 +104,7 @@ def create_app() -> FastAPI:
     app.include_router(quick_actions_router)
     app.include_router(research_router)
     app.include_router(knowledge_router)
+    app.include_router(rag_models_router)
     app.include_router(agent_router)
     app.include_router(agent_observability_router)
     app.include_router(agent_runtime_config_router)

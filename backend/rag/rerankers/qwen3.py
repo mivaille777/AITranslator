@@ -8,6 +8,7 @@ from typing import Any
 from backend.rag.config import RagRerankerConfig
 from backend.rag.embeddings.runtime import resolve_embedding_device
 from backend.rag.exceptions import RagRetrievalError
+from backend.rag.model_manager import RERANKER_MODEL_ID, ModelManager
 
 
 def _factory(*args: Any, **kwargs: Any) -> Any:
@@ -23,10 +24,12 @@ class Qwen3RerankerProvider:
         *,
         model_factory: Callable[..., Any] | None = None,
         torch_module: Any | None = None,
+        model_manager: ModelManager | None = None,
     ) -> None:
         self._config = config or RagRerankerConfig()
         self._factory = model_factory or _factory
         self._torch = torch_module
+        self._model_manager = model_manager
         self._model: Any | None = None
         self._lock = RLock()
         if not self._config.lazy_load:
@@ -77,11 +80,20 @@ class Qwen3RerankerProvider:
 
                 self._torch = torch
             device = resolve_embedding_device(self._config.device, self._torch)
-            source = self._config.model_path.strip() or self._config.model
+            configured_path = self._config.model_path.strip()
+            if configured_path:
+                source = configured_path
+                local_files_only = self._config.local_files_only
+            elif self._model_manager is not None:
+                source = str(self._model_manager.get_model_path(RERANKER_MODEL_ID))
+                local_files_only = True
+            else:
+                source = self._config.model
+                local_files_only = self._config.local_files_only
             self._model = self._factory(
                 source,
                 device=device,
-                local_files_only=self._config.local_files_only,
+                local_files_only=local_files_only,
             )
             return self._model
 

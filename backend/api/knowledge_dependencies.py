@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Lock
 
 from app.infrastructure.settings import SettingsManager
+from backend.api.rag_model_dependencies import get_rag_model_manager
 from backend.rag.chunking import StructureAwareChunker
 from backend.rag.config import RagConfig
 from backend.rag.embeddings import EmbeddingProvider, create_embedding_provider
@@ -63,7 +64,11 @@ def _build_runtime() -> RagRuntime:
     settings = SettingsManager().data
     raw_rag = settings.get("rag", {})
     config = RagConfig.model_validate(raw_rag if isinstance(raw_rag, dict) else {})
-    embedding = create_embedding_provider(config.embedding)
+    model_manager = get_rag_model_manager()
+    embedding = create_embedding_provider(
+        config.embedding,
+        model_manager=model_manager,
+    )
     vector_store = QdrantLocalVectorStore(
         config.vector_store,
         dimension=config.embedding.dimension,
@@ -78,7 +83,10 @@ def _build_runtime() -> RagRuntime:
         vector_store=vector_store,
         sparse_retriever=sparse,
         config=config.retrieval,
-        reranker=Qwen3RerankerProvider(config.reranker),
+        reranker=Qwen3RerankerProvider(
+            config.reranker,
+            model_manager=model_manager,
+        ),
     )
     index = IndexService(
         chunker=StructureAwareChunker(config.chunking),

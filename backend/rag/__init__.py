@@ -18,6 +18,16 @@ from backend.rag.embeddings import (
     Qwen3EmbeddingProvider,
     create_embedding_provider,
 )
+from backend.rag.evaluation import RagEvaluationReport, evaluate_rag
+from backend.rag.evaluation_dataset import (
+    RagClaimPrediction,
+    RagEvaluationCase,
+    RagEvaluationClaim,
+    RagEvaluationLatency,
+    RagEvaluationPrediction,
+    load_evaluation_dataset,
+    load_evaluation_predictions,
+)
 from backend.rag.evidence_builder import build_agent_evidence, build_evidence_item
 from backend.rag.exceptions import (
     RagConfigurationError,
@@ -70,11 +80,17 @@ __all__ = [
     "NormalizedDocument",
     "Qwen3EmbeddingProvider",
     "RagChunkingConfig",
+    "RagClaimPrediction",
     "RagConfig",
     "RagConfigurationError",
     "RagEmbeddingConfig",
     "RagEmbeddingError",
     "RagError",
+    "RagEvaluationCase",
+    "RagEvaluationClaim",
+    "RagEvaluationLatency",
+    "RagEvaluationPrediction",
+    "RagEvaluationReport",
     "RagInvariantError",
     "RagParsingError",
     "RagQueryPlan",
@@ -96,7 +112,10 @@ __all__ = [
     "build_stable_chunk_id",
     "chunk_document",
     "create_embedding_provider",
+    "evaluate_rag",
     "get_parser_for_path",
+    "load_evaluation_dataset",
+    "load_evaluation_predictions",
     "merge_query_results",
     "parse_document",
 ]

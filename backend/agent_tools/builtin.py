@@ -14,6 +14,8 @@ from backend.agent_tools.base import (
 from backend.agent_tools.reading import (
     InspectReadingContextResultData,
     QuickActionResultData,
+    ReadingAgentTools,
+    build_reading_tool_definitions,
 )
 from backend.agent_tools.translation import (
     TranslateSelectionArgs,
@@ -115,8 +117,19 @@ class BuiltinAgentToolExecutors:
 
 def build_builtin_tool_definitions(
     executors: BuiltinAgentToolExecutors,
+    *,
+    translation_definition: TypedAgentToolDefinition | None = None,
 ) -> tuple[TypedAgentToolDefinition, ...]:
-    return (
+    """Build the remaining built-in definitions.
+
+    ``translation_definition`` is retained as a Stage 10.1 compatibility path.
+    Production Stage 10.2 registry assembly composes Translation, Reading, and
+    remaining built-ins independently. Older callers that still inject a
+    translation definition receive the legacy combined catalog without moving
+    implementation ownership back into this module.
+    """
+
+    remaining = (
         typed_tool_definition(
             name="polish_selection",
             title="Polish selection",
@@ -145,6 +158,19 @@ def build_builtin_tool_definitions(
             planner_args_model=SaveResearchNotePlannerArgs,
             retry_policy="never",
         ),
+    )
+
+    if translation_definition is None:
+        return remaining
+
+    reading_definitions = build_reading_tool_definitions(
+        ReadingAgentTools(quick_action_service=executors._quick_action_service)
+    )
+    return (
+        reading_definitions[0],
+        translation_definition,
+        *reading_definitions[1:],
+        *remaining,
     )
 
 

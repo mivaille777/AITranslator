@@ -12,6 +12,10 @@ from backend.agent_tools.builtin import (
     BuiltinAgentToolExecutors,
     build_builtin_tool_definitions,
 )
+from backend.agent_tools.translation import (
+    TranslationAgentTool,
+    build_translation_tool_definition,
+)
 from backend.services.quick_action_service import QuickActionService
 from backend.services.research_note_service import ResearchNoteService
 from backend.services.translation_fallback_service import TranslationFallbackService
@@ -51,7 +55,6 @@ class AgentToolRegistry:
         quick_action_service: QuickActionService | Any | None = None,
         research_note_service: ResearchNoteService | Any | None = None,
     ) -> None:
-        self._translation_service = translation_service
         if translation_fallback_service is not None:
             fallback_service = translation_fallback_service
         elif translation_service is None or isinstance(translation_service, TranslationService):
@@ -59,13 +62,22 @@ class AgentToolRegistry:
         else:
             fallback_service = None
 
-        executors = BuiltinAgentToolExecutors(
+        translation_tool = TranslationAgentTool(
             translation_service=translation_service,
             translation_fallback_service=fallback_service,
+        )
+        translation_definition = build_translation_tool_definition(translation_tool)
+
+        executors = BuiltinAgentToolExecutors(
             quick_action_service=quick_action_service or QuickActionService(),
             research_note_service=research_note_service or ResearchNoteService(),
         )
-        self._definitions = tuple(build_builtin_tool_definitions(executors))
+        self._definitions = tuple(
+            build_builtin_tool_definitions(
+                executors,
+                translation_definition=translation_definition,
+            )
+        )
         self._definition_by_name = {
             definition.spec.name: definition for definition in self._definitions
         }

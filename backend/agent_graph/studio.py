@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
 from backend.agent_graph.reading_agent_graph import ReadingAgentGraph
 from backend.api.dependencies import (
@@ -12,15 +10,15 @@ from backend.api.dependencies import (
 from backend.services.agent_conversation_service import AgentConversationService
 
 
-def make_graph(config: dict[str, Any] | None = None):
+def make_graph():
     """Build the production ReadingAgentGraph for LangSmith Studio.
 
-    The CLI calls this factory when ``langgraph dev`` starts. Building lazily
-    keeps Studio dependencies and service initialization out of normal FastAPI
-    imports and preserves the application's existing production startup path.
+    Agent Server graph factories may either accept no arguments or explicitly
+    typed ``RunnableConfig`` / ``ServerRuntime`` parameters. Studio only needs
+    the production topology here, so keep this factory argument-free and avoid
+    ambiguous type-based injection during graph introspection.
     """
 
-    del config
     conversation_service = AgentConversationService(
         store=get_conversation_store_service(),
         ownership=get_companion_ownership_service(),

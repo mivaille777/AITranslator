@@ -37,7 +37,13 @@ def _structured(value: Any) -> dict[str, Any]:
 
 
 class ProductAgentRuntimeAdapter:
-    """Map ProductAgentService results onto the shared AgentState contract."""
+    """Compatibility bridge between ProductAgentService and AgentState.
+
+    Production orchestration now lives in ``ReadingAgentGraph``. This adapter
+    keeps the state projection, product-service invocation and Conversation
+    lifecycle primitives reusable while preserving the pre-graph callable API
+    for focused unit tests and migration compatibility.
+    """
 
     def __init__(
         self,
@@ -48,7 +54,7 @@ class ProductAgentRuntimeAdapter:
         self._conversation_service = conversation_service
 
     @staticmethod
-    def _payload(state: AgentState) -> dict[str, Any]:
+    def build_payload(state: AgentState) -> dict[str, Any]:
         context = state.browser_context
         confirmed = context.get("confirmed_write_tools", ())
         if not isinstance(confirmed, (list, tuple, set, frozenset)):
@@ -78,8 +84,10 @@ class ProductAgentRuntimeAdapter:
             "request_id": max(0, int(context.get("request_id", 0) or 0)),
         }
 
+    _payload = build_payload
+
     @staticmethod
-    def _apply_result(state: AgentState, result: Any) -> AgentState:
+    def apply_result(state: AgentState, result: Any) -> AgentState:
         plan = _structured(result.plan)
         state.apply_plan(plan)
 
@@ -116,7 +124,9 @@ class ProductAgentRuntimeAdapter:
         )
         return state
 
-    def _begin_conversation(self, state: AgentState):
+    _apply_result = apply_result
+
+    def begin_conversation(self, state: AgentState):
         service = self._conversation_service
         if service is None:
             return None
@@ -124,11 +134,15 @@ class ProductAgentRuntimeAdapter:
         service.apply_to_state(state, run)
         return run
 
-    def _complete_conversation(self, run: Any, state: AgentState) -> None:
+    _begin_conversation = begin_conversation
+
+    def complete_conversation(self, run: Any, state: AgentState) -> None:
         if run is not None and self._conversation_service is not None:
             self._conversation_service.complete(run, state)
 
-    def _abort_conversation(self, run: Any, exc: Exception) -> None:
+    _complete_conversation = complete_conversation
+
+    def abort_conversation(self, run: Any, exc: Exception) -> None:
         if run is None or self._conversation_service is None:
             return
         if isinstance(exc, AgentCancelledError):
@@ -136,15 +150,55 @@ class ProductAgentRuntimeAdapter:
         else:
             self._conversation_service.fail(run, exc)
 
+    _abort_conversation = abort_conversation
+
+    def execute_product(
+        self,
+        state: AgentState,
+        emit: Callable[[AgentEventType, dict[str, Any]], None] | None = None,
+        *,
+        control: AgentRunControl | None = None,
+    ) -> tuple[AgentState, set[AgentEventType]]:
+        emitted: set[AgentEventType] = set()
+
+        def forward(event_type: str, payload: dict[str, Any]) -> None:
+            try:
+                core_type = AgentEventType(event_type)
+            except ValueError:
+                return
+            emitted.add(core_type)
+            if emit is not None:
+                emit(core_type, payload)
+
+        result = self._service.run(
+            event_sink=forward,
+            control=control,
+            **self.build_payload(state),
+        )
+        return self.apply_result(state, result), emitted
+
+    @staticmethod
+    def emit_compatibility_events(
+        state: AgentState,
+        emitted: set[AgentEventType],
+        emit: Callable[[AgentEventType, dict[str, Any]], None],
+    ) -> None:
+        if AgentEventType.PLAN_READY not in emitted:
+            emit(AgentEventType.PLAN_READY, dict(state.planned_action))
+        if state.tool_calls and AgentEventType.TOOL_CALL not in emitted:
+            emit(AgentEventType.TOOL_CALL, dict(state.tool_calls[-1]))
+        if state.tool_results and AgentEventType.TOOL_RESULT not in emitted:
+            emit(AgentEventType.TOOL_RESULT, dict(state.tool_results[-1]))
+
     def __call__(self, state: AgentState) -> AgentState:
-        conversation_run = self._begin_conversation(state)
+        conversation_run = self.begin_conversation(state)
         try:
-            result = self._service.run(**self._payload(state))
-            state = self._apply_result(state, result)
-            self._complete_conversation(conversation_run, state)
+            result = self._service.run(**self.build_payload(state))
+            state = self.apply_result(state, result)
+            self.complete_conversation(conversation_run, state)
             return state
         except Exception as exc:
-            self._abort_conversation(conversation_run, exc)
+            self.abort_conversation(conversation_run, exc)
             raise
 
     def run_with_events(
@@ -154,36 +208,15 @@ class ProductAgentRuntimeAdapter:
         *,
         control: AgentRunControl | None = None,
     ) -> AgentState:
-        emitted: set[AgentEventType] = set()
-
-        def forward(event_type: str, payload: dict[str, Any]) -> None:
-            try:
-                core_type = AgentEventType(event_type)
-            except ValueError:
-                return
-            emitted.add(core_type)
-            emit(core_type, payload)
-
-        conversation_run = self._begin_conversation(state)
+        conversation_run = self.begin_conversation(state)
         try:
-            result = self._service.run(
-                event_sink=forward,
-                control=control,
-                **self._payload(state),
-            )
-            state = self._apply_result(state, result)
-            self._complete_conversation(conversation_run, state)
+            state, emitted = self.execute_product(state, emit, control=control)
+            self.complete_conversation(conversation_run, state)
         except Exception as exc:
-            self._abort_conversation(conversation_run, exc)
+            self.abort_conversation(conversation_run, exc)
             raise
 
-        # Compatibility fallback for lightweight mocks or alternative services.
-        if AgentEventType.PLAN_READY not in emitted:
-            emit(AgentEventType.PLAN_READY, dict(state.planned_action))
-        if state.tool_calls and AgentEventType.TOOL_CALL not in emitted:
-            emit(AgentEventType.TOOL_CALL, dict(state.tool_calls[-1]))
-        if state.tool_results and AgentEventType.TOOL_RESULT not in emitted:
-            emit(AgentEventType.TOOL_RESULT, dict(state.tool_results[-1]))
+        self.emit_compatibility_events(state, emitted, emit)
         return state
 
     def close(self) -> None:

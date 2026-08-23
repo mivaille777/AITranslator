@@ -7,6 +7,7 @@ from fastapi import Depends
 from backend.agent_core.context import ReadingContextProvider
 from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
 from backend.agent_core.runtime import AgentRuntime
+from backend.agent_graph.reading_agent_graph import ReadingAgentGraph
 from backend.api.agent_observability_dependencies import get_agent_trace_store_service
 from backend.api.dependencies import (
     get_companion_ownership_service,
@@ -64,24 +65,26 @@ def get_agent_runtime(
     conversation_service: AgentConversationServiceDependency = None,
     trace_store: AgentTraceStoreDependency = None,
 ) -> AgentRuntime:
-    """Build one lightweight Agent Core runtime for the current API request.
+    """Build one request-scoped Agent Runtime backed by ReadingAgentGraph.
 
-    Runtime execution state remains request-scoped. Product capabilities and
-    durable Conversation storage are shared services injected through stable
-    adapters; the Agent adapter coordinates one exchange with the existing
-    Conversation lifecycle before and after every run.
+    ``AgentRuntime`` remains the outer reliability/telemetry boundary. LangGraph
+    owns production workflow orchestration, while the compatibility adapter
+    projects existing ProductAgentService results onto ``AgentState`` and keeps
+    the shared Conversation lifecycle reusable during the staged migration.
 
-    ``conversation_service`` remains optional for direct unit-test construction
-    and other non-FastAPI callers. FastAPI still resolves it from the dependency
-    metadata carried by ``AgentConversationServiceDependency``.
+    ``conversation_service`` remains optional for direct unit-test construction.
+    FastAPI still resolves it from the dependency metadata carried by
+    ``AgentConversationServiceDependency``.
     """
 
+    adapter = ProductAgentRuntimeAdapter(
+        service,
+        conversation_service=conversation_service,
+    )
+    graph = ReadingAgentGraph(adapter)
     return AgentRuntime(
         context_provider=ReadingContextProvider(resolver),
-        workflow_adapter=ProductAgentRuntimeAdapter(
-            service,
-            conversation_service=conversation_service,
-        ),
+        workflow_adapter=graph,
         run_recorder=trace_store.record if trace_store is not None else None,
     )
 

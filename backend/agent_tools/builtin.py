@@ -1,16 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
-from pydantic import BaseModel, Field
-
-from backend.agent_tools.base import (
-    AgentToolExecutionResult,
-    AgentToolInvocationContext,
-    AgentToolModel,
-    TypedAgentToolDefinition,
-    typed_tool_definition,
-)
+from backend.agent_tools.base import TypedAgentToolDefinition
 from backend.agent_tools.reading import (
     InspectReadingContextResultData,
     QuickActionResultData,
@@ -28,18 +20,20 @@ from backend.agent_tools.translation import (
     TranslateSelectionArgs,
     TranslationResultData,
 )
-
-
-class PolishSelectionArgs(AgentToolModel):
-    style: str = Field(default="academic", min_length=1, max_length=64)
+from backend.agent_tools.writing import (
+    PolishSelectionArgs,
+    WritingAgentTool,
+    WritingResultData,
+    build_writing_tool_definition,
+)
 
 
 class BuiltinAgentToolExecutors:
-    """Executor collection for the remaining writing capability.
+    """Compatibility container for pre-Stage-10.4 tool-builder callers.
 
-    Translation, Reading, and Research now own dedicated Agent Tool boundaries.
-    Constructor fields for earlier Stage 10 callers remain available so the
-    legacy combined builder can still expose the pre-refactor catalog.
+    Production registry assembly no longer executes capabilities through this
+    class. It only retains service references so the legacy combined builder can
+    reproduce the historical seven-tool catalog for older integrations/tests.
     """
 
     def __init__(
@@ -51,62 +45,25 @@ class BuiltinAgentToolExecutors:
         self._quick_action_service = quick_action_service
         self._research_note_service = research_note_service
 
-    def polish_selection(
-        self,
-        context: AgentToolInvocationContext,
-        args: BaseModel,
-    ) -> AgentToolExecutionResult:
-        typed = cast(PolishSelectionArgs, args)
-        result = self._quick_action_service.run(
-            action="ai_polish",
-            **context.reading_payload(),
-            style=typed.style,
-            request_id=context.request_id,
-        )
-        return AgentToolExecutionResult(
-            tool_name="polish_selection",
-            output_text=result.output_text,
-            effect="compute",
-            provider=result.provider,
-            model=result.model,
-            request_id=result.request_id,
-            data={"action": result.action},
-        )
-
 
 def build_builtin_tool_definitions(
     executors: BuiltinAgentToolExecutors,
     *,
     translation_definition: TypedAgentToolDefinition | None = None,
 ) -> tuple[TypedAgentToolDefinition, ...]:
-    """Build the remaining built-in definitions.
+    """Compatibility builder over the dedicated capability definitions.
 
-    ``translation_definition`` is retained as a Stage 10.1 compatibility path.
-    Production registry assembly composes Translation, Reading, Research, and
-    the remaining writing tool independently. Older callers that still inject
-    Translation receive the legacy seven-tool catalog without moving capability
-    ownership back into this module.
+    Without ``translation_definition`` this preserves the old Stage 10.3
+    behavior of returning only the remaining writing definition. When an older
+    Stage 10.1 caller injects Translation, the historical seven-tool catalog is
+    reconstructed entirely from dedicated capability owners.
     """
 
-    remaining = (
-        typed_tool_definition(
-            name="polish_selection",
-            title="Polish selection",
-            description="Polish the selected text while preserving its language and meaning.",
-            category="writing",
-            effect="compute",
-            requires_reading_context=True,
-            requires_confirmation=False,
-            args_model=PolishSelectionArgs,
-            result_model=QuickActionResultData,
-            executor=executors.polish_selection,
-            planner_args_model=PolishSelectionArgs,
-            retry_policy="safe",
-        ),
+    writing_definition = build_writing_tool_definition(
+        WritingAgentTool(quick_action_service=executors._quick_action_service)
     )
-
     if translation_definition is None:
-        return remaining
+        return (writing_definition,)
 
     reading_definitions = build_reading_tool_definitions(
         ReadingAgentTools(quick_action_service=executors._quick_action_service)
@@ -118,7 +75,7 @@ def build_builtin_tool_definitions(
         reading_definitions[0],
         translation_definition,
         *reading_definitions[1:],
-        *remaining,
+        writing_definition,
         research_definitions[0],
     )
 
@@ -133,5 +90,6 @@ __all__ = [
     "SaveResearchNotePlannerArgs",
     "TranslateSelectionArgs",
     "TranslationResultData",
+    "WritingResultData",
     "build_builtin_tool_definitions",
 ]

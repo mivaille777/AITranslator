@@ -8,10 +8,6 @@ from backend.agent_tools.base import (
     AgentToolSpec,
     TypedAgentToolDefinition,
 )
-from backend.agent_tools.builtin import (
-    BuiltinAgentToolExecutors,
-    build_builtin_tool_definitions,
-)
 from backend.agent_tools.reading import (
     ReadingAgentTools,
     build_reading_tool_definitions,
@@ -23,6 +19,10 @@ from backend.agent_tools.research import (
 from backend.agent_tools.translation import (
     TranslationAgentTool,
     build_translation_tool_definition,
+)
+from backend.agent_tools.writing import (
+    WritingAgentTool,
+    build_writing_tool_definition,
 )
 from backend.services.quick_action_service import QuickActionService
 from backend.services.research_note_service import ResearchNoteService
@@ -50,9 +50,10 @@ _CONTEXT_FIELDS = (
 class AgentToolRegistry:
     """Typed registry over AITranslator Agent capabilities.
 
-    The public ``AgentToolSpec`` surface remains stable for the planner and
-    HTTP API. Each capability family owns its executor/service boundary while
-    the registry only assembles definitions and enforces the shared contract.
+    The public ``AgentToolSpec`` and successful result surfaces stay stable for
+    planner, trace, HTTP, and frontend consumers. Capability families own their
+    executors while the registry only assembles definitions, validates context,
+    and applies the shared typed result contract.
     """
 
     def __init__(
@@ -84,24 +85,22 @@ class AgentToolRegistry:
         )
         reading_definitions = build_reading_tool_definitions(reading_tools)
 
+        writing_tool = WritingAgentTool(
+            quick_action_service=shared_quick_action_service,
+        )
+        writing_definition = build_writing_tool_definition(writing_tool)
+
         research_tools = ResearchAgentTools(
             research_note_service=shared_research_note_service,
         )
         research_definitions = build_research_tool_definitions(research_tools)
 
-        builtin_executors = BuiltinAgentToolExecutors(
-            quick_action_service=shared_quick_action_service,
-            research_note_service=shared_research_note_service,
-        )
-        builtin_definitions = build_builtin_tool_definitions(builtin_executors)
-
-        # Preserve the established planner/catalog ordering for existing tools,
-        # then append new Research-memory read/update capabilities.
+        # Preserve the established planner/catalog ordering for all public tools.
         self._definitions = (
             reading_definitions[0],
             translation_definition,
             *reading_definitions[1:],
-            *builtin_definitions,
+            writing_definition,
             *research_definitions,
         )
         self._definition_by_name = {
@@ -156,25 +155,7 @@ class AgentToolRegistry:
             raise ValueError(f"Agent tool {spec.name} requires selected source text.")
 
         result = definition.executor(context, args)
-        if result.tool_name != spec.name:
-            raise ValueError(
-                f"Agent tool {spec.name} returned mismatched result for {result.tool_name}."
-            )
-        if result.effect != spec.effect:
-            raise ValueError(
-                f"Agent tool {spec.name} returned effect {result.effect!r}; expected {spec.effect!r}."
-            )
-
-        normalized_data = definition.normalize_result_data(result.data)
-        return AgentToolExecutionResult(
-            tool_name=result.tool_name,
-            output_text=result.output_text,
-            effect=result.effect,
-            provider=result.provider,
-            model=result.model,
-            request_id=result.request_id,
-            data=normalized_data,
-        )
+        return definition.normalize_execution_result(result)
 
 
 __all__ = [

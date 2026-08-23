@@ -60,7 +60,7 @@ class AgentToolSpec:
     title: str
     description: str
     category: str
-    effect: str
+    effect: AgentToolEffect
     requires_reading_context: bool
     requires_confirmation: bool
     input_schema: dict[str, Any]
@@ -96,9 +96,11 @@ class AgentToolSpec:
 
 @dataclass(frozen=True, slots=True)
 class AgentToolExecutionResult:
+    """Stable successful Tool result shared by runtime, trace, and HTTP layers."""
+
     tool_name: str
     output_text: str
-    effect: str
+    effect: AgentToolEffect
     provider: str = ""
     model: str = ""
     request_id: int = 0
@@ -145,6 +147,46 @@ class TypedAgentToolDefinition:
             raise ValueError(
                 f"Agent tool {self.spec.name} returned invalid structured result data: {exc}"
             ) from exc
+
+    def normalize_execution_result(
+        self,
+        result: AgentToolExecutionResult,
+    ) -> AgentToolExecutionResult:
+        """Validate one executor result against the Tool-owned public contract."""
+
+        if not isinstance(result, AgentToolExecutionResult):
+            raise ValueError(
+                f"Agent tool {self.spec.name} returned an invalid execution result object."
+            )
+        if result.tool_name != self.spec.name:
+            raise ValueError(
+                f"Agent tool {self.spec.name} returned mismatched result for {result.tool_name}."
+            )
+        if result.effect != self.spec.effect:
+            raise ValueError(
+                f"Agent tool {self.spec.name} returned effect {result.effect!r}; "
+                f"expected {self.spec.effect!r}."
+            )
+        try:
+            request_id = int(result.request_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Agent tool {self.spec.name} returned an invalid request_id."
+            ) from exc
+        if request_id < 0:
+            raise ValueError(
+                f"Agent tool {self.spec.name} returned an invalid request_id."
+            )
+
+        return AgentToolExecutionResult(
+            tool_name=self.spec.name,
+            output_text=str(result.output_text or ""),
+            effect=self.spec.effect,
+            provider=str(result.provider or ""),
+            model=str(result.model or ""),
+            request_id=request_id,
+            data=self.normalize_result_data(result.data),
+        )
 
 
 def _model_properties(model: type[BaseModel]) -> dict[str, Any]:

@@ -35,6 +35,12 @@ from backend.agent_tools.translation import (
     TranslationResultData,
     build_translation_tool_definition,
 )
+from backend.agent_tools.writing import (
+    PolishSelectionArgs,
+    WritingAgentTool,
+    WritingResultData,
+    build_writing_tool_definition,
+)
 
 __all__ = [
     "AgentToolExecutionResult",
@@ -44,6 +50,7 @@ __all__ = [
     "GetResearchNoteArgs",
     "InspectReadingContextResultData",
     "ListResearchNotesArgs",
+    "PolishSelectionArgs",
     "QuickActionResultData",
     "ReadingAgentTools",
     "ResearchAgentTools",
@@ -61,7 +68,10 @@ __all__ = [
     "TypedAgentToolDefinition",
     "UpdateResearchNoteArgs",
     "UpdateResearchNotePlannerArgs",
+    "WritingAgentTool",
+    "WritingResultData",
     "build_reading_tool_definitions",
     "build_research_tool_definitions",
     "build_translation_tool_definition",
+    "build_writing_tool_definition",
 ]

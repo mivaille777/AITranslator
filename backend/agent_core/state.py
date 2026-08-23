@@ -65,12 +65,7 @@ def _history_from_context(context: dict[str, Any]) -> list[AgentConversationMess
 
 
 class AgentState(BaseModel):
-    """Shared state passed through the Agent execution lifecycle.
-
-    Strongly typed contracts coexist with legacy flat fields while the runtime
-    is migrated in stages. Explicit routing and Conversation lifecycle metadata
-    are preserved across compatibility synchronization.
-    """
+    """Shared state passed through the Agent execution lifecycle."""
 
     run_id: str = Field(default_factory=_run_id)
     trace_id: str = Field(default_factory=_trace_id)
@@ -108,6 +103,11 @@ class AgentState(BaseModel):
             self.route
             if self.route.source in {"deterministic", "semantic_router", "planner"}
             else None
+        )
+        preserve_multi_step = (
+            self.plan.mode == "multi_step"
+            and explicit_route is not None
+            and explicit_route.kind == "complex"
         )
 
         self.execution = AgentExecutionContext(
@@ -151,7 +151,9 @@ class AgentState(BaseModel):
             str(key): str(value)
             for key, value in dict(self.planned_action.get("arguments", {}) or {}).items()
         }
-        if action == "tool" and tool_name:
+        if preserve_multi_step:
+            pass
+        elif action == "tool" and tool_name:
             step_status = "completed" if any(
                 str(item.get("tool_name", "") or item.get("name", "") or "") == tool_name
                 for item in self.tool_results
@@ -258,6 +260,49 @@ class AgentState(BaseModel):
         self.intent = tool_name if action == "tool" and tool_name else "answer"
         return self.sync_contract()
 
+    def apply_multi_step_plan(
+        self,
+        plan: AgentPlanContext | dict[str, Any],
+    ) -> "AgentState":
+        self.plan = (
+            plan
+            if isinstance(plan, AgentPlanContext)
+            else AgentPlanContext.model_validate(plan)
+        )
+        if self.plan.mode != "multi_step":
+            raise ValueError("apply_multi_step_plan requires mode='multi_step'.")
+        self.planned_action = {}
+        self.intent = "complex"
+        return self.sync_contract()
+
+    def mark_plan_step(self, step_id: str, status: str) -> "AgentState":
+        valid = {"pending", "running", "completed", "failed", "skipped"}
+        if status not in valid:
+            raise ValueError(f"Unsupported plan step status: {status}")
+        found = False
+        steps: list[AgentPlanStep] = []
+        for step in self.plan.steps:
+            if step.step_id == step_id:
+                found = True
+                steps.append(step.model_copy(update={"status": status}))
+            else:
+                steps.append(step)
+        if not found:
+            raise KeyError(f"Unknown plan step: {step_id}")
+
+        current = ""
+        if status != "running":
+            current = next(
+                (step.step_id for step in steps if step.status == "pending"),
+                "",
+            )
+        else:
+            current = step_id
+        self.plan = self.plan.model_copy(
+            update={"steps": steps, "current_step_id": current}
+        )
+        return self.sync_contract()
+
     def apply_route(
         self,
         route: AgentRouteDecision | dict[str, Any],
@@ -273,6 +318,8 @@ class AgentState(BaseModel):
             self.intent = self.route.tool_name
         elif self.route.kind == "answer":
             self.intent = "answer"
+        elif self.route.kind == "complex":
+            self.intent = "complex"
         return self.sync_contract()
 
     def record_tool_call(self, call: dict[str, Any]) -> "AgentState":

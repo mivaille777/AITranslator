@@ -35,7 +35,7 @@ def _structured(value: Any) -> dict[str, Any]:
 
 
 class ProductAgentRuntimeAdapter:
-    """Map the existing bounded ProductAgentService loop onto AgentState."""
+    """Map ProductAgentService results onto the shared AgentState contract."""
 
     def __init__(self, service: Any) -> None:
         self._service = service
@@ -70,10 +70,15 @@ class ProductAgentRuntimeAdapter:
         plan = _structured(result.plan)
         state.apply_plan(plan)
 
-        action = str(plan.get("action", "answer") or "answer")
-        tool_name = str(plan.get("tool_name", "") or "")
-        state.intent = tool_name if action == "tool" and tool_name else "answer"
+        route = _structured(getattr(result, "route", None))
+        if route:
+            state.apply_route(route)
+        else:
+            action = str(plan.get("action", "answer") or "answer")
+            tool_name = str(plan.get("tool_name", "") or "")
+            state.intent = tool_name if action == "tool" and tool_name else "answer"
 
+        tool_name = str(plan.get("tool_name", "") or "")
         if tool_name:
             state.record_tool_call(
                 {

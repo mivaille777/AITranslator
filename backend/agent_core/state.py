@@ -67,10 +67,10 @@ def _history_from_context(context: dict[str, Any]) -> list[AgentConversationMess
 class AgentState(BaseModel):
     """Shared state passed through the Agent execution lifecycle.
 
-    Stage 10.1 introduces strongly typed runtime contracts while keeping the
-    legacy flat fields as a compatibility boundary for existing services and
-    APIs. Mutating code should use the helper methods below so both views remain
-    synchronized during the migration.
+    Strongly typed contracts coexist with legacy flat fields while the runtime
+    is migrated in stages. Explicit Stage 10 routing decisions are preserved
+    across compatibility synchronization instead of being overwritten by the
+    legacy single-step plan projection.
     """
 
     run_id: str = Field(default_factory=_run_id)
@@ -104,6 +104,11 @@ class AgentState(BaseModel):
         context = dict(self.browser_context)
         request_id = _safe_request_id(
             self.response.get("request_id", context.get("request_id", 0))
+        )
+        explicit_route = (
+            self.route
+            if self.route.source in {"deterministic", "semantic_router", "planner"}
+            else None
         )
 
         self.execution = AgentExecutionContext(
@@ -145,16 +150,17 @@ class AgentState(BaseModel):
                 for item in self.tool_results
                 if isinstance(item, dict)
             ) else "pending"
-            self.route = AgentRouteDecision(
-                kind="tool",
-                source="legacy_planner",
-                intent=str(self.intent or tool_name),
-                tool_name=tool_name,
-                user_visible_reason=str(
-                    self.planned_action.get("user_visible_reason", "") or ""
-                ),
-                arguments=arguments,
-            )
+            if explicit_route is None:
+                self.route = AgentRouteDecision(
+                    kind="tool",
+                    source="legacy_planner",
+                    intent=str(self.intent or tool_name),
+                    tool_name=tool_name,
+                    user_visible_reason=str(
+                        self.planned_action.get("user_visible_reason", "") or ""
+                    ),
+                    arguments=arguments,
+                )
             self.plan = AgentPlanContext(
                 goal=str(self.planned_action.get("user_visible_reason", "") or ""),
                 mode="single_step",
@@ -169,21 +175,23 @@ class AgentState(BaseModel):
                 current_step_id="" if step_status == "completed" else "step-1",
             )
         elif action == "answer":
-            self.route = AgentRouteDecision(
-                kind="answer",
-                source="legacy_planner",
-                intent=str(self.intent or "answer"),
-                user_visible_reason=str(
-                    self.planned_action.get("user_visible_reason", "") or ""
-                ),
-            )
+            if explicit_route is None:
+                self.route = AgentRouteDecision(
+                    kind="answer",
+                    source="legacy_planner",
+                    intent=str(self.intent or "answer"),
+                    user_visible_reason=str(
+                        self.planned_action.get("user_visible_reason", "") or ""
+                    ),
+                )
             self.plan = AgentPlanContext()
         else:
-            self.route = AgentRouteDecision(
-                kind="unresolved",
-                source="none",
-                intent=str(self.intent or ""),
-            )
+            if explicit_route is None:
+                self.route = AgentRouteDecision(
+                    kind="unresolved",
+                    source="none",
+                    intent=str(self.intent or ""),
+                )
             self.plan = AgentPlanContext()
 
         status = str(self.response.get("status", "") or "").strip()
@@ -215,6 +223,23 @@ class AgentState(BaseModel):
         action = str(self.planned_action.get("action", "") or "")
         tool_name = str(self.planned_action.get("tool_name", "") or "")
         self.intent = tool_name if action == "tool" and tool_name else "answer"
+        return self.sync_contract()
+
+    def apply_route(
+        self,
+        route: AgentRouteDecision | dict[str, Any],
+    ) -> "AgentState":
+        self.route = (
+            route
+            if isinstance(route, AgentRouteDecision)
+            else AgentRouteDecision.model_validate(route)
+        )
+        if self.route.intent:
+            self.intent = self.route.intent
+        elif self.route.tool_name:
+            self.intent = self.route.tool_name
+        elif self.route.kind == "answer":
+            self.intent = "answer"
         return self.sync_contract()
 
     def record_tool_call(self, call: dict[str, Any]) -> "AgentState":

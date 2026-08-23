@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
 from backend.agent_core.state import AgentState
+from backend.models.agent_runtime import AgentRouteDecision
 from backend.models.agent_tools import AgentPlan
 from backend.services.agent_tool_registry import AgentToolExecutionResult
 
@@ -142,3 +143,33 @@ def test_product_adapter_keeps_typed_contract_in_sync_with_legacy_state():
     assert result.response_state.output_text == "高斯过程"
     assert result.response_state.ui_mode == "translation"
     assert result.conversation.conversation_id == "conv-9"
+
+
+class _RoutedProductAgentService(_FakeProductAgentService):
+    def run(self, **payload):
+        result = super().run(**payload)
+        result.route = AgentRouteDecision(
+            kind="tool",
+            source="deterministic",
+            intent="translate_selection",
+            tool_name="translate_selection",
+            user_visible_reason="Translate the current reading selection.",
+            arguments={"target_language": "zh-CN"},
+        )
+        return result
+
+
+def test_product_adapter_preserves_explicit_route_source_across_state_sync():
+    state = AgentState(
+        user_input="翻成中文",
+        selected_text="Gaussian Process",
+        browser_context={"conversation_id": "conv-route", "request_id": 11},
+    )
+
+    result = ProductAgentRuntimeAdapter(_RoutedProductAgentService())(state)
+
+    assert result.route.source == "deterministic"
+    assert result.route.tool_name == "translate_selection"
+    assert result.plan.steps[0].status == "completed"
+    assert result.response_state.status == "completed"
+    assert result.conversation.conversation_id == "conv-route"

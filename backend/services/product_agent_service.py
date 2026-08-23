@@ -14,8 +14,13 @@ from backend.agent_core.exceptions import (
     AgentToolTimeoutError,
 )
 from backend.agent_core.reliability import AgentRunControl, run_safe_tool_with_timeout
+from backend.models.agent_runtime import AgentRouteDecision
 from backend.models.agent_tools import AgentPlan
 from backend.services.agent_planner_service import AgentPlannerService
+from backend.services.agent_router_service import (
+    AgentDeterministicRouterService,
+    AgentSemanticRouterService,
+)
 from backend.services.agent_tool_registry import (
     AgentToolExecutionResult,
     AgentToolRegistry,
@@ -34,6 +39,7 @@ class ProductAgentRunResult:
     model: str = ""
     request_id: int = 0
     tool_result: AgentToolExecutionResult | None = None
+    route: AgentRouteDecision | None = None
 
 
 def _duration_ms(started: float) -> int:
@@ -54,19 +60,36 @@ def _retryable_tool_error(exc: Exception) -> bool:
     return isinstance(exc, (AIError, OSError, TimeoutError, AgentRuntimeError))
 
 
+def _route_to_plan(route: AgentRouteDecision) -> AgentPlan:
+    if route.kind == "tool" and route.tool_name:
+        return AgentPlan(
+            action="tool",
+            tool_name=route.tool_name,
+            user_visible_reason=route.user_visible_reason,
+            arguments=dict(route.arguments),
+        )
+    return AgentPlan(
+        action="answer",
+        user_visible_reason=route.user_visible_reason,
+    )
+
+
 class ProductAgentService:
-    """Bounded Plan -> Validate -> Execute -> Synthesize agent loop."""
+    """Bounded Route -> Validate -> Execute -> Synthesize agent loop."""
 
     def __init__(
         self,
         *,
         registry: AgentToolRegistry,
         chat_service: CompanionChatService,
+        router: AgentDeterministicRouterService | Any | None = None,
+        semantic_router: AgentSemanticRouterService | Any | None = None,
         planner: AgentPlannerService | Any | None = None,
     ) -> None:
         self._registry = registry
         self._chat_service = chat_service
-        self._planner = planner or AgentPlannerService()
+        self._router = router or AgentDeterministicRouterService()
+        self._semantic_router = semantic_router or planner or AgentSemanticRouterService()
 
     @staticmethod
     def _reading_fields(payload: dict[str, Any]) -> dict[str, Any]:
@@ -92,6 +115,92 @@ class ProductAgentService:
         if sink is not None:
             sink(event_type, payload)
 
+    def _semantic_route(
+        self,
+        *,
+        tools,
+        payload: dict[str, Any],
+    ) -> AgentRouteDecision:
+        route = getattr(self._semantic_router, "route", None)
+        if callable(route):
+            return route(tools=tools, **payload)
+        plan = self._semantic_router.plan(tools=tools, **payload)
+        if plan.action == "tool":
+            return AgentRouteDecision(
+                kind="tool",
+                source="legacy_planner",
+                intent=plan.tool_name,
+                tool_name=plan.tool_name,
+                user_visible_reason=plan.user_visible_reason,
+                arguments=dict(plan.arguments),
+            )
+        return AgentRouteDecision(
+            kind="answer",
+            source="legacy_planner",
+            intent="answer",
+            user_visible_reason=plan.user_visible_reason,
+        )
+
+    def _resolve_route(
+        self,
+        *,
+        control: AgentRunControl,
+        tools,
+        user_message: str,
+        reading: dict[str, Any],
+    ) -> tuple[AgentRouteDecision, dict[str, Any]]:
+        control.checkpoint("deterministic_route")
+        deterministic_started = monotonic()
+        route = self._router.route(user_message=user_message, tools=tools)
+        if route.kind != "unresolved":
+            control.checkpoint("deterministic_route_result")
+            return route, {
+                "duration_ms": _duration_ms(deterministic_started),
+                "provider": "",
+                "model": "",
+                "prompt_id": "",
+                "llm_called": False,
+            }
+
+        control.checkpoint("semantic_router")
+        semantic_started = monotonic()
+        semantic_payload = {
+            "user_message": user_message,
+            "source_text": str(reading["source_text"]),
+            "translated_text": str(reading["translated_text"]),
+            "resource_url": str(reading["resource_url"]),
+            "resource_title": str(reading["resource_title"]),
+            "section_heading": str(reading["section_heading"]),
+            "context_before": str(reading["context_before"]),
+            "context_after": str(reading["context_after"]),
+            "source_kind": str(reading["source_kind"]),
+        }
+        route = self._semantic_route(tools=tools, payload=semantic_payload)
+        control.checkpoint("semantic_router_result")
+        return route, {
+            "duration_ms": _duration_ms(semantic_started),
+            "provider": str(getattr(self._semantic_router, "provider_name", "") or ""),
+            "model": str(getattr(self._semantic_router, "model", "") or ""),
+            "prompt_id": str(getattr(self._semantic_router, "prompt_id", "") or ""),
+            "llm_called": True,
+        }
+
+    def _validated_arguments(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, str]:
+        validate = getattr(self._registry, "validate_planner_arguments", None)
+        if callable(validate):
+            return validate(tool_name, arguments)
+        return {str(key): str(value) for key, value in dict(arguments or {}).items()}
+
+    def _allows_safe_retry(self, tool_name: str, *, effect: str) -> bool:
+        allows = getattr(self._registry, "allows_safe_retry", None)
+        if callable(allows):
+            return bool(allows(tool_name))
+        return effect != "write"
+
     def run(
         self,
         *,
@@ -103,22 +212,15 @@ class ProductAgentService:
         reading = self._reading_fields(payload)
         tools = self._registry.list_tools()
         request_id = max(0, int(payload.get("request_id", 0) or 0))
+        user_message = str(payload["user_message"])
 
-        control.checkpoint("planner")
-        planner_started = monotonic()
-        plan = self._planner.plan(
+        route, route_metadata = self._resolve_route(
+            control=control,
             tools=tools,
-            user_message=str(payload["user_message"]),
-            source_text=str(reading["source_text"]),
-            translated_text=str(reading["translated_text"]),
-            resource_url=str(reading["resource_url"]),
-            resource_title=str(reading["resource_title"]),
-            section_heading=str(reading["section_heading"]),
-            context_before=str(reading["context_before"]),
-            context_after=str(reading["context_after"]),
-            source_kind=str(reading["source_kind"]),
+            user_message=user_message,
+            reading=reading,
         )
-        control.checkpoint("planner_result")
+        plan = _route_to_plan(route)
         self._emit(
             event_sink,
             "plan_ready",
@@ -127,11 +229,10 @@ class ProductAgentService:
                 "tool_name": plan.tool_name,
                 "user_visible_reason": plan.user_visible_reason,
                 "arguments": dict(plan.arguments),
+                "route_kind": route.kind,
+                "route_source": route.source,
                 "request_id": request_id,
-                "duration_ms": _duration_ms(planner_started),
-                "provider": str(getattr(self._planner, "provider_name", "") or ""),
-                "model": str(getattr(self._planner, "model", "") or ""),
-                "prompt_id": str(getattr(self._planner, "prompt_id", "") or ""),
+                **route_metadata,
             },
         )
 
@@ -140,7 +241,7 @@ class ProductAgentService:
             synthesis_started = monotonic()
             answer = self._chat_service.send(
                 session_id=str(payload.get("session_id", "agent-session")),
-                user_message=str(payload["user_message"]),
+                user_message=user_message,
                 **reading,
                 request_id=request_id,
                 context_mode="reading",
@@ -164,11 +265,12 @@ class ProductAgentService:
                 provider=answer.provider,
                 model=answer.model,
                 request_id=answer.request_id,
+                route=route,
             )
 
         spec = self._registry.get_tool(plan.tool_name)
         if spec is None:
-            raise RuntimeError(f"Validated plan references missing tool: {plan.tool_name}")
+            raise RuntimeError(f"Validated route references missing tool: {plan.tool_name}")
 
         self._emit(
             event_sink,
@@ -178,6 +280,7 @@ class ProductAgentService:
                 "arguments": dict(plan.arguments),
                 "effect": spec.effect,
                 "requires_confirmation": spec.requires_confirmation,
+                "route_source": route.source,
                 "request_id": request_id,
             },
         )
@@ -192,16 +295,14 @@ class ProductAgentService:
                 status="confirmation_required",
                 plan=plan,
                 request_id=request_id,
+                route=route,
             )
 
         try:
-            validated_arguments = self._registry.validate_planner_arguments(
-                spec.name,
-                plan.arguments,
-            )
+            validated_arguments = self._validated_arguments(spec.name, plan.arguments)
         except (KeyError, ValueError) as exc:
             raise AgentToolError(
-                f"Agent tool {spec.name} received invalid planner arguments: {exc}",
+                f"Agent tool {spec.name} received invalid route arguments: {exc}",
                 stage="tool",
                 fallback_reason="invalid_tool_arguments",
             ) from exc
@@ -218,7 +319,7 @@ class ProductAgentService:
         if spec.effect == "write":
             control.checkpoint(f"write_tool:{spec.name}")
             tool_result = self._registry.execute(spec.name, **execution_payload)
-        elif not self._registry.allows_safe_retry(spec.name):
+        elif not self._allows_safe_retry(spec.name, effect=spec.effect):
             control.checkpoint(f"tool:{spec.name}")
             tool_result = self._registry.execute(spec.name, **execution_payload)
         else:
@@ -290,6 +391,7 @@ class ProductAgentService:
                 model=tool_result.model,
                 request_id=request_id,
                 tool_result=tool_result,
+                route=route,
             )
 
         control.checkpoint("synthesis")
@@ -304,7 +406,7 @@ class ProductAgentService:
         synthesis_started = monotonic()
         answer = self._chat_service.send(
             session_id=str(payload.get("session_id", "agent-session")),
-            user_message=str(payload["user_message"]),
+            user_message=user_message,
             **reading,
             request_id=request_id,
             context_mode="reading",
@@ -331,12 +433,13 @@ class ProductAgentService:
             model=answer.model,
             request_id=answer.request_id,
             tool_result=tool_result,
+            route=route,
         )
 
     def close(self) -> None:
-        planner_close = getattr(self._planner, "close", None)
-        if callable(planner_close):
-            planner_close()
+        router_close = getattr(self._semantic_router, "close", None)
+        if callable(router_close):
+            router_close()
         chat_close = getattr(self._chat_service, "close", None)
         if callable(chat_close):
             chat_close()

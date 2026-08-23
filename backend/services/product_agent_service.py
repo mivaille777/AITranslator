@@ -22,7 +22,6 @@ from backend.services.agent_tool_registry import (
 )
 from backend.services.companion_chat_service import CompanionChatService
 
-_ALLOWED_PLANNER_ARGUMENTS = frozenset({"target_language", "style", "user_note"})
 AgentLifecycleSink = Callable[[str, dict[str, Any]], None]
 
 
@@ -195,19 +194,32 @@ class ProductAgentService:
                 request_id=request_id,
             )
 
+        try:
+            validated_arguments = self._registry.validate_planner_arguments(
+                spec.name,
+                plan.arguments,
+            )
+        except (KeyError, ValueError) as exc:
+            raise AgentToolError(
+                f"Agent tool {spec.name} received invalid planner arguments: {exc}",
+                stage="tool",
+                fallback_reason="invalid_tool_arguments",
+            ) from exc
+
         execution_payload = {
             **reading,
             "style": str(payload.get("style", "academic") or "academic"),
             "conversation_id": str(payload.get("conversation_id", "") or ""),
             "request_id": request_id,
+            **validated_arguments,
         }
-        for key, value in plan.arguments.items():
-            if key in _ALLOWED_PLANNER_ARGUMENTS:
-                execution_payload[key] = value
 
         tool_started = monotonic()
         if spec.effect == "write":
             control.checkpoint(f"write_tool:{spec.name}")
+            tool_result = self._registry.execute(spec.name, **execution_payload)
+        elif not self._registry.allows_safe_retry(spec.name):
+            control.checkpoint(f"tool:{spec.name}")
             tool_result = self._registry.execute(spec.name, **execution_payload)
         else:
             max_attempts = 1 + control.policy.max_safe_retries

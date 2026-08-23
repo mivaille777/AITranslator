@@ -110,12 +110,17 @@ try {
     Write-Host "UTF-8 mode: enabled (PYTHONUTF8=1)"
     Write-Host "Studio env: synchronized to ignored .env"
     Write-Host "Tracing:    $env:LANGSMITH_TRACING"
+    Write-Host "Blocking:   allowed for local Studio only (sync SQLite services)"
     Write-Host "API:        http://127.0.0.1:2024"
     Write-Host "Studio:     https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024"
     Write-Host "Press Ctrl+C to stop the development server."
     Write-Host ""
 
-    & langgraph dev
+    # AITrans currently uses synchronous local SQLite services. LangGraph's
+    # development Blockbuster guard intentionally rejects those calls on the
+    # ASGI event loop. --allow-blocking is confined to this local Studio path;
+    # it does not change the production FastAPI/Tauri runtime.
+    & langgraph dev --allow-blocking
     if ($LASTEXITCODE -ne 0) {
         throw "langgraph dev exited with code $LASTEXITCODE."
     }

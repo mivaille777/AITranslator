@@ -81,7 +81,7 @@ def test_repository_ignores_local_studio_credentials() -> None:
     assert ".env" in ignore
 
 
-def test_studio_launcher_handles_windows_utf8_and_dotenv_sync() -> None:
+def test_studio_launcher_handles_windows_utf8_dotenv_and_sync_sqlite() -> None:
     root = Path(__file__).resolve().parents[2]
     script = (root / "scripts" / "start_langsmith_studio.ps1").read_text(encoding="utf-8")
 
@@ -89,3 +89,5 @@ def test_studio_launcher_handles_windows_utf8_and_dotenv_sync() -> None:
     assert 'Set-DotEnvValue -Path $dotEnvPath -Name "LANGSMITH_API_KEY"' in script
     assert 'Set-DotEnvValue -Path $dotEnvPath -Name "LANGSMITH_TRACING"' in script
     assert "$env:LANGSMITH_API_KEY" in script
+    assert "langgraph dev --allow-blocking" in script
+    assert "allowed for local Studio only" in script

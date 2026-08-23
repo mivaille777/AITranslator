@@ -59,7 +59,15 @@ If the Studio CLI is missing:
 .\scripts\start_langsmith_studio.ps1 -Install
 ```
 
-The launcher also sets `PYTHONUTF8=1` before spawning LangGraph. This avoids the Windows GBK decoding failure seen when `langgraph_api` reads packaged UTF-8 OpenAPI resources.
+The launcher sets `PYTHONUTF8=1` before spawning LangGraph. This avoids the Windows GBK decoding failure seen when `langgraph_api` reads packaged UTF-8 OpenAPI resources.
+
+AITrans currently uses synchronous local SQLite services for Conversation persistence. LangGraph local development enables a Blockbuster guard that rejects blocking filesystem/SQLite work on the ASGI event loop. The launcher therefore starts Studio with:
+
+```powershell
+langgraph dev --allow-blocking
+```
+
+This exception is intentionally confined to the local Studio development path. It does not alter the normal FastAPI/Tauri production runtime. A future async persistence adapter could remove the need for this development flag.
 
 The default local Agent Server is available at:
 
@@ -77,21 +85,7 @@ Select the `reading_agent` graph and use **Graph** mode.
 
 ## 4. What you should see
 
-Stage 10.5 currently exposes:
-
-```text
-START
-  ↓
-prepare_conversation
-  ↓
-execute_single_step
-  ↓
-finalize_conversation
-  ↓
-END
-```
-
-Stage 10.6 will expand `execute_single_step` into explicit routing/planning/tool branches.
+The graph topology evolves with the current Agent stage. At minimum, the production workflow remains wrapped by Conversation preparation/finalization, while newer stages may expose routing/planning/tool branches inside that boundary.
 
 ## 5. Running the graph from Studio
 
@@ -118,7 +112,7 @@ For precise testing, choose **View Raw** and start with:
 }
 ```
 
-The graph will fill the remaining `AgentState` defaults. If the selected action needs an LLM/provider, AITrans must have the same provider credentials/configuration that the normal backend uses.
+The graph fills the remaining `AgentState` defaults. If the selected action needs an LLM/provider, AITrans must have the same provider credentials/configuration that the normal backend uses.
 
 ## 6. Privacy boundary
 

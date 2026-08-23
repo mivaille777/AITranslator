@@ -74,6 +74,8 @@ def build_evidence_item(
             "retrieval": dict(retrieval_metadata or {}),
             "candidate": dict(candidate.metadata),
             "rank": candidate.rank,
+            "page_number": chunk.page_number,
+            "section_heading": chunk.section_heading,
             "scores": {
                 "rerank": candidate.rerank_score,
                 "fusion": candidate.fusion_score,

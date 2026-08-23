@@ -1,5 +1,6 @@
 import { AlertCircle, FilePlus2, LibraryBig, RefreshCw, Search } from "lucide-react"
 import { useState } from "react"
+import { useSearchParams } from "react-router-dom"
 
 import { desktop } from "../../desktop"
 import { Button } from "../../shared/ui/Button"
@@ -16,6 +17,7 @@ type DocumentFilter = "all" | "pdf" | "docx" | "notes"
 
 export default function KnowledgeLibraryPanel({ library }: { library: KnowledgeLibraryController }) {
   const { documentsQuery, runtimeQuery, addMutation, deleteMutation, reindexMutation } = library
+  const [searchParams, setSearchParams] = useSearchParams()
   const documents = documentsQuery.data?.documents ?? []
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState<DocumentFilter>("all")
@@ -24,6 +26,16 @@ export default function KnowledgeLibraryPanel({ library }: { library: KnowledgeL
   const [removeTarget, setRemoveTarget] = useState<KnowledgeDocument | null>(null)
   const [openError, setOpenError] = useState("")
   const actionError = addMutation.error ?? deleteMutation.error ?? reindexMutation.error
+  const requestedDocument = documents.find((document) => document.document_id === searchParams.get("document")) ?? null
+  const activeDocument = selected ?? requestedDocument
+
+  function closeDocumentDetail() {
+    setSelected(null)
+    if (!searchParams.has("document")) return
+    const next = new URLSearchParams(searchParams)
+    next.delete("document")
+    setSearchParams(next, { replace: true })
+  }
 
   const visibleDocuments = (() => {
     const normalized = search.trim().toLocaleLowerCase()
@@ -72,8 +84,8 @@ export default function KnowledgeLibraryPanel({ library }: { library: KnowledgeL
 
       <p className="px-2 text-[11px] leading-5 text-slate-400">Supported files: PDF, DOCX, TXT, Markdown and HTML · Documents and models stay on this device.</p>
       <KnowledgeImportDialog open={importOpen} adding={addMutation.isPending} onClose={() => !addMutation.isPending && setImportOpen(false)} onBrowse={() => addMutation.mutate(undefined, { onSuccess: (result) => { if (result) setImportOpen(false) } })} />
-      {selected && <KnowledgeDocumentDetail document={selected} reindexing={reindexMutation.isPending && reindexMutation.variables === selected.document_id} onClose={() => setSelected(null)} onReindex={() => reindexMutation.mutate(selected.document_id)} onRemove={() => setRemoveTarget(selected)} />}
-      <KnowledgeDeleteDialog document={removeTarget} deleting={deleteMutation.isPending} onCancel={() => !deleteMutation.isPending && setRemoveTarget(null)} onConfirm={() => removeTarget && deleteMutation.mutate(removeTarget.document_id, { onSuccess: () => { if (selected?.document_id === removeTarget.document_id) setSelected(null); setRemoveTarget(null) } })} />
+      {activeDocument && <KnowledgeDocumentDetail document={activeDocument} reindexing={reindexMutation.isPending && reindexMutation.variables === activeDocument.document_id} onClose={closeDocumentDetail} onReindex={() => reindexMutation.mutate(activeDocument.document_id)} onRemove={() => setRemoveTarget(activeDocument)} />}
+      <KnowledgeDeleteDialog document={removeTarget} deleting={deleteMutation.isPending} onCancel={() => !deleteMutation.isPending && setRemoveTarget(null)} onConfirm={() => removeTarget && deleteMutation.mutate(removeTarget.document_id, { onSuccess: () => { if (activeDocument?.document_id === removeTarget.document_id) closeDocumentDetail(); setRemoveTarget(null) } })} />
     </div>
   )
 }

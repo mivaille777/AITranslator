@@ -5,6 +5,29 @@ export interface ResolvedCitation {
   evidence: AgentEvidenceItem[]
 }
 
+export interface EvidenceNavigation {
+  pageNumber: number | null
+  sectionHeading: string
+  knowledgeDocumentId: string
+}
+
+export function evidenceNavigation(item: AgentEvidenceItem): EvidenceNavigation {
+  const metadataPage = item.metadata.page_number
+  const pageFromMetadata = typeof metadataPage === "number" && Number.isInteger(metadataPage) && metadataPage > 0
+    ? metadataPage
+    : null
+  const pageFromLocation = item.location.match(/\bPage\s+(\d+)\b/i)?.[1]
+  const metadataSection = typeof item.metadata.section_heading === "string"
+    ? item.metadata.section_heading.trim()
+    : ""
+  const sectionFromLocation = item.location.match(/\bSection\s+(.+)$/i)?.[1]?.trim() ?? ""
+  return {
+    pageNumber: pageFromMetadata ?? (pageFromLocation ? Number(pageFromLocation) : null),
+    sectionHeading: metadataSection || sectionFromLocation,
+    knowledgeDocumentId: item.source_type === "knowledge" ? item.source_id.trim() : "",
+  }
+}
+
 export function resolveCitation(
   citation: AgentCitationRef,
   evidence: AgentEvidenceItem[],

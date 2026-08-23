@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
+import { MemoryRouter } from "react-router-dom"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { desktop } from "../../desktop"
@@ -42,14 +43,16 @@ function runtime(documentCount = 1) {
   return { enabled: true, embedding_provider: "qwen3", embedding_model: "Qwen3-Embedding-0.6B", embedding_status: "ready", device: "cuda", dimension: 1024, vector_store_provider: "qdrant", collection_name: "knowledge", document_count: documentCount, ready_document_count: documentCount, indexed_chunk_count: documentCount * 12, max_file_bytes: 1 }
 }
 
-function renderLibrary() {
+function renderLibrary(initialEntries = ["/knowledge"]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
-    <QueryClientProvider client={client}>
-      <LibraryHarness />
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={initialEntries}>
+      <QueryClientProvider client={client}>
+        <LibraryHarness />
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
 }
 
@@ -140,5 +143,16 @@ describe("Knowledge Library", () => {
     expect(await screen.findByRole("alert")).not.toBeNull()
     expect(screen.getByText("Knowledge runtime unavailable.")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Retry" })).not.toBeNull()
+  })
+
+  it("opens a document detail drawer from a citation navigation target", async () => {
+    fetchMock.mockImplementation(async (input) => String(input).endsWith("/runtime")
+      ? jsonResponse(runtime())
+      : jsonResponse({ total: 1, documents: [document("ready")] }))
+
+    renderLibrary(["/knowledge?document=doc-ready"])
+
+    expect(await screen.findByRole("dialog", { name: "Document details ready paper.pdf" })).not.toBeNull()
+    expect(screen.getByText(/512 target tokens · 80 overlap/)).not.toBeNull()
   })
 })

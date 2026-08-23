@@ -60,6 +60,8 @@ def test_evidence_location_comes_from_chunk_provenance(
     )
 
     assert evidence[0].location == expected
+    assert evidence[0].metadata["page_number"] == page_number
+    assert evidence[0].metadata["section_heading"] == section_heading
 
 
 @pytest.mark.parametrize(

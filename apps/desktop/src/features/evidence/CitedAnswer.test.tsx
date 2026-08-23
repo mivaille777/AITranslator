@@ -51,8 +51,10 @@ describe("RAG citation interaction", () => {
 
     expect(screen.getByRole("dialog", { name: "Citation detail [1]" })).not.toBeNull()
     expect(screen.getByText("Control Systems Paper")).not.toBeNull()
-    expect(screen.getByText("Page 8 · Section Stability")).not.toBeNull()
+    expect(screen.getByText("Page 8")).not.toBeNull()
+    expect(screen.getByText("Stability")).not.toBeNull()
     expect(screen.getByText(evidence.excerpt)).not.toBeNull()
+    expect(screen.getByRole("link", { name: "Knowledge details" }).getAttribute("href")).toBe("/knowledge?document=document-1")
   })
 
   it("opens only a safe local URI supplied by verified evidence", async () => {

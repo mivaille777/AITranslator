@@ -1,8 +1,16 @@
 import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
-import { AgentWorkspace as RuntimeAgentWorkspace } from "../companion/AgentWorkspace"
+import { AgentHeader } from "../companion/components/AgentHeader"
+import { AgentInputComposer } from "../companion/components/AgentInputComposer"
+import { AgentMessage } from "../companion/components/AgentMessage"
+import { AgentObservabilityPanel } from "../companion/components/AgentObservabilityPanel"
+import { AgentTrace } from "../companion/components/AgentTrace"
+import { ContextCard } from "../companion/components/ContextCard"
 import { agentWorkspaceAreas } from "./agent-workspace-layout"
+import { useAgentRuntime } from "./hooks/useAgentRuntime"
 
 export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceController }) {
+  const runtime = useAgentRuntime(workspace)
+
   return (
     <section aria-label="Agent Workspace" className="space-y-4">
       <div className="ait-surface overflow-hidden p-5 sm:p-6">
@@ -19,7 +27,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
             </p>
           </div>
           <p className="max-w-md text-xs leading-5 text-slate-400">
-            Stage 9.1 establishes the product boundary while preserving the existing tested streaming Agent runtime underneath it.
+            Runtime state now belongs to the Agent feature while the existing tested presentation components remain reusable.
           </p>
         </div>
 
@@ -42,7 +50,49 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
         </div>
       </div>
 
-      <RuntimeAgentWorkspace workspace={workspace} />
+      <AgentHeader phase={runtime.viewState.phase} uiMode={runtime.viewState.uiMode} />
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <ContextCard
+          text={runtime.sourceText}
+          title={runtime.context.resource_title}
+          section={runtime.context.section_heading}
+          sourceKind={runtime.context.source_kind}
+        />
+        <AgentTrace
+          activities={runtime.viewState.activities}
+          running={runtime.viewState.phase === "running" || runtime.viewState.phase === "cancelling"}
+          runId={runtime.viewState.runId}
+          traceId={runtime.viewState.traceId}
+          totalDurationMs={runtime.viewState.totalDurationMs}
+        />
+      </div>
+
+      <AgentMessage
+        content={runtime.viewState.outputText}
+        phase={runtime.viewState.phase}
+        provider={runtime.viewState.provider}
+        model={runtime.viewState.model}
+        confirmationTool={runtime.viewState.confirmationTool}
+        errorMessage={runtime.viewState.errorMessage}
+        onConfirm={runtime.confirmWriteTool}
+        confirming={runtime.pending}
+      />
+
+      <AgentObservabilityPanel
+        refreshToken={runtime.observabilityRefresh}
+        currentRunId={runtime.viewState.runId}
+      />
+
+      <AgentInputComposer
+        value={runtime.prompt}
+        onChange={runtime.setPrompt}
+        onSubmit={runtime.submitPrompt}
+        onCancel={runtime.cancelRun}
+        disabled={runtime.pending}
+        busy={runtime.pending}
+        cancelling={runtime.cancelRequested}
+      />
     </section>
   )
 }

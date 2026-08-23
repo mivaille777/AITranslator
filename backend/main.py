@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +27,8 @@ from backend.api.dependencies import (
     get_browser_context_service,
 )
 from backend.api.health import router as health_router
+from backend.api.knowledge import router as knowledge_router
+from backend.api.knowledge_dependencies import close_rag_runtime
 from backend.api.overlay import router as overlay_router
 from backend.api.quick_actions import router as quick_actions_router
 from backend.api.reading import router as reading_router
@@ -72,6 +74,7 @@ async def lifespan(_: FastAPI):
         close_quick_action_service()
         close_translation_service()
         close_agent_trace_store_service()
+        close_rag_runtime()
 
 
 def create_app() -> FastAPI:
@@ -97,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(overlay_router)
     app.include_router(quick_actions_router)
     app.include_router(research_router)
+    app.include_router(knowledge_router)
     app.include_router(agent_router)
     app.include_router(agent_observability_router)
     app.include_router(agent_runtime_config_router)

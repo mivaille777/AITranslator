@@ -21,6 +21,7 @@ from backend.rag.index_manifest import (
 )
 from backend.rag.models import NormalizedDocument
 from backend.rag.parsers import parse_document
+from backend.rag.sparse.store import SparseRetriever
 from backend.rag.stores.base import VectorStore
 
 ParseDocument = Callable[[str | Path], NormalizedDocument]
@@ -49,12 +50,14 @@ class IndexService:
         vector_store: VectorStore,
         manifest: IndexManifest,
         parser: ParseDocument = parse_document,
+        sparse_retriever: SparseRetriever | None = None,
     ) -> None:
         self._chunker = chunker
         self._embedding_provider = embedding_provider
         self._vector_store = vector_store
         self._manifest = manifest
         self._parser = parser
+        self._sparse_retriever = sparse_retriever
 
     def index_document(self, path: str | Path) -> IndexDocumentResult:
         return self._index_document(path, force=False)
@@ -80,6 +83,8 @@ class IndexService:
         if record is None:
             return False
         self._vector_store.delete_document(document_id)
+        if self._sparse_retriever is not None:
+            self._sparse_retriever.delete_document(document_id)
         self._manifest.delete(document_id)
         return True
 
@@ -153,6 +158,9 @@ class IndexService:
 
             self._manifest.mark_status(document_id, IndexStatus.INDEXING)
             self._vector_store.upsert_chunks(chunks, vectors)
+            if self._sparse_retriever is not None:
+                self._sparse_retriever.delete_document(document_id)
+                self._sparse_retriever.index_chunks(chunks)
             new_chunk_ids = [chunk.chunk_id for chunk in chunks]
             stale_chunk_ids = (
                 sorted(set(existing.chunk_ids) - set(new_chunk_ids)) if existing else []

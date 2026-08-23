@@ -12,6 +12,10 @@ from backend.agent_tools.builtin import (
     BuiltinAgentToolExecutors,
     build_builtin_tool_definitions,
 )
+from backend.agent_tools.reading import (
+    ReadingAgentTools,
+    build_reading_tool_definitions,
+)
 from backend.agent_tools.translation import (
     TranslationAgentTool,
     build_translation_tool_definition,
@@ -40,11 +44,11 @@ _CONTEXT_FIELDS = (
 
 
 class AgentToolRegistry:
-    """Typed registry over existing AITranslator capabilities.
+    """Typed registry over AITranslator Agent capabilities.
 
     The public ``AgentToolSpec`` surface remains stable for the planner and
-    HTTP API. Typed args/result models, executor bindings and retry policy live
-    in internal ``TypedAgentToolDefinition`` objects.
+    HTTP API. Each capability family owns its executor/service boundary while
+    the registry only assembles definitions and enforces the shared contract.
     """
 
     def __init__(
@@ -62,21 +66,32 @@ class AgentToolRegistry:
         else:
             fallback_service = None
 
+        shared_quick_action_service = quick_action_service or QuickActionService()
+
         translation_tool = TranslationAgentTool(
             translation_service=translation_service,
             translation_fallback_service=fallback_service,
         )
         translation_definition = build_translation_tool_definition(translation_tool)
 
-        executors = BuiltinAgentToolExecutors(
-            quick_action_service=quick_action_service or QuickActionService(),
+        reading_tools = ReadingAgentTools(
+            quick_action_service=shared_quick_action_service,
+        )
+        reading_definitions = build_reading_tool_definitions(reading_tools)
+
+        builtin_executors = BuiltinAgentToolExecutors(
+            quick_action_service=shared_quick_action_service,
             research_note_service=research_note_service or ResearchNoteService(),
         )
-        self._definitions = tuple(
-            build_builtin_tool_definitions(
-                executors,
-                translation_definition=translation_definition,
-            )
+        builtin_definitions = build_builtin_tool_definitions(builtin_executors)
+
+        # Preserve the established planner/catalog ordering while capability
+        # implementation ownership moves behind dedicated Tool boundaries.
+        self._definitions = (
+            reading_definitions[0],
+            translation_definition,
+            *reading_definitions[1:],
+            *builtin_definitions,
         )
         self._definition_by_name = {
             definition.spec.name: definition for definition in self._definitions
@@ -124,9 +139,6 @@ class AgentToolRegistry:
             raise KeyError(f"Unknown agent tool: {name}")
 
         spec = definition.spec
-        # Validate tool-owned arguments before the broader invocation context so
-        # callers receive the stable tool-boundary error contract for fields
-        # such as polish style or translation target language.
         args = definition.parse_args(dict(payload))
         context = self._invocation_context(payload)
         if spec.requires_reading_context and not context.source_text.strip():

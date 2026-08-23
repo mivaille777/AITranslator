@@ -1,4 +1,4 @@
-"""Strongly typed Agent tool contracts and built-in definitions."""
+"""Strongly typed Agent tool contracts and capability definitions."""
 
 from backend.agent_tools.base import (
     AgentToolExecutionResult,
@@ -6,6 +6,12 @@ from backend.agent_tools.base import (
     AgentToolModel,
     AgentToolSpec,
     TypedAgentToolDefinition,
+)
+from backend.agent_tools.reading import (
+    InspectReadingContextResultData,
+    QuickActionResultData,
+    ReadingAgentTools,
+    build_reading_tool_definitions,
 )
 from backend.agent_tools.translation import (
     TranslateSelectionArgs,
@@ -19,9 +25,13 @@ __all__ = [
     "AgentToolInvocationContext",
     "AgentToolModel",
     "AgentToolSpec",
+    "InspectReadingContextResultData",
+    "QuickActionResultData",
+    "ReadingAgentTools",
     "TranslateSelectionArgs",
     "TranslationAgentTool",
     "TranslationResultData",
     "TypedAgentToolDefinition",
+    "build_reading_tool_definitions",
     "build_translation_tool_definition",
 ]

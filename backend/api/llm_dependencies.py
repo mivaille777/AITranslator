@@ -6,6 +6,7 @@ from threading import Lock
 
 from app.ai.chat.service import AIChatService
 from app.ai.gateway import LLMGateway
+from backend.services.agent_multi_step_planner_service import AgentMultiStepPlannerService
 from backend.services.agent_router_service import AgentSemanticRouterService
 from backend.services.agent_tool_registry import AgentToolRegistry
 from backend.services.companion_chat_service import CompanionChatService
@@ -46,6 +47,9 @@ def build_routed_product_agent_service(
     semantic_router = AgentSemanticRouterService(
         text_service=gateway.create_text_service("planner")
     )
+    multi_step_planner = AgentMultiStepPlannerService(
+        text_service=gateway.create_text_service("planner")
+    )
     synthesis = CompanionChatService(
         text_service=gateway.create_text_service("agent_synthesis"),
         reading_resolver=resolver,
@@ -54,6 +58,7 @@ def build_routed_product_agent_service(
         registry=registry,
         chat_service=synthesis,
         semantic_router=semantic_router,
+        multi_step_planner=multi_step_planner,
     )
 
 

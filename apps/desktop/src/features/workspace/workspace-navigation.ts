@@ -31,7 +31,7 @@ export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
   {
     path: "/agent",
     label: "Agent Workspace",
-    description: "Manage context, execution trace, and AI agent interactions.",
+    description: "Run Agent tasks with visible context, execution trace, tool activity, and results.",
   },
   {
     path: "/research",

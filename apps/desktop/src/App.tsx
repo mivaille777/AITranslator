@@ -1,8 +1,8 @@
 import { lazy, Suspense } from "react"
 import { Navigate, Route, Routes, useLocation } from "react-router-dom"
 
+import AgentWorkspace from "./features/agent/AgentWorkspace"
 import CompanionHandoffNavigator from "./features/companion/CompanionHandoffNavigator"
-import AgentWorkspace from "./features/companion/AgentWorkspace"
 import BrowserReadingContextPanel from "./features/reading/BrowserReadingContextPanel"
 import TranslationWorkspace from "./features/translation/TranslationWorkspace"
 import { useTranslationWorkspace } from "./features/translation/useTranslationWorkspace"

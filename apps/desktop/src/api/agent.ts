@@ -3,6 +3,8 @@ import type { ReadingContextFields } from "./types"
 
 export type AgentRunStatus = "completed" | "confirmation_required"
 export type AgentPlanAction = "answer" | "tool"
+export type AgentPlanMode = "none" | "single_step" | "multi_step"
+export type AgentStepStatus = "pending" | "running" | "completed" | "failed" | "skipped"
 export type AgentToolEffect = "read" | "compute" | "write"
 export type AgentClientSurface = "main" | "overlay" | "unknown"
 export type AgentTraceEventType =
@@ -22,6 +24,21 @@ export interface AgentPlan {
   tool_name: string
   user_visible_reason: string
   arguments: Record<string, string>
+}
+
+export interface AgentPlanStep {
+  step_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+  depends_on: string[]
+  status: AgentStepStatus
+}
+
+export interface AgentMultiStepPlan {
+  goal: string
+  mode: AgentPlanMode
+  steps: AgentPlanStep[]
+  current_step_id: string
 }
 
 export interface AgentToolExecuteResponse {
@@ -53,6 +70,7 @@ export interface AgentRunRequest extends ReadingContextFields {
 export interface AgentRunResponse {
   status: AgentRunStatus
   plan: AgentPlan
+  multi_step_plan?: AgentMultiStepPlan | null
   output_text: string
   provider: string
   model: string

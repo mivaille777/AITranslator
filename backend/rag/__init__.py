@@ -1,6 +1,7 @@
 """RAG domain contracts and ingestion boundary for AITrans knowledge retrieval."""
 
 from backend.rag.chunking import CHUNKER_VERSION, StructureAwareChunker, chunk_document
+from backend.rag.citation_service import CitationService, build_evidence_citations
 from backend.rag.config import (
     RagChunkingConfig,
     RagConfig,
@@ -48,6 +49,7 @@ from backend.rag.tokenization import (
 
 __all__ = [
     "CHUNKER_VERSION",
+    "CitationService",
     "DocumentChunk",
     "DocumentPage",
     "DocumentSection",
@@ -83,6 +85,7 @@ __all__ = [
     "TransformersTokenCounter",
     "UnsupportedDocumentTypeError",
     "build_agent_evidence",
+    "build_evidence_citations",
     "build_evidence_item",
     "build_stable_chunk_id",
     "chunk_document",

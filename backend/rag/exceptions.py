@@ -17,12 +17,17 @@ class RagParsingError(RagError):
     """Raised when a source document cannot be normalized safely."""
 
 
+class RagEmbeddingError(RagError):
+    """Raised when an embedding runtime cannot load or produce valid vectors."""
+
+
 class UnsupportedDocumentTypeError(RagParsingError):
     """Raised when no basic ingestion parser supports a document type."""
 
 
 __all__ = [
     "RagConfigurationError",
+    "RagEmbeddingError",
     "RagError",
     "RagInvariantError",
     "RagParsingError",

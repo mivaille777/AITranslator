@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, Self, runtime_checkable
 
 
 @runtime_checkable
@@ -27,4 +27,34 @@ class HeuristicTokenCounter:
         return sum(1 for _ in self._TOKEN_PATTERN.finditer(text))
 
 
-__all__ = ["HeuristicTokenCounter", "TokenCounter"]
+class TransformersTokenCounter:
+    """Adapter for an already-loaded Hugging Face-compatible tokenizer."""
+
+    def __init__(self, tokenizer: Any) -> None:
+        if not callable(getattr(tokenizer, "encode", None)):
+            raise TypeError("tokenizer must provide an encode() method")
+        self._tokenizer = tokenizer
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model_name_or_path: str,
+        *,
+        local_files_only: bool = False,
+    ) -> Self:
+        from transformers import AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name_or_path,
+            local_files_only=local_files_only,
+        )
+        return cls(tokenizer)
+
+    def count(self, text: str) -> int:
+        if not text:
+            return 0
+        token_ids = self._tokenizer.encode(text, add_special_tokens=False)
+        return len(token_ids)
+
+
+__all__ = ["HeuristicTokenCounter", "TokenCounter", "TransformersTokenCounter"]

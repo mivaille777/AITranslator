@@ -1,4 +1,8 @@
-from backend.rag.tokenization import HeuristicTokenCounter, TokenCounter
+from backend.rag.tokenization import (
+    HeuristicTokenCounter,
+    TokenCounter,
+    TransformersTokenCounter,
+)
 
 
 def test_heuristic_counter_handles_empty_text() -> None:
@@ -28,3 +32,26 @@ def test_heuristic_counter_is_deterministic_and_satisfies_protocol() -> None:
 
     assert isinstance(counter, TokenCounter)
     assert counter.count(text) == counter.count(text)
+
+
+def test_transformers_counter_uses_tokenizer_without_special_tokens() -> None:
+    class FakeTokenizer:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, bool]] = []
+
+        def encode(self, text: str, *, add_special_tokens: bool) -> list[int]:
+            self.calls.append((text, add_special_tokens))
+            return [1, 2, 3]
+
+    tokenizer = FakeTokenizer()
+    counter = TransformersTokenCounter(tokenizer)
+
+    assert counter.count("test text") == 3
+    assert tokenizer.calls == [("test text", False)]
+
+
+def test_transformers_counter_rejects_invalid_tokenizer() -> None:
+    import pytest
+
+    with pytest.raises(TypeError, match="encode"):
+        TransformersTokenCounter(object())

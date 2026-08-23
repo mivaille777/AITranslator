@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+import math
+from collections.abc import Callable, Sequence
+from threading import RLock
+from time import perf_counter
+from typing import Any
+
+from backend.rag.config import RagEmbeddingConfig
+from backend.rag.embeddings.runtime import (
+    EmbeddingRuntimeSnapshot,
+    EmbeddingRuntimeStatus,
+    resolve_embedding_device,
+)
+from backend.rag.exceptions import RagConfigurationError, RagEmbeddingError
+
+ModelFactory = Callable[..., Any]
+
+
+def _default_model_factory(*args: Any, **kwargs: Any) -> Any:
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise RagEmbeddingError(
+            "sentence-transformers is required for the Qwen3 embedding provider"
+        ) from exc
+    return SentenceTransformer(*args, **kwargs)
+
+
+def _load_torch() -> Any:
+    try:
+        import torch
+    except ImportError as exc:
+        raise RagEmbeddingError("PyTorch is required for Qwen3 embeddings") from exc
+    return torch
+
+
+class Qwen3EmbeddingProvider:
+    """Lazy, reusable Sentence Transformers runtime for Qwen3 embeddings."""
+
+    def __init__(
+        self,
+        config: RagEmbeddingConfig | None = None,
+        *,
+        model_factory: ModelFactory | None = None,
+        torch_module: Any | None = None,
+    ) -> None:
+        self._config = config or RagEmbeddingConfig()
+        if not self._config.normalize:
+            raise RagConfigurationError(
+                "Qwen3 embedding vectors must use normalize_embeddings=True"
+            )
+        self._model_factory = model_factory or _default_model_factory
+        self._torch = torch_module
+        self._model: Any | None = None
+        self._lock = RLock()
+        self._status = EmbeddingRuntimeStatus.UNINITIALIZED
+        self._device = self._config.device
+        self._load_time_ms = 0.0
+        self._last_error = ""
+        self._allocated_vram_mb: float | None = None
+        self._reserved_vram_mb: float | None = None
+
+    @property
+    def dimension(self) -> int:
+        return self._config.dimension
+
+    @property
+    def model_name(self) -> str:
+        return self._config.model
+
+    @property
+    def runtime(self) -> EmbeddingRuntimeSnapshot:
+        with self._lock:
+            return EmbeddingRuntimeSnapshot(
+                status=self._status,
+                model_name=self.model_name,
+                device=self._device,
+                dimension=self.dimension,
+                load_time_ms=self._load_time_ms,
+                last_error=self._last_error,
+                allocated_vram_mb=self._allocated_vram_mb,
+                reserved_vram_mb=self._reserved_vram_mb,
+            )
+
+    def embed_query(self, text: str) -> list[float]:
+        if not text or not text.strip():
+            raise RagEmbeddingError("embedding query must not be empty")
+        model = self._ensure_model()
+        vectors = self._encode_query(model, text)
+        return self._validate_vectors(vectors, expected_count=1)[0]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        if any(not text or not text.strip() for text in texts):
+            raise RagEmbeddingError("embedding documents must not contain empty text")
+        model = self._ensure_model()
+        vectors = model.encode(
+            texts,
+            batch_size=self._config.batch_size,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        return self._validate_vectors(vectors, expected_count=len(texts))
+
+    def _ensure_model(self) -> Any:
+        with self._lock:
+            if self._status is EmbeddingRuntimeStatus.READY and self._model is not None:
+                return self._model
+            if self._status is EmbeddingRuntimeStatus.FAILED:
+                raise RagEmbeddingError(
+                    self._last_error or "Qwen3 embedding runtime previously failed"
+                )
+
+            self._status = EmbeddingRuntimeStatus.LOADING
+            started = perf_counter()
+            try:
+                torch_module = self._torch or _load_torch()
+                self._torch = torch_module
+                self._device = resolve_embedding_device(
+                    self._config.device,
+                    torch_module,
+                )
+                model_source = self._config.model_path.strip() or self._config.model
+                model = self._model_factory(
+                    model_source,
+                    device=self._device,
+                    local_files_only=self._config.local_files_only,
+                )
+                if self._config.warmup:
+                    warmup_vectors = self._encode_query(model, "warmup")
+                    self._validate_vectors(warmup_vectors, expected_count=1)
+                self._model = model
+                self._load_time_ms = (perf_counter() - started) * 1000
+                self._capture_gpu_memory()
+                self._last_error = ""
+                self._status = EmbeddingRuntimeStatus.READY
+                return model
+            except Exception as exc:
+                self._model = None
+                self._load_time_ms = (perf_counter() - started) * 1000
+                self._last_error = str(exc) or exc.__class__.__name__
+                self._status = EmbeddingRuntimeStatus.FAILED
+                if isinstance(exc, (RagConfigurationError, RagEmbeddingError)):
+                    raise
+                raise RagEmbeddingError(
+                    f"failed to initialize Qwen3 embedding runtime: {self._last_error}"
+                ) from exc
+
+    def _encode_query(self, model: Any, text: str) -> Any:
+        return model.encode(
+            [text],
+            prompt_name="query",
+            batch_size=self._config.batch_size,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+
+    def _validate_vectors(
+        self,
+        values: Any,
+        *,
+        expected_count: int,
+    ) -> list[list[float]]:
+        if hasattr(values, "tolist"):
+            values = values.tolist()
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+            raise RagEmbeddingError("embedding output must be a sequence of vectors")
+        if len(values) != expected_count:
+            raise RagEmbeddingError(
+                f"embedding output count mismatch: expected {expected_count}, got {len(values)}"
+            )
+
+        validated: list[list[float]] = []
+        for vector in values:
+            if hasattr(vector, "tolist"):
+                vector = vector.tolist()
+            if not isinstance(vector, Sequence) or isinstance(vector, (str, bytes)):
+                raise RagEmbeddingError("embedding vector must be a numeric sequence")
+            if len(vector) != self.dimension:
+                raise RagEmbeddingError(
+                    f"embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
+                )
+            try:
+                converted = [float(value) for value in vector]
+            except (TypeError, ValueError) as exc:
+                raise RagEmbeddingError(
+                    "embedding vector contains a non-numeric value"
+                ) from exc
+            if not all(math.isfinite(value) for value in converted):
+                raise RagEmbeddingError("embedding vector contains non-finite values")
+            validated.append(converted)
+        return validated
+
+    def _capture_gpu_memory(self) -> None:
+        if self._device != "cuda" or self._torch is None:
+            return
+        cuda = self._torch.cuda
+        try:
+            self._allocated_vram_mb = float(cuda.memory_allocated()) / (1024**2)
+            self._reserved_vram_mb = float(cuda.memory_reserved()) / (1024**2)
+        except (AttributeError, RuntimeError):
+            self._allocated_vram_mb = None
+            self._reserved_vram_mb = None
+
+
+__all__ = ["Qwen3EmbeddingProvider"]

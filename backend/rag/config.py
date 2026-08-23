@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RagConfigModel(BaseModel):
@@ -15,7 +15,7 @@ class RagChunkingConfig(RagConfigModel):
     minimum_tokens: int = Field(default=100, ge=1)
 
     @model_validator(mode="after")
-    def validate_chunk_bounds(self) -> "RagChunkingConfig":
+    def validate_chunk_bounds(self) -> RagChunkingConfig:
         if self.minimum_tokens > self.target_tokens:
             raise ValueError("minimum_tokens must not exceed target_tokens")
         if self.overlap_tokens >= self.target_tokens:
@@ -32,6 +32,16 @@ class RagEmbeddingConfig(RagConfigModel):
     normalize: bool = True
     max_input_tokens: int = Field(default=2048, ge=1)
     warmup: bool = True
+    local_files_only: bool = False
+    model_path: str = ""
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"auto", "cuda", "cpu"}:
+            raise ValueError("device must be one of: auto, cuda, cpu")
+        return normalized
 
 
 class RagVectorStoreConfig(RagConfigModel):
@@ -48,7 +58,7 @@ class RagRetrievalConfig(RagConfigModel):
     fusion: str = "rrf"
 
     @model_validator(mode="after")
-    def validate_retrieval_bounds(self) -> "RagRetrievalConfig":
+    def validate_retrieval_bounds(self) -> RagRetrievalConfig:
         if self.final_top_k > self.fusion_top_k:
             raise ValueError("final_top_k must not exceed fusion_top_k")
         return self

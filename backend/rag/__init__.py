@@ -8,8 +8,16 @@ from backend.rag.config import (
     RagRetrievalConfig,
     RagVectorStoreConfig,
 )
+from backend.rag.embeddings import (
+    EmbeddingProvider,
+    EmbeddingRuntimeSnapshot,
+    EmbeddingRuntimeStatus,
+    Qwen3EmbeddingProvider,
+    create_embedding_provider,
+)
 from backend.rag.exceptions import (
     RagConfigurationError,
+    RagEmbeddingError,
     RagError,
     RagInvariantError,
     RagParsingError,
@@ -26,20 +34,29 @@ from backend.rag.models import (
     build_stable_chunk_id,
 )
 from backend.rag.parsers import get_parser_for_path, parse_document
-from backend.rag.tokenization import HeuristicTokenCounter, TokenCounter
+from backend.rag.tokenization import (
+    HeuristicTokenCounter,
+    TokenCounter,
+    TransformersTokenCounter,
+)
 
 __all__ = [
     "CHUNKER_VERSION",
     "DocumentChunk",
     "DocumentPage",
     "DocumentSection",
+    "EmbeddingProvider",
+    "EmbeddingRuntimeSnapshot",
+    "EmbeddingRuntimeStatus",
     "HeuristicTokenCounter",
     "KnowledgeDocument",
     "NormalizedDocument",
+    "Qwen3EmbeddingProvider",
     "RagChunkingConfig",
     "RagConfig",
     "RagConfigurationError",
     "RagEmbeddingConfig",
+    "RagEmbeddingError",
     "RagError",
     "RagInvariantError",
     "RagParsingError",
@@ -49,9 +66,11 @@ __all__ = [
     "RetrievalResult",
     "StructureAwareChunker",
     "TokenCounter",
+    "TransformersTokenCounter",
     "UnsupportedDocumentTypeError",
     "build_stable_chunk_id",
     "chunk_document",
+    "create_embedding_provider",
     "get_parser_for_path",
     "parse_document",
 ]

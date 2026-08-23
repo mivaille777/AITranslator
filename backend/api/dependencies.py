@@ -3,6 +3,7 @@ from __future__ import annotations
 from threading import Lock
 
 from backend.api.llm_dependencies import (
+    build_rag_query_planner,
     build_routed_product_agent_service,
     build_routed_quick_action_service,
 )
@@ -230,6 +231,7 @@ def get_agent_tool_registry() -> AgentToolRegistry:
                 quick_action_service=get_quick_action_service(),
                 research_note_service=get_research_note_service(),
                 retrieval_service=get_retrieval_service(),
+                query_planner=build_rag_query_planner(),
             )
         return _agent_tool_registry
 

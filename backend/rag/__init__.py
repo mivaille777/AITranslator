@@ -42,6 +42,7 @@ from backend.rag.models import (
     build_stable_chunk_id,
 )
 from backend.rag.parsers import get_parser_for_path, parse_document
+from backend.rag.query_planner import RagQueryPlan, RagQueryPlanner, merge_query_results
 from backend.rag.tokenization import (
     HeuristicTokenCounter,
     TokenCounter,
@@ -76,6 +77,8 @@ __all__ = [
     "RagError",
     "RagInvariantError",
     "RagParsingError",
+    "RagQueryPlan",
+    "RagQueryPlanner",
     "RagRerankerConfig",
     "RagRetrievalConfig",
     "RagRetrievalError",
@@ -94,5 +97,6 @@ __all__ = [
     "chunk_document",
     "create_embedding_provider",
     "get_parser_for_path",
+    "merge_query_results",
     "parse_document",
 ]

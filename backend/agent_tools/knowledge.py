@@ -15,6 +15,7 @@ from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
 from backend.rag.citation_service import build_evidence_citations
 from backend.rag.evidence_builder import build_agent_evidence
 from backend.rag.models import RetrievalCandidate
+from backend.rag.query_planner import RagQueryPlan, merge_query_results
 from backend.rag.stores.base import VectorSearchFilter
 
 
@@ -54,6 +55,7 @@ class KnowledgeSearchResultData(AgentToolModel):
     fallback_reason: str = ""
     evidence: list[AgentEvidenceItem] = Field(default_factory=list)
     citations: list[AgentCitationRef] = Field(default_factory=list)
+    query_plan: RagQueryPlan | None = None
 
 
 def _document_ids(args: KnowledgeSearchArgs) -> list[str]:
@@ -91,8 +93,14 @@ def _result_item(candidate: RetrievalCandidate) -> dict[str, Any]:
 class KnowledgeAgentTools:
     """Agent-facing boundary over local hybrid knowledge retrieval."""
 
-    def __init__(self, *, retrieval_service: Any | None) -> None:
+    def __init__(
+        self,
+        *,
+        retrieval_service: Any | None,
+        query_planner: Any | None = None,
+    ) -> None:
         self._retrieval_service = retrieval_service
+        self._query_planner = query_planner
 
     def search_knowledge_base(
         self,
@@ -107,18 +115,40 @@ class KnowledgeAgentTools:
         filters = (
             VectorSearchFilter(document_ids=document_ids) if document_ids else None
         )
-        try:
-            retrieval = self._retrieval_service.retrieve(
-                typed.query,
-                filters=filters,
+        plan = (
+            self._query_planner.plan(typed.query)
+            if self._query_planner is not None
+            else RagQueryPlan(
+                original_query=typed.query,
+                rewritten_query=typed.query,
+                subqueries=[],
             )
-        except Exception as exc:
-            detail = str(exc) or exc.__class__.__name__
-            raise RuntimeError(f"Knowledge retrieval failed: {detail}") from exc
+        )
+        retrievals = []
+        retrieval_errors: list[str] = []
+        for retrieval_query in plan.retrieval_queries:
+            try:
+                retrievals.append(
+                    self._retrieval_service.retrieve(
+                        retrieval_query,
+                        filters=filters,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001 - degrade per subquery
+                retrieval_errors.append(str(exc) or exc.__class__.__name__)
+        if not retrievals:
+            detail = "; ".join(retrieval_errors) or "retrieval unavailable"
+            raise RuntimeError(f"Knowledge retrieval failed: {detail}")
+        default_limit = max((len(item.candidates) for item in retrievals), default=1)
+        retrieval = merge_query_results(
+            typed.query,
+            retrievals,
+            limit=typed.top_k or default_limit,
+        )
+        if retrieval_errors:
+            retrieval.metadata["subquery_errors"] = retrieval_errors
 
         candidates = retrieval.candidates
-        if typed.top_k is not None:
-            candidates = candidates[: typed.top_k]
         limited_retrieval = retrieval.model_copy(update={"candidates": candidates})
         evidence = build_agent_evidence(limited_retrieval)
         citations = build_evidence_citations(evidence)
@@ -148,6 +178,7 @@ class KnowledgeAgentTools:
                 "fallback_reason": fallback_reason,
                 "evidence": [item.model_dump(mode="json") for item in evidence],
                 "citations": [item.model_dump(mode="json") for item in citations],
+                "query_plan": plan.model_dump(mode="json"),
             },
         )
 

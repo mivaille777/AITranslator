@@ -67,6 +67,7 @@ class AgentToolRegistry:
         quick_action_service: QuickActionService | Any | None = None,
         research_note_service: ResearchNoteService | Any | None = None,
         retrieval_service: Any | None = None,
+        query_planner: Any | None = None,
     ) -> None:
         if translation_fallback_service is not None:
             fallback_service = translation_fallback_service
@@ -99,7 +100,10 @@ class AgentToolRegistry:
         )
         research_definitions = build_research_tool_definitions(research_tools)
 
-        knowledge_tools = KnowledgeAgentTools(retrieval_service=retrieval_service)
+        knowledge_tools = KnowledgeAgentTools(
+            retrieval_service=retrieval_service,
+            query_planner=query_planner,
+        )
         knowledge_definitions = build_knowledge_tool_definitions(knowledge_tools)
 
         # Preserve the established planner/catalog ordering for all public tools.

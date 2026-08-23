@@ -5,7 +5,8 @@ from __future__ import annotations
 from threading import Lock
 
 from app.ai.chat.service import AIChatService
-from app.ai.gateway import LLMGateway
+from app.ai.gateway import LLMGateway, RoutedAITextService
+from backend.rag.query_planner import RagQueryPlanner
 from backend.services.agent_multi_step_planner_service import (
     AgentMultiStepPlannerService,
 )
@@ -19,6 +20,8 @@ from backend.services.reading_selection_resolver import ReadingSelectionResolver
 
 _gateway: LLMGateway | None = None
 _gateway_lock = Lock()
+_planner_text_service: RoutedAITextService | None = None
+_planner_text_service_lock = Lock()
 
 
 def get_llm_gateway() -> LLMGateway:
@@ -29,6 +32,20 @@ def get_llm_gateway() -> LLMGateway:
         if _gateway is None:
             _gateway = LLMGateway()
         return _gateway
+
+
+def get_planner_text_service() -> RoutedAITextService:
+    global _planner_text_service
+    if _planner_text_service is not None:
+        return _planner_text_service
+    with _planner_text_service_lock:
+        if _planner_text_service is None:
+            _planner_text_service = get_llm_gateway().create_text_service("planner")
+        return _planner_text_service
+
+
+def build_rag_query_planner() -> RagQueryPlanner:
+    return RagQueryPlanner(text_service=get_planner_text_service())
 
 
 def build_routed_quick_action_service() -> QuickActionService:
@@ -47,11 +64,10 @@ def build_routed_product_agent_service(
     resolver: ReadingSelectionResolver,
 ) -> ProductAgentService:
     gateway = get_llm_gateway()
-    semantic_router = AgentSemanticRouterService(
-        text_service=gateway.create_text_service("planner")
-    )
+    planner_text_service = get_planner_text_service()
+    semantic_router = AgentSemanticRouterService(text_service=planner_text_service)
     multi_step_planner = AgentMultiStepPlannerService(
-        text_service=gateway.create_text_service("planner")
+        text_service=planner_text_service
     )
     synthesis = CompanionChatService(
         text_service=gateway.create_text_service("agent_synthesis"),
@@ -67,7 +83,9 @@ def build_routed_product_agent_service(
 
 
 __all__ = [
+    "build_rag_query_planner",
     "build_routed_product_agent_service",
     "build_routed_quick_action_service",
     "get_llm_gateway",
+    "get_planner_text_service",
 ]

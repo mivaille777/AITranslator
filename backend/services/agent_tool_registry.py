@@ -16,6 +16,10 @@ from backend.agent_tools.reading import (
     ReadingAgentTools,
     build_reading_tool_definitions,
 )
+from backend.agent_tools.research import (
+    ResearchAgentTools,
+    build_research_tool_definitions,
+)
 from backend.agent_tools.translation import (
     TranslationAgentTool,
     build_translation_tool_definition,
@@ -67,6 +71,7 @@ class AgentToolRegistry:
             fallback_service = None
 
         shared_quick_action_service = quick_action_service or QuickActionService()
+        shared_research_note_service = research_note_service or ResearchNoteService()
 
         translation_tool = TranslationAgentTool(
             translation_service=translation_service,
@@ -79,19 +84,25 @@ class AgentToolRegistry:
         )
         reading_definitions = build_reading_tool_definitions(reading_tools)
 
+        research_tools = ResearchAgentTools(
+            research_note_service=shared_research_note_service,
+        )
+        research_definitions = build_research_tool_definitions(research_tools)
+
         builtin_executors = BuiltinAgentToolExecutors(
             quick_action_service=shared_quick_action_service,
-            research_note_service=research_note_service or ResearchNoteService(),
+            research_note_service=shared_research_note_service,
         )
         builtin_definitions = build_builtin_tool_definitions(builtin_executors)
 
-        # Preserve the established planner/catalog ordering while capability
-        # implementation ownership moves behind dedicated Tool boundaries.
+        # Preserve the established planner/catalog ordering for existing tools,
+        # then append new Research-memory read/update capabilities.
         self._definitions = (
             reading_definitions[0],
             translation_definition,
             *reading_definitions[1:],
             *builtin_definitions,
+            *research_definitions,
         )
         self._definition_by_name = {
             definition.spec.name: definition for definition in self._definitions

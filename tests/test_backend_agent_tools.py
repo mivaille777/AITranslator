@@ -93,11 +93,21 @@ def test_agent_tool_catalog_declares_side_effect_boundaries() -> None:
         "analyze_section_role",
         "polish_selection",
         "save_research_note",
+        "list_research_notes",
+        "get_research_note",
+        "update_research_note",
     }
     assert tools["translate_selection"].effect == "compute"
     assert tools["translate_selection"].requires_confirmation is False
     assert tools["save_research_note"].effect == "write"
     assert tools["save_research_note"].requires_confirmation is True
+    assert tools["list_research_notes"].effect == "read"
+    assert tools["list_research_notes"].requires_confirmation is False
+    assert tools["get_research_note"].effect == "read"
+    assert tools["get_research_note"].requires_confirmation is False
+    assert tools["update_research_note"].effect == "write"
+    assert tools["update_research_note"].requires_confirmation is True
+    assert "delete_research_note" not in tools
 
 
 def test_agent_tool_registry_reuses_existing_translation_and_quick_actions() -> None:

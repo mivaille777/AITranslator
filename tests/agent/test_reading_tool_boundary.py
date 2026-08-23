@@ -38,6 +38,7 @@ class StubResearchNoteService:
         raise AssertionError("research write should not run in Reading Tool tests")
 
 
+
 def reading_context() -> AgentToolInvocationContext:
     return AgentToolInvocationContext(
         source_text="Gaussian processes model uncertainty.",
@@ -55,6 +56,7 @@ def reading_context() -> AgentToolInvocationContext:
     )
 
 
+
 def test_inspect_reading_context_is_a_pure_read_tool() -> None:
     quick_action = StubQuickActionService()
     tools = ReadingAgentTools(quick_action_service=quick_action)
@@ -68,6 +70,7 @@ def test_inspect_reading_context_is_a_pure_read_tool() -> None:
     assert result.data["resource_title"] == "Control paper"
     assert result.data["section_heading"] == "Methods"
     assert quick_action.calls == []
+
 
 
 def test_reading_compute_tools_share_the_frozen_context_boundary() -> None:
@@ -98,6 +101,7 @@ def test_reading_compute_tools_share_the_frozen_context_boundary() -> None:
     assert analyzed.data == {"action": "reading_section_role"}
 
 
+
 def test_reading_definitions_expose_stable_public_contracts() -> None:
     definitions = build_reading_tool_definitions(
         ReadingAgentTools(quick_action_service=StubQuickActionService())
@@ -120,6 +124,7 @@ def test_reading_definitions_expose_stable_public_contracts() -> None:
     assert all(definition.allows_safe_retry for definition in definitions)
 
 
+
 def test_registry_preserves_existing_tool_catalog_order_and_dispatch() -> None:
     quick_action = StubQuickActionService()
     registry = AgentToolRegistry(
@@ -128,7 +133,7 @@ def test_registry_preserves_existing_tool_catalog_order_and_dispatch() -> None:
         research_note_service=StubResearchNoteService(),
     )
 
-    assert [tool.name for tool in registry.list_tools()] == [
+    assert [tool.name for tool in registry.list_tools()][:7] == [
         "inspect_reading_context",
         "translate_selection",
         "explain_selection",

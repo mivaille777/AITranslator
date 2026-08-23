@@ -3,6 +3,7 @@
 from backend.rag.chunking import CHUNKER_VERSION, StructureAwareChunker, chunk_document
 from backend.rag.citation_service import CitationService, build_evidence_citations
 from backend.rag.config import (
+    RagAdvancedParsingConfig,
     RagChunkingConfig,
     RagConfig,
     RagEmbeddingConfig,
@@ -51,7 +52,12 @@ from backend.rag.models import (
     RetrievalResult,
     build_stable_chunk_id,
 )
-from backend.rag.parsers import get_parser_for_path, parse_document
+from backend.rag.parsers import (
+    AdvancedParserWithFallback,
+    DoclingDocumentParser,
+    get_parser_for_path,
+    parse_document,
+)
 from backend.rag.query_planner import RagQueryPlan, RagQueryPlanner, merge_query_results
 from backend.rag.tokenization import (
     HeuristicTokenCounter,
@@ -61,7 +67,9 @@ from backend.rag.tokenization import (
 
 __all__ = [
     "CHUNKER_VERSION",
+    "AdvancedParserWithFallback",
     "CitationService",
+    "DoclingDocumentParser",
     "DocumentChunk",
     "DocumentPage",
     "DocumentSection",
@@ -79,6 +87,7 @@ __all__ = [
     "KnowledgeDocument",
     "NormalizedDocument",
     "Qwen3EmbeddingProvider",
+    "RagAdvancedParsingConfig",
     "RagChunkingConfig",
     "RagClaimPrediction",
     "RagConfig",

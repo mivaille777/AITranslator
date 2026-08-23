@@ -46,6 +46,10 @@ studio = [
 build = [
     "pyinstaller>=6.10,<7",
 ]
+rag-advanced = [
+    # Optional: layout-aware PDF parsing. OCR remains disabled by default.
+    "docling>=2.70,<3",
+]
 
 [project.scripts]
 desktop-translator = "app.main:main"

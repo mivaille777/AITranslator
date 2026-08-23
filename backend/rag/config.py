@@ -23,6 +23,24 @@ class RagChunkingConfig(RagConfigModel):
         return self
 
 
+class RagAdvancedParsingConfig(RagConfigModel):
+    enabled: bool = False
+    provider: str = "docling"
+    layout_enabled: bool = True
+    table_enabled: bool = False
+    ocr_enabled: bool = False
+    formula_enabled: bool = False
+    document_timeout_seconds: float = Field(default=120.0, gt=0.0, le=600.0)
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized != "docling":
+            raise ValueError("advanced parser provider must be docling")
+        return normalized
+
+
 class RagEmbeddingConfig(RagConfigModel):
     provider: str = "qwen3"
     model: str = "Qwen/Qwen3-Embedding-0.6B"
@@ -85,6 +103,9 @@ class RagRerankerConfig(RagConfigModel):
 
 class RagConfig(RagConfigModel):
     enabled: bool = True
+    advanced_parsing: RagAdvancedParsingConfig = Field(
+        default_factory=RagAdvancedParsingConfig
+    )
     chunking: RagChunkingConfig = Field(default_factory=RagChunkingConfig)
     embedding: RagEmbeddingConfig = Field(default_factory=RagEmbeddingConfig)
     vector_store: RagVectorStoreConfig = Field(default_factory=RagVectorStoreConfig)
@@ -93,6 +114,7 @@ class RagConfig(RagConfigModel):
 
 
 __all__ = [
+    "RagAdvancedParsingConfig",
     "RagChunkingConfig",
     "RagConfig",
     "RagConfigModel",

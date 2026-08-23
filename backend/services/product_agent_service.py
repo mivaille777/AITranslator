@@ -14,8 +14,9 @@ from backend.agent_core.exceptions import (
     AgentToolTimeoutError,
 )
 from backend.agent_core.reliability import AgentRunControl, run_safe_tool_with_timeout
-from backend.models.agent_runtime import AgentRouteDecision
+from backend.models.agent_runtime import AgentPlanContext, AgentRouteDecision
 from backend.models.agent_tools import AgentPlan
+from backend.services.agent_multi_step_planner_service import AgentMultiStepPlannerService
 from backend.services.agent_planner_service import AgentPlannerService
 from backend.services.agent_router_service import (
     AgentDeterministicRouterService,
@@ -75,7 +76,13 @@ def _route_to_plan(route: AgentRouteDecision) -> AgentPlan:
 
 
 class ProductAgentService:
-    """Bounded Route -> Validate -> Execute -> Synthesize agent loop."""
+    """Bounded route/tool/synthesis capabilities used by ReadingAgentGraph.
+
+    The public ``run`` method preserves the Stage 10.3 single-step behavior.
+    Stage 10.6 additionally exposes route resolution, bounded multi-step
+    planning, forced single-tool execution, and final multi-step synthesis so
+    LangGraph can own orchestration without duplicating tool safety logic.
+    """
 
     def __init__(
         self,
@@ -85,11 +92,13 @@ class ProductAgentService:
         router: AgentDeterministicRouterService | Any | None = None,
         semantic_router: AgentSemanticRouterService | Any | None = None,
         planner: AgentPlannerService | Any | None = None,
+        multi_step_planner: AgentMultiStepPlannerService | Any | None = None,
     ) -> None:
         self._registry = registry
         self._chat_service = chat_service
         self._router = router or AgentDeterministicRouterService()
         self._semantic_router = semantic_router or planner or AgentSemanticRouterService()
+        self._multi_step_planner = multi_step_planner or AgentMultiStepPlannerService()
 
     @staticmethod
     def _reading_fields(payload: dict[str, Any]) -> dict[str, Any]:
@@ -204,6 +213,50 @@ class ProductAgentService:
             "provider": str(getattr(self._semantic_router, "provider_name", "") or ""),
             "model": str(getattr(self._semantic_router, "model", "") or ""),
             "prompt_id": str(getattr(self._semantic_router, "prompt_id", "") or ""),
+            "llm_called": route.kind != "complex",
+        }
+
+    def resolve_route(
+        self,
+        *,
+        control: AgentRunControl | None = None,
+        **payload: Any,
+    ) -> tuple[AgentRouteDecision, dict[str, Any]]:
+        active_control = control or AgentRunControl()
+        reading = self._reading_fields(payload)
+        history = self._conversation_history(payload)
+        return self._resolve_route(
+            control=active_control,
+            tools=self._registry.list_tools(),
+            user_message=str(payload["user_message"]),
+            reading=reading,
+            history=history,
+        )
+
+    def plan_multi_step(
+        self,
+        *,
+        control: AgentRunControl | None = None,
+        **payload: Any,
+    ) -> tuple[AgentPlanContext, dict[str, Any]]:
+        active_control = control or AgentRunControl()
+        active_control.checkpoint("multi_step_planner")
+        started = monotonic()
+        reading = self._reading_fields(payload)
+        history = self._conversation_history(payload)
+        plan = self._multi_step_planner.plan(
+            tools=self._registry.list_tools(),
+            max_steps=min(active_control.policy.max_plan_steps, active_control.policy.max_tool_calls),
+            user_message=str(payload["user_message"]),
+            history=history,
+            **reading,
+        )
+        active_control.checkpoint("multi_step_planner_result")
+        return plan, {
+            "duration_ms": _duration_ms(started),
+            "provider": str(getattr(self._multi_step_planner, "provider_name", "") or ""),
+            "model": str(getattr(self._multi_step_planner, "model", "") or ""),
+            "prompt_id": str(getattr(self._multi_step_planner, "prompt_id", "") or ""),
             "llm_called": True,
         }
 
@@ -223,76 +276,17 @@ class ProductAgentService:
             return bool(allows(tool_name))
         return effect != "write"
 
-    def run(
+    def _execute_tool(
         self,
         *,
-        event_sink: AgentLifecycleSink | None = None,
-        control: AgentRunControl | None = None,
-        **payload: Any,
-    ) -> ProductAgentRunResult:
-        control = control or AgentRunControl()
-        reading = self._reading_fields(payload)
-        history = self._conversation_history(payload)
-        tools = self._registry.list_tools()
-        request_id = max(0, int(payload.get("request_id", 0) or 0))
-        user_message = str(payload["user_message"])
-
-        route, route_metadata = self._resolve_route(
-            control=control,
-            tools=tools,
-            user_message=user_message,
-            reading=reading,
-            history=history,
-        )
-        plan = _route_to_plan(route)
-        self._emit(
-            event_sink,
-            "plan_ready",
-            {
-                "action": plan.action,
-                "tool_name": plan.tool_name,
-                "user_visible_reason": plan.user_visible_reason,
-                "arguments": dict(plan.arguments),
-                "route_kind": route.kind,
-                "route_source": route.source,
-                "request_id": request_id,
-                **route_metadata,
-            },
-        )
-
-        if plan.action == "answer":
-            control.checkpoint("synthesis")
-            synthesis_started = monotonic()
-            answer = self._chat_service.send(
-                session_id=str(payload.get("session_id", "agent-session")),
-                user_message=user_message,
-                **reading,
-                history=history,
-                request_id=request_id,
-                context_mode="reading",
-            )
-            control.checkpoint("synthesis_result")
-            self._emit(
-                event_sink,
-                "synthesis_ready",
-                {
-                    "provider": answer.provider,
-                    "model": answer.model,
-                    "request_id": answer.request_id,
-                    "duration_ms": _duration_ms(synthesis_started),
-                    "prompt_id": str(getattr(self._chat_service, "prompt_id", "") or ""),
-                },
-            )
-            return ProductAgentRunResult(
-                status="completed",
-                plan=plan,
-                output_text=answer.output_text,
-                provider=answer.provider,
-                model=answer.model,
-                request_id=answer.request_id,
-                route=route,
-            )
-
+        plan: AgentPlan,
+        route: AgentRouteDecision,
+        reading: dict[str, Any],
+        payload: dict[str, Any],
+        control: AgentRunControl,
+        event_sink: AgentLifecycleSink | None,
+        request_id: int,
+    ) -> tuple[AgentToolExecutionResult | None, bool]:
         spec = self._registry.get_tool(plan.tool_name)
         if spec is None:
             raise RuntimeError(f"Validated route references missing tool: {plan.tool_name}")
@@ -316,12 +310,7 @@ class ProductAgentService:
             if str(item).strip()
         }
         if spec.effect == "write" and spec.requires_confirmation and spec.name not in confirmed:
-            return ProductAgentRunResult(
-                status="confirmation_required",
-                plan=plan,
-                request_id=request_id,
-                route=route,
-            )
+            return None, True
 
         try:
             validated_arguments = self._validated_arguments(spec.name, plan.arguments)
@@ -407,7 +396,224 @@ class ProductAgentService:
                 "duration_ms": _duration_ms(tool_started),
             },
         )
-        if spec.effect == "write":
+        return tool_result, False
+
+    def _synthesize(
+        self,
+        *,
+        payload: dict[str, Any],
+        reading: dict[str, Any],
+        history: tuple[tuple[str, str], ...],
+        request_id: int,
+        control: AgentRunControl,
+        event_sink: AgentLifecycleSink | None,
+        tool_name: str = "",
+        tool_context: str = "",
+    ):
+        control.checkpoint("synthesis")
+        started = monotonic()
+        kwargs: dict[str, Any] = {}
+        if tool_name:
+            kwargs["tool_name"] = tool_name
+            kwargs["tool_context"] = tool_context
+        answer = self._chat_service.send(
+            session_id=str(payload.get("session_id", "agent-session")),
+            user_message=str(payload["user_message"]),
+            **reading,
+            history=history,
+            request_id=request_id,
+            context_mode="reading",
+            **kwargs,
+        )
+        control.checkpoint("synthesis_result")
+        self._emit(
+            event_sink,
+            "synthesis_ready",
+            {
+                "provider": answer.provider,
+                "model": answer.model,
+                "request_id": answer.request_id,
+                "duration_ms": _duration_ms(started),
+                "prompt_id": str(getattr(self._chat_service, "prompt_id", "") or ""),
+            },
+        )
+        return answer
+
+    def synthesize_multi_step(
+        self,
+        *,
+        tool_results: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+        event_sink: AgentLifecycleSink | None = None,
+        control: AgentRunControl | None = None,
+        **payload: Any,
+    ) -> ProductAgentRunResult:
+        active_control = control or AgentRunControl()
+        request_id = max(0, int(payload.get("request_id", 0) or 0))
+        results = [dict(item) for item in tool_results if isinstance(item, dict)]
+        if not results:
+            raise AgentToolError(
+                "Multi-step synthesis requires at least one completed tool result.",
+                stage="synthesis",
+                fallback_reason="missing_tool_observations",
+            )
+
+        last = results[-1]
+        if str(last.get("effect", "") or "") == "write":
+            return ProductAgentRunResult(
+                status="completed",
+                plan=AgentPlan(
+                    action="answer",
+                    user_visible_reason="Complete the requested multi-step action.",
+                ),
+                output_text=str(last.get("output_text", "") or ""),
+                provider=str(last.get("provider", "") or ""),
+                model=str(last.get("model", "") or ""),
+                request_id=request_id,
+                route=AgentRouteDecision(
+                    kind="complex",
+                    source="planner",
+                    intent="complex",
+                    user_visible_reason="Completed the bounded multi-step plan.",
+                ),
+            )
+
+        reading = self._reading_fields(payload)
+        history = self._conversation_history(payload)
+        observation = json.dumps(
+            {
+                "plan_type": "multi_step",
+                "observations": [
+                    {
+                        "tool_name": str(item.get("tool_name", "") or item.get("name", "") or ""),
+                        "output_text": str(item.get("output_text", "") or ""),
+                        "data": dict(item.get("data", {}) or {}),
+                    }
+                    for item in results
+                ],
+            },
+            ensure_ascii=False,
+        )
+        answer = self._synthesize(
+            payload=payload,
+            reading=reading,
+            history=history,
+            request_id=request_id,
+            control=active_control,
+            event_sink=event_sink,
+            tool_name="multi_step_plan",
+            tool_context=observation,
+        )
+        return ProductAgentRunResult(
+            status="completed",
+            plan=AgentPlan(
+                action="answer",
+                user_visible_reason="Synthesize the completed multi-step tool observations.",
+            ),
+            output_text=answer.output_text,
+            provider=answer.provider,
+            model=answer.model,
+            request_id=answer.request_id,
+            route=AgentRouteDecision(
+                kind="complex",
+                source="planner",
+                intent="complex",
+                user_visible_reason="Completed the bounded multi-step plan.",
+            ),
+        )
+
+    def run(
+        self,
+        *,
+        event_sink: AgentLifecycleSink | None = None,
+        control: AgentRunControl | None = None,
+        **payload: Any,
+    ) -> ProductAgentRunResult:
+        control = control or AgentRunControl()
+        reading = self._reading_fields(payload)
+        history = self._conversation_history(payload)
+        request_id = max(0, int(payload.get("request_id", 0) or 0))
+
+        forced_route = payload.pop("_resolved_route", None)
+        route_metadata = dict(payload.pop("_route_metadata", {}) or {})
+        suppress_plan_event = bool(payload.pop("_suppress_plan_event", False))
+        skip_synthesis = bool(payload.pop("_skip_synthesis", False))
+
+        if forced_route is not None:
+            route = (
+                forced_route
+                if isinstance(forced_route, AgentRouteDecision)
+                else AgentRouteDecision.model_validate(forced_route)
+            )
+        else:
+            route, route_metadata = self.resolve_route(control=control, **payload)
+
+        if route.kind == "complex":
+            raise AgentRuntimeError(
+                "Complex Agent route requires ReadingAgentGraph multi-step orchestration.",
+                stage="planner",
+                fallback_reason="complex_route_requires_graph",
+            )
+
+        plan = _route_to_plan(route)
+        if not suppress_plan_event:
+            self._emit(
+                event_sink,
+                "plan_ready",
+                {
+                    "action": plan.action,
+                    "tool_name": plan.tool_name,
+                    "user_visible_reason": plan.user_visible_reason,
+                    "arguments": dict(plan.arguments),
+                    "route_kind": route.kind,
+                    "route_source": route.source,
+                    "request_id": request_id,
+                    **route_metadata,
+                },
+            )
+
+        if plan.action == "answer":
+            answer = self._synthesize(
+                payload=payload,
+                reading=reading,
+                history=history,
+                request_id=request_id,
+                control=control,
+                event_sink=event_sink,
+            )
+            return ProductAgentRunResult(
+                status="completed",
+                plan=plan,
+                output_text=answer.output_text,
+                provider=answer.provider,
+                model=answer.model,
+                request_id=answer.request_id,
+                route=route,
+            )
+
+        tool_result, confirmation_required = self._execute_tool(
+            plan=plan,
+            route=route,
+            reading=reading,
+            payload=payload,
+            control=control,
+            event_sink=event_sink,
+            request_id=request_id,
+        )
+        if confirmation_required:
+            return ProductAgentRunResult(
+                status="confirmation_required",
+                plan=plan,
+                request_id=request_id,
+                route=route,
+            )
+        if tool_result is None:
+            raise AgentToolError(
+                f"Agent tool {plan.tool_name} completed without a result.",
+                stage="tool",
+                fallback_reason="missing_tool_result",
+            )
+
+        if tool_result.effect == "write" or skip_synthesis:
             return ProductAgentRunResult(
                 status="completed",
                 plan=plan,
@@ -419,7 +625,6 @@ class ProductAgentService:
                 route=route,
             )
 
-        control.checkpoint("synthesis")
         observation = json.dumps(
             {
                 "tool_name": tool_result.tool_name,
@@ -428,28 +633,15 @@ class ProductAgentService:
             },
             ensure_ascii=False,
         )
-        synthesis_started = monotonic()
-        answer = self._chat_service.send(
-            session_id=str(payload.get("session_id", "agent-session")),
-            user_message=user_message,
-            **reading,
+        answer = self._synthesize(
+            payload=payload,
+            reading=reading,
             history=history,
             request_id=request_id,
-            context_mode="reading",
+            control=control,
+            event_sink=event_sink,
             tool_name=tool_result.tool_name,
             tool_context=observation,
-        )
-        control.checkpoint("synthesis_result")
-        self._emit(
-            event_sink,
-            "synthesis_ready",
-            {
-                "provider": answer.provider,
-                "model": answer.model,
-                "request_id": answer.request_id,
-                "duration_ms": _duration_ms(synthesis_started),
-                "prompt_id": str(getattr(self._chat_service, "prompt_id", "") or ""),
-            },
         )
         return ProductAgentRunResult(
             status="completed",
@@ -466,6 +658,9 @@ class ProductAgentService:
         router_close = getattr(self._semantic_router, "close", None)
         if callable(router_close):
             router_close()
+        planner_close = getattr(self._multi_step_planner, "close", None)
+        if callable(planner_close):
+            planner_close()
         chat_close = getattr(self._chat_service, "close", None)
         if callable(chat_close):
             chat_close()

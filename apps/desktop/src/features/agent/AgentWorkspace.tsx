@@ -3,9 +3,9 @@ import { AgentHeader } from "../companion/components/AgentHeader"
 import { AgentInputComposer } from "../companion/components/AgentInputComposer"
 import { AgentMessage } from "../companion/components/AgentMessage"
 import { AgentObservabilityPanel } from "../companion/components/AgentObservabilityPanel"
-import { AgentTrace } from "../companion/components/AgentTrace"
 import { ContextCard } from "../companion/components/ContextCard"
 import { agentWorkspaceAreas } from "./agent-workspace-layout"
+import { AgentTimeline } from "./components/AgentTimeline"
 import { useAgentRuntime } from "./hooks/useAgentRuntime"
 
 export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceController }) {
@@ -27,7 +27,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
             </p>
           </div>
           <p className="max-w-md text-xs leading-5 text-slate-400">
-            Runtime state now belongs to the Agent feature while the existing tested presentation components remain reusable.
+            Stage 9.3 turns low-level runtime events into a visible Plan → Tool Call → Observation → Result execution path.
           </p>
         </div>
 
@@ -52,14 +52,14 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
 
       <AgentHeader phase={runtime.viewState.phase} uiMode={runtime.viewState.uiMode} />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
         <ContextCard
           text={runtime.sourceText}
           title={runtime.context.resource_title}
           section={runtime.context.section_heading}
           sourceKind={runtime.context.source_kind}
         />
-        <AgentTrace
+        <AgentTimeline
           activities={runtime.viewState.activities}
           running={runtime.viewState.phase === "running" || runtime.viewState.phase === "cancelling"}
           runId={runtime.viewState.runId}

@@ -50,6 +50,7 @@ class RagEmbeddingConfig(RagConfigModel):
     normalize: bool = True
     max_input_tokens: int = Field(default=2048, ge=1)
     warmup: bool = True
+    precision: str = "default"
     local_files_only: bool = False
     model_path: str = ""
 
@@ -59,6 +60,14 @@ class RagEmbeddingConfig(RagConfigModel):
         normalized = value.strip().lower()
         if normalized not in {"auto", "cuda", "cpu"}:
             raise ValueError("device must be one of: auto, cuda, cpu")
+        return normalized
+
+    @field_validator("precision")
+    @classmethod
+    def validate_precision(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"default", "fp16", "bf16"}:
+            raise ValueError("precision must be one of: default, fp16, bf16")
         return normalized
 
 

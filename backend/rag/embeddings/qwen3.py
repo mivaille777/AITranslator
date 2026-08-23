@@ -105,6 +105,7 @@ class Qwen3EmbeddingProvider:
             normalize_embeddings=True,
             convert_to_numpy=True,
             show_progress_bar=False,
+            truncate_dim=self.dimension,
         )
         return self._validate_vectors(vectors, expected_count=len(texts))
 
@@ -138,10 +139,23 @@ class Qwen3EmbeddingProvider:
                 else:
                     model_source = self._config.model
                     local_files_only = self._config.local_files_only
+                model_kwargs: dict[str, Any] = {}
+                if self._config.precision != "default":
+                    attribute = (
+                        "float16" if self._config.precision == "fp16" else "bfloat16"
+                    )
+                    dtype = getattr(torch_module, attribute, None)
+                    if dtype is None:
+                        raise RagConfigurationError(
+                            "PyTorch does not support requested precision: "
+                            f"{self._config.precision}"
+                        )
+                    model_kwargs["torch_dtype"] = dtype
                 model = self._model_factory(
                     model_source,
                     device=self._device,
                     local_files_only=local_files_only,
+                    **({"model_kwargs": model_kwargs} if model_kwargs else {}),
                 )
                 if self._config.warmup:
                     warmup_vectors = self._encode_query(model, "warmup")
@@ -171,6 +185,7 @@ class Qwen3EmbeddingProvider:
             normalize_embeddings=True,
             convert_to_numpy=True,
             show_progress_bar=False,
+            truncate_dim=self.dimension,
         )
 
     def _validate_vectors(

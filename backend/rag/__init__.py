@@ -65,6 +65,17 @@ from backend.rag.parsers import (
     get_parser_for_path,
     parse_document,
 )
+from backend.rag.performance import (
+    BASELINE_VARIANT,
+    RagEmbeddingBenchmark,
+    RagPerformanceCandidate,
+    RagPerformanceComparison,
+    RagPerformanceVariant,
+    benchmark_embedding_batches,
+    compare_performance_candidates,
+    config_for_variant,
+    performance_sweeps,
+)
 from backend.rag.query_planner import RagQueryPlan, RagQueryPlanner, merge_query_results
 from backend.rag.tokenization import (
     HeuristicTokenCounter,
@@ -73,6 +84,7 @@ from backend.rag.tokenization import (
 )
 
 __all__ = [
+    "BASELINE_VARIANT",
     "CHUNKER_VERSION",
     "EMBEDDING_MODEL_ID",
     "RERANKER_MODEL_ID",
@@ -102,6 +114,7 @@ __all__ = [
     "RagClaimPrediction",
     "RagConfig",
     "RagConfigurationError",
+    "RagEmbeddingBenchmark",
     "RagEmbeddingConfig",
     "RagEmbeddingError",
     "RagError",
@@ -113,6 +126,9 @@ __all__ = [
     "RagInvariantError",
     "RagModelManagerError",
     "RagParsingError",
+    "RagPerformanceCandidate",
+    "RagPerformanceComparison",
+    "RagPerformanceVariant",
     "RagQueryPlan",
     "RagQueryPlanner",
     "RagRerankerConfig",
@@ -126,11 +142,14 @@ __all__ = [
     "TokenCounter",
     "TransformersTokenCounter",
     "UnsupportedDocumentTypeError",
+    "benchmark_embedding_batches",
     "build_agent_evidence",
     "build_evidence_citations",
     "build_evidence_item",
     "build_stable_chunk_id",
     "chunk_document",
+    "compare_performance_candidates",
+    "config_for_variant",
     "create_embedding_provider",
     "default_models_root",
     "evaluate_rag",
@@ -139,4 +158,5 @@ __all__ = [
     "load_evaluation_predictions",
     "merge_query_results",
     "parse_document",
+    "performance_sweeps",
 ]

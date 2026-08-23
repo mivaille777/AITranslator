@@ -96,6 +96,7 @@ batch_size = 8
 normalize = true
 max_input_tokens = 2048
 warmup = true
+precision = "default"
 local_files_only = false
 model_path = ""
 

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import json
 from pathlib import Path
-import sqlite3
 from threading import RLock
 from typing import Iterable
 
@@ -111,6 +111,26 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
             "duration_ms",
         }
     ),
+    "rag_query_started": frozenset({"query_id", "retrieval_strategy"}),
+    "rag_query_rewritten": frozenset(
+        {"query_id", "rewritten", "subquery_count"}
+    ),
+    "rag_dense_completed": frozenset(
+        {"query_id", "dense_count", "embedding_ms", "dense_search_ms"}
+    ),
+    "rag_sparse_completed": frozenset(
+        {"query_id", "sparse_count", "sparse_search_ms"}
+    ),
+    "rag_fusion_completed": frozenset(
+        {"query_id", "fusion_count", "fusion_ms"}
+    ),
+    "rag_rerank_completed": frozenset(
+        {"query_id", "final_count", "rerank_ms"}
+    ),
+    "rag_evidence_selected": frozenset(
+        {"query_id", "final_count", "total_rag_ms", "evidence"}
+    ),
+    "rag_fallback": frozenset({"query_id", "fallback_reason"}),
     "synthesis_ready": frozenset(
         {"provider", "model", "prompt_id", "request_id", "duration_ms"}
     ),

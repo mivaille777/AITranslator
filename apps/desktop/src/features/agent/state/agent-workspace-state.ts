@@ -114,6 +114,82 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
         tone: "success",
       }
     }
+    case "rag_query_started":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Knowledge retrieval started",
+        detail: text(payload.retrieval_strategy) || "Preparing local hybrid retrieval.",
+        tone: "neutral",
+      }
+    case "rag_query_rewritten": {
+      const count = numeric(payload.subquery_count)
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Retrieval query prepared",
+        detail: `${count || 1} bounded ${count === 1 ? "query" : "queries"}${payload.rewritten === true ? " after rewrite" : ""}.`,
+        tone: "success",
+      }
+    }
+    case "rag_dense_completed":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Dense retrieval complete",
+        detail: withDuration(`${numeric(payload.dense_count)} candidates`, {
+          duration_ms: numeric(payload.embedding_ms) + numeric(payload.dense_search_ms),
+        }),
+        tone: "success",
+      }
+    case "rag_sparse_completed":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Sparse retrieval complete",
+        detail: withDuration(`${numeric(payload.sparse_count)} candidates`, {
+          duration_ms: payload.sparse_search_ms,
+        }),
+        tone: "success",
+      }
+    case "rag_fusion_completed":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Hybrid results fused",
+        detail: withDuration(`${numeric(payload.fusion_count)} fused candidates`, {
+          duration_ms: payload.fusion_ms,
+        }),
+        tone: "success",
+      }
+    case "rag_rerank_completed":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Evidence reranked",
+        detail: withDuration(`${numeric(payload.final_count)} final candidates`, {
+          duration_ms: payload.rerank_ms,
+        }),
+        tone: "success",
+      }
+    case "rag_evidence_selected":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Evidence selected",
+        detail: withDuration(`${numeric(payload.final_count)} verified sources`, {
+          duration_ms: payload.total_rag_ms,
+        }),
+        tone: "success",
+      }
+    case "rag_fallback":
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "Retrieval fallback",
+        detail: text(payload.fallback_reason) || "No verified evidence was selected.",
+        tone: "warning",
+      }
     case "synthesis_ready":
       return {
         sequence: event.sequence,

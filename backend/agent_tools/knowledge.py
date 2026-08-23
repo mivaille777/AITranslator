@@ -15,6 +15,7 @@ from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
 from backend.rag.citation_service import build_evidence_citations
 from backend.rag.evidence_builder import build_agent_evidence
 from backend.rag.models import RetrievalCandidate
+from backend.rag.observability import RagTraceEventData, build_rag_trace_events
 from backend.rag.query_planner import RagQueryPlan, merge_query_results
 from backend.rag.stores.base import VectorSearchFilter
 
@@ -56,6 +57,7 @@ class KnowledgeSearchResultData(AgentToolModel):
     evidence: list[AgentEvidenceItem] = Field(default_factory=list)
     citations: list[AgentCitationRef] = Field(default_factory=list)
     query_plan: RagQueryPlan | None = None
+    observability: list[RagTraceEventData] = Field(default_factory=list)
 
 
 def _document_ids(args: KnowledgeSearchArgs) -> list[str]:
@@ -152,6 +154,12 @@ class KnowledgeAgentTools:
         limited_retrieval = retrieval.model_copy(update={"candidates": candidates})
         evidence = build_agent_evidence(limited_retrieval)
         citations = build_evidence_citations(evidence)
+        observability = build_rag_trace_events(
+            plan=plan,
+            retrievals=retrievals,
+            merged=retrieval,
+            evidence=evidence,
+        )
         results = [_result_item(candidate) for candidate in candidates]
         fallback_reason = str(
             retrieval.metadata.get("fallback_reason")
@@ -179,6 +187,9 @@ class KnowledgeAgentTools:
                 "evidence": [item.model_dump(mode="json") for item in evidence],
                 "citations": [item.model_dump(mode="json") for item in citations],
                 "query_plan": plan.model_dump(mode="json"),
+                "observability": [
+                    event.model_dump(mode="json") for event in observability
+                ],
             },
         )
 

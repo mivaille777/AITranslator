@@ -37,21 +37,25 @@ class RetrievalService:
         if not query or not query.strip():
             raise RagRetrievalError("retrieval query must not be empty")
         started = perf_counter()
-        dense_started = perf_counter()
         dense = []
         sparse = []
         dense_error = ""
         sparse_error = ""
+        embedding_ms = 0.0
+        dense_ms = 0.0
         try:
+            embedding_started = perf_counter()
             vector = self._embedding.embed_query(query)
+            embedding_ms = (perf_counter() - embedding_started) * 1000
+            dense_started = perf_counter()
             dense = self._vector_store.search(
                 vector,
                 top_k=self._config.dense_top_k,
                 filters=filters,
             )
+            dense_ms = (perf_counter() - dense_started) * 1000
         except Exception as exc:  # noqa: BLE001 - intentional degraded retrieval
             dense_error = str(exc) or exc.__class__.__name__
-        dense_ms = (perf_counter() - dense_started) * 1000
 
         sparse_started = perf_counter()
         try:
@@ -74,13 +78,16 @@ class RetrievalService:
             limit=self._config.fusion_top_k,
         )
         fusion_ms = (perf_counter() - fusion_started) * 1000
+        fusion_count = len(candidates)
         strategy = (
             "sparse-only" if dense_error else "dense-only" if sparse_error else "hybrid"
         )
         fallback_reason = dense_error or sparse_error
         reranker_applied = False
         reranker_fallback_reason = ""
+        rerank_ms = 0.0
         if self._reranker is not None:
+            rerank_started = perf_counter()
             try:
                 candidates = self._reranker.rerank(
                     query, candidates, top_k=self._config.final_top_k
@@ -89,6 +96,7 @@ class RetrievalService:
             except Exception as exc:  # noqa: BLE001 - RRF fallback is intentional
                 reranker_fallback_reason = str(exc) or exc.__class__.__name__
                 candidates = candidates[: self._config.final_top_k]
+            rerank_ms = (perf_counter() - rerank_started) * 1000
         else:
             candidates = candidates[: self._config.final_top_k]
         return RetrievalResult(
@@ -99,10 +107,13 @@ class RetrievalService:
             metadata={
                 "dense_count": len(dense),
                 "sparse_count": len(sparse),
-                "fusion_count": len(candidates),
+                "fusion_count": fusion_count,
+                "final_count": len(candidates),
+                "embedding_ms": embedding_ms,
                 "dense_search_ms": dense_ms,
                 "sparse_search_ms": sparse_ms,
                 "fusion_ms": fusion_ms,
+                "rerank_ms": rerank_ms,
                 "fallback_reason": fallback_reason,
                 "reranker_applied": reranker_applied,
                 "reranker_fallback_reason": reranker_fallback_reason,

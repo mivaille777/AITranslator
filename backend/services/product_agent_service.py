@@ -23,6 +23,7 @@ from backend.models.agent_runtime import (
 )
 from backend.models.agent_tools import AgentPlan
 from backend.rag.citation_service import CitationService, build_evidence_citations
+from backend.rag.observability import RAG_EVENT_TYPES
 from backend.services.agent_multi_step_planner_service import (
     AgentMultiStepPlannerService,
 )
@@ -399,6 +400,27 @@ class ProductAgentService:
                     fallback_reason="safe_tool_retries_exhausted",
                 )
 
+        if tool_result.tool_name == "search_knowledge_base":
+            seen_rag_events: set[str] = set()
+            for raw_event in (tool_result.data or {}).get("observability", []):
+                if not isinstance(raw_event, dict):
+                    continue
+                event_type = str(raw_event.get("event_type", "") or "")
+                payload_data = raw_event.get("payload", {})
+                if (
+                    event_type not in RAG_EVENT_TYPES
+                    or event_type in seen_rag_events
+                    or not isinstance(payload_data, dict)
+                ):
+                    continue
+                seen_rag_events.add(event_type)
+                self._emit(event_sink, event_type, dict(payload_data))
+
+        trace_data = (
+            {}
+            if tool_result.tool_name == "search_knowledge_base"
+            else tool_result.data or {}
+        )
         self._emit(
             event_sink,
             "tool_result",
@@ -409,7 +431,7 @@ class ProductAgentService:
                 "provider": tool_result.provider,
                 "model": tool_result.model,
                 "request_id": tool_result.request_id,
-                "data": tool_result.data or {},
+                "data": trace_data,
                 "duration_ms": _duration_ms(tool_started),
             },
         )

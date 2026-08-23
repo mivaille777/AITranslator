@@ -81,5 +81,21 @@ describe("Stage 9.3 Agent timeline", () => {
     expect(getAgentTimelineEventLabel("context_ready")).toBe("Setup")
     expect(getAgentTimelineEventLabel("tool_result")).toBe("Observation")
     expect(getAgentTimelineEventLabel("synthesis_ready")).toBe("Result")
+    expect(getAgentTimelineEventLabel("rag_evidence_selected")).toBe("Observation")
+  })
+
+  it("keeps RAG retrieval stages inside the existing observation timeline", () => {
+    const stages = deriveAgentTimelineStages([
+      activity(0, "tool_call"),
+      activity(1, "rag_query_started"),
+      activity(2, "rag_dense_completed", "success"),
+      activity(3, "rag_sparse_completed", "success"),
+      activity(4, "rag_fusion_completed", "success"),
+      activity(5, "rag_rerank_completed", "success"),
+      activity(6, "rag_evidence_selected", "success"),
+      activity(7, "tool_result", "success"),
+    ], false)
+
+    expect(stages.find((stage) => stage.id === "observation")?.activityCount).toBe(7)
   })
 })

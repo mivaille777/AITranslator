@@ -186,6 +186,40 @@ def test_evidence_enters_grounded_context_and_citations_are_preserved() -> None:
     assert "citation-1 => [1] => evidence:chunk-1" in chat.calls[0]["tool_context"]
 
 
+def test_rag_observability_reuses_agent_trace_and_sanitizes_tool_event() -> None:
+    chat = CapturingChat()
+    data = _grounding_data()
+    data["observability"] = [
+        {
+            "event_type": "rag_query_started",
+            "payload": {"query_id": "rag-1", "retrieval_strategy": "hybrid"},
+        },
+        {
+            "event_type": "rag_query_started",
+            "payload": {"query_id": "rag-1", "retrieval_strategy": "hybrid"},
+        },
+        {
+            "event_type": "rag_evidence_selected",
+            "payload": {"query_id": "rag-1", "final_count": 1},
+        },
+    ]
+    events: list[tuple[str, dict]] = []
+
+    _service(Registry(data), chat).run(
+        _resolved_route=_route(KNOWLEDGE_TOOL.name),
+        event_sink=lambda event_type, payload: events.append((event_type, payload)),
+        **_payload(),
+    )
+
+    event_types = [event_type for event_type, _ in events]
+    assert event_types.count("rag_query_started") == 1
+    assert event_types.index("tool_call") < event_types.index("rag_query_started")
+    assert event_types.index("rag_evidence_selected") < event_types.index("tool_result")
+    tool_payload = next(payload for event_type, payload in events if event_type == "tool_result")
+    assert tool_payload["data"] == {}
+    assert "The GP constrains" not in repr(tool_payload)
+
+
 def test_product_adapter_populates_agent_state_evidence_and_citations() -> None:
     chat = CapturingChat()
     adapter = ProductAgentRuntimeAdapter(_service(Registry(), chat))

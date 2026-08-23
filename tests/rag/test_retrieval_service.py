@@ -158,6 +158,9 @@ def test_latency_and_count_metadata_are_present() -> None:
     assert result.metadata["dense_search_ms"] >= 0
     assert result.metadata["sparse_search_ms"] >= 0
     assert result.metadata["fusion_ms"] >= 0
+    assert result.metadata["embedding_ms"] >= 0
+    assert result.metadata["rerank_ms"] >= 0
+    assert result.metadata["final_count"] == 2
 
 
 def test_reranker_is_applied_and_failure_falls_back_to_rrf() -> None:

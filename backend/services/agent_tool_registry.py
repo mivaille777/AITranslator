@@ -8,6 +8,10 @@ from backend.agent_tools.base import (
     AgentToolSpec,
     TypedAgentToolDefinition,
 )
+from backend.agent_tools.knowledge import (
+    KnowledgeAgentTools,
+    build_knowledge_tool_definitions,
+)
 from backend.agent_tools.reading import (
     ReadingAgentTools,
     build_reading_tool_definitions,
@@ -28,7 +32,6 @@ from backend.services.quick_action_service import QuickActionService
 from backend.services.research_note_service import ResearchNoteService
 from backend.services.translation_fallback_service import TranslationFallbackService
 from backend.services.translation_service import TranslationService
-
 
 _CONTEXT_FIELDS = (
     "source_text",
@@ -63,6 +66,7 @@ class AgentToolRegistry:
         translation_fallback_service: TranslationFallbackService | Any | None = None,
         quick_action_service: QuickActionService | Any | None = None,
         research_note_service: ResearchNoteService | Any | None = None,
+        retrieval_service: Any | None = None,
     ) -> None:
         if translation_fallback_service is not None:
             fallback_service = translation_fallback_service
@@ -95,6 +99,9 @@ class AgentToolRegistry:
         )
         research_definitions = build_research_tool_definitions(research_tools)
 
+        knowledge_tools = KnowledgeAgentTools(retrieval_service=retrieval_service)
+        knowledge_definitions = build_knowledge_tool_definitions(knowledge_tools)
+
         # Preserve the established planner/catalog ordering for all public tools.
         self._definitions = (
             reading_definitions[0],
@@ -102,6 +109,7 @@ class AgentToolRegistry:
             *reading_definitions[1:],
             writing_definition,
             *research_definitions,
+            *knowledge_definitions,
         )
         self._definition_by_name = {
             definition.spec.name: definition for definition in self._definitions

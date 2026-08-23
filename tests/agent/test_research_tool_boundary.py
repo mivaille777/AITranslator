@@ -240,6 +240,7 @@ def test_registry_exposes_research_memory_without_exposing_delete() -> None:
         "list_research_notes",
         "get_research_note",
         "update_research_note",
+        "search_knowledge_base",
     ]
     assert registry.get_tool("delete_research_note") is None
 

@@ -130,6 +130,7 @@ def test_registry_uses_dedicated_writing_owner_and_preserves_catalog_order() -> 
         "list_research_notes",
         "get_research_note",
         "update_research_note",
+        "search_knowledge_base",
     ]
 
     definition = registry.get_definition("polish_selection")

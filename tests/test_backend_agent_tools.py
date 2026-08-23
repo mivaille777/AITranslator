@@ -8,7 +8,6 @@ from backend.api.dependencies import get_agent_tool_registry
 from backend.main import create_app
 from backend.services.agent_tool_registry import AgentToolRegistry
 
-
 READING = {
     "source_text": "Gaussian processes provide a statistical anchor.",
     "translated_text": "高斯过程提供统计锚点。",
@@ -96,6 +95,7 @@ def test_agent_tool_catalog_declares_side_effect_boundaries() -> None:
         "list_research_notes",
         "get_research_note",
         "update_research_note",
+        "search_knowledge_base",
     }
     assert tools["translate_selection"].effect == "compute"
     assert tools["translate_selection"].requires_confirmation is False
@@ -107,6 +107,8 @@ def test_agent_tool_catalog_declares_side_effect_boundaries() -> None:
     assert tools["get_research_note"].requires_confirmation is False
     assert tools["update_research_note"].effect == "write"
     assert tools["update_research_note"].requires_confirmation is True
+    assert tools["search_knowledge_base"].effect == "read"
+    assert tools["search_knowledge_base"].requires_confirmation is False
     assert "delete_research_note" not in tools
 
 

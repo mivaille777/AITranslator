@@ -7,6 +7,14 @@ from backend.agent_tools.base import (
     AgentToolSpec,
     TypedAgentToolDefinition,
 )
+from backend.agent_tools.knowledge import (
+    KnowledgeAgentTools,
+    KnowledgeSearchArgs,
+    KnowledgeSearchPlannerArgs,
+    KnowledgeSearchResultData,
+    KnowledgeSearchResultItem,
+    build_knowledge_tool_definitions,
+)
 from backend.agent_tools.reading import (
     InspectReadingContextResultData,
     QuickActionResultData,
@@ -49,6 +57,11 @@ __all__ = [
     "AgentToolSpec",
     "GetResearchNoteArgs",
     "InspectReadingContextResultData",
+    "KnowledgeAgentTools",
+    "KnowledgeSearchArgs",
+    "KnowledgeSearchPlannerArgs",
+    "KnowledgeSearchResultData",
+    "KnowledgeSearchResultItem",
     "ListResearchNotesArgs",
     "PolishSelectionArgs",
     "QuickActionResultData",
@@ -70,6 +83,7 @@ __all__ = [
     "UpdateResearchNotePlannerArgs",
     "WritingAgentTool",
     "WritingResultData",
+    "build_knowledge_tool_definitions",
     "build_reading_tool_definitions",
     "build_research_tool_definitions",
     "build_translation_tool_definition",

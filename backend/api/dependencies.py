@@ -6,11 +6,14 @@ from backend.api.llm_dependencies import (
     build_routed_product_agent_service,
     build_routed_quick_action_service,
 )
+from backend.rag.retrieval_service import RetrievalService
 from backend.services.agent_tool_registry import AgentToolRegistry
 from backend.services.browser_context_service import BrowserContextService
 from backend.services.companion_chat_service import CompanionChatService
 from backend.services.companion_handoff_service import CompanionHandoffService
-from backend.services.companion_ownership_service import CompanionConversationOwnershipService
+from backend.services.companion_ownership_service import (
+    CompanionConversationOwnershipService,
+)
 from backend.services.conversation_lifecycle_service import ConversationLifecycleService
 from backend.services.conversation_store_service import ConversationStoreService
 from backend.services.overlay_state_service import OverlayStateService
@@ -42,6 +45,8 @@ _companion_ownership_service: CompanionConversationOwnershipService | None = Non
 _companion_ownership_service_lock = Lock()
 _agent_tool_registry: AgentToolRegistry | None = None
 _agent_tool_registry_lock = Lock()
+_retrieval_service: RetrievalService | None = None
+_retrieval_service_lock = Lock()
 _product_agent_service: ProductAgentService | None = None
 _product_agent_service_lock = Lock()
 
@@ -224,8 +229,41 @@ def get_agent_tool_registry() -> AgentToolRegistry:
                 translation_service=get_translation_service(),
                 quick_action_service=get_quick_action_service(),
                 research_note_service=get_research_note_service(),
+                retrieval_service=get_retrieval_service(),
             )
         return _agent_tool_registry
+
+
+def get_retrieval_service() -> RetrievalService:
+    global _retrieval_service
+    if _retrieval_service is not None:
+        return _retrieval_service
+    with _retrieval_service_lock:
+        if _retrieval_service is None:
+            from app.infrastructure.settings import SettingsManager
+            from backend.rag.config import RagConfig
+            from backend.rag.embeddings import create_embedding_provider
+            from backend.rag.rerankers import Qwen3RerankerProvider
+            from backend.rag.sparse import BM25SparseRetriever
+            from backend.rag.stores import QdrantLocalVectorStore
+
+            settings = SettingsManager().data
+            raw_rag = settings.get("rag", {})
+            config = RagConfig.model_validate(
+                raw_rag if isinstance(raw_rag, dict) else {}
+            )
+            embedding = create_embedding_provider(config.embedding)
+            _retrieval_service = RetrievalService(
+                embedding_provider=embedding,
+                vector_store=QdrantLocalVectorStore(
+                    config.vector_store,
+                    dimension=config.embedding.dimension,
+                ),
+                sparse_retriever=BM25SparseRetriever(),
+                config=config.retrieval,
+                reranker=Qwen3RerankerProvider(config.reranker),
+            )
+        return _retrieval_service
 
 
 def close_agent_tool_registry() -> None:

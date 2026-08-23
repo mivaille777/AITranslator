@@ -89,9 +89,19 @@ def _run_response(state: AgentState) -> AgentRunResponse:
     tool_result = (
         _state_tool_response(state.tool_results[-1]) if state.tool_results else None
     )
+    multi_step = state.plan if state.plan.mode == "multi_step" else None
+    compatibility_plan = (
+        AgentPlan(
+            action="answer",
+            user_visible_reason=state.plan.goal or "Completed the multi-step plan.",
+        )
+        if multi_step is not None
+        else AgentPlan.model_validate(state.planned_action)
+    )
     return AgentRunResponse(
         status=str(response.get("status", "completed") or "completed"),
-        plan=AgentPlan.model_validate(state.planned_action),
+        plan=compatibility_plan,
+        multi_step_plan=multi_step,
         output_text=str(response.get("output_text", "") or ""),
         provider=str(response.get("provider", "") or ""),
         model=str(response.get("model", "") or ""),
@@ -382,6 +392,13 @@ async def stream_product_agent(
                 )
                 return "cancel_requested"
 
+        async def send_events() -> str:
+            while True:
+                event = await queue.get()
+                await websocket.send_json(event)
+                if event.get("type") in {"done", "error", "cancelled"}:
+                    return str(event.get("type"))
+
         producer_task = asyncio.create_task(asyncio.to_thread(produce))
         producer_task.add_done_callback(_consume_background_task)
         sender_task = asyncio.create_task(send_events())
@@ -396,8 +413,6 @@ async def stream_product_agent(
             if control_result == "disconnect":
                 sender_task.cancel()
                 return
-            # Cancellation was requested. Keep the sender alive until Runtime
-            # reaches a safe checkpoint or completes an already-started write.
             with suppress(WebSocketDisconnect):
                 await sender_task
         else:

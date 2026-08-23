@@ -103,6 +103,7 @@ model_path = ""
 provider = "qdrant_local"
 collection_name = "aitrans_knowledge"
 distance = "cosine"
+storage_path = "config/rag/qdrant"
 
 [rag.retrieval]
 dense_top_k = 30

@@ -48,6 +48,7 @@ class RagVectorStoreConfig(RagConfigModel):
     provider: str = "qdrant_local"
     collection_name: str = Field(default="aitrans_knowledge", min_length=1)
     distance: str = "cosine"
+    storage_path: str = "config/rag/qdrant"
 
 
 class RagRetrievalConfig(RagConfigModel):

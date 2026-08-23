@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
 import tomllib
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from backend.rag.config import RagChunkingConfig, RagConfig, RagEmbeddingConfig, RagRetrievalConfig
+from backend.rag.config import (
+    RagChunkingConfig,
+    RagConfig,
+    RagEmbeddingConfig,
+    RagRetrievalConfig,
+)
 
 
 def test_rag_config_defaults_match_v1_contract() -> None:
@@ -22,6 +27,7 @@ def test_rag_config_defaults_match_v1_contract() -> None:
     assert config.vector_store.provider == "qdrant_local"
     assert config.vector_store.collection_name == "aitrans_knowledge"
     assert config.vector_store.distance == "cosine"
+    assert config.vector_store.storage_path == "config/rag/qdrant"
     assert config.retrieval.fusion == "rrf"
     assert config.retrieval.final_top_k == 8
 

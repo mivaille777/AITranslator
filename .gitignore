@@ -23,6 +23,7 @@ config/research_notes.sqlite3*
 config/web_chat.sqlite3*
 config/*.sqlite3-shm
 config/*.sqlite3-wal
+config/rag/
 # Legacy JSON is no longer read, but keep any old local file untracked.
 config/chat_history.json
 

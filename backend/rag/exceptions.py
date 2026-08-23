@@ -21,6 +21,10 @@ class RagEmbeddingError(RagError):
     """Raised when an embedding runtime cannot load or produce valid vectors."""
 
 
+class RagVectorStoreError(RagError):
+    """Raised when the local vector store cannot complete an operation."""
+
+
 class UnsupportedDocumentTypeError(RagParsingError):
     """Raised when no basic ingestion parser supports a document type."""
 
@@ -31,5 +35,6 @@ __all__ = [
     "RagError",
     "RagInvariantError",
     "RagParsingError",
+    "RagVectorStoreError",
     "UnsupportedDocumentTypeError",
 ]

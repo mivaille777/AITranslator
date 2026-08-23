@@ -21,6 +21,7 @@ from backend.rag.exceptions import (
     RagError,
     RagInvariantError,
     RagParsingError,
+    RagVectorStoreError,
     UnsupportedDocumentTypeError,
 )
 from backend.rag.models import (
@@ -62,6 +63,7 @@ __all__ = [
     "RagParsingError",
     "RagRetrievalConfig",
     "RagVectorStoreConfig",
+    "RagVectorStoreError",
     "RetrievalCandidate",
     "RetrievalResult",
     "StructureAwareChunker",

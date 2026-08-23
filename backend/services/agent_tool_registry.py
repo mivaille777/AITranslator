@@ -112,11 +112,14 @@ class AgentToolRegistry:
             raise KeyError(f"Unknown agent tool: {name}")
 
         spec = definition.spec
+        # Validate tool-owned arguments before the broader invocation context so
+        # callers receive the stable tool-boundary error contract for fields
+        # such as polish style or translation target language.
+        args = definition.parse_args(dict(payload))
         context = self._invocation_context(payload)
         if spec.requires_reading_context and not context.source_text.strip():
             raise ValueError(f"Agent tool {spec.name} requires selected source text.")
 
-        args = definition.parse_args(dict(payload))
         result = definition.executor(context, args)
         if result.tool_name != spec.name:
             raise ValueError(

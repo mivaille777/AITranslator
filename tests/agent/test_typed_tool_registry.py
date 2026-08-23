@@ -139,8 +139,7 @@ def test_typed_dispatch_preserves_existing_tool_behavior() -> None:
 
     translated = registry.execute(
         "translate_selection",
-        **READING,
-        target_language="ja",
+        **{**READING, "target_language": "ja"},
         request_id=7,
     )
     explained = registry.execute(

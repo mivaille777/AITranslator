@@ -80,6 +80,8 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
         phase={runtime.viewState.phase}
         provider={runtime.viewState.provider}
         model={runtime.viewState.model}
+        evidence={runtime.viewState.evidence}
+        citations={runtime.viewState.citations}
       />
 
       <AgentObservabilityPanel

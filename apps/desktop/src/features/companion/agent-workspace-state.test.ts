@@ -39,6 +39,8 @@ const trace: AgentRunTraceResponse = {
     model: "stub-model",
     request_id: 7,
     tool_result: null,
+    evidence: [],
+    citations: [],
   },
   events: [
     event(0, "agent_start", { session_id: "session-1", run_id: "run-1" }),

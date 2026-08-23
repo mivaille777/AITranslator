@@ -5,7 +5,14 @@ from contextlib import suppress
 from dataclasses import asdict
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import ValidationError
 
 from app.ai.errors import AIConfigurationError, AIError
@@ -33,7 +40,10 @@ from backend.models.agent_tools import (
     AgentTraceEvent,
 )
 from backend.services.agent_conversation_service import AgentConversationBusyError
-from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolRegistry
+from backend.services.agent_tool_registry import (
+    AgentToolExecutionResult,
+    AgentToolRegistry,
+)
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 AgentToolRegistryDependency = Annotated[
@@ -108,6 +118,8 @@ def _run_response(state: AgentState) -> AgentRunResponse:
         request_id=max(0, int(response.get("request_id", 0) or 0)),
         conversation_id=state.conversation.conversation_id,
         tool_result=tool_result,
+        evidence=state.evidence,
+        citations=state.citations,
     )
 
 

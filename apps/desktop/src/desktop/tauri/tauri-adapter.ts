@@ -223,6 +223,9 @@ export const tauriDesktopAdapter: DesktopAdapter = {
     async pickKnowledgeDocument() {
       return invoke<string | null>("pick_knowledge_document")
     },
+    async openEvidenceSource(resourceUrl) {
+      await invoke("open_evidence_source", { resourceUrl })
+    },
   },
   window: {
     async show() {

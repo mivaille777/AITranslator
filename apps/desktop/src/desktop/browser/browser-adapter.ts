@@ -9,6 +9,9 @@ export const browserDesktopAdapter: DesktopAdapter = {
       const path = window.prompt("Enter an absolute path to a local knowledge document:")
       return path?.trim() || null
     },
+    async openEvidenceSource() {
+      throw new Error("Opening local evidence files requires the desktop app.")
+    },
   },
   window: {
     async show() {

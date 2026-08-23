@@ -24,6 +24,7 @@ dependencies = [
  "rfd",
  "tauri",
  "tauri-build",
+ "url",
  "windows-sys 0.61.2",
 ]
 

@@ -1,5 +1,8 @@
 import { apiPost } from "./client"
 import type { ReadingContextFields } from "./types"
+import type { AgentCitationRef, AgentEvidenceItem } from "../features/evidence/evidence-types"
+
+export type { AgentCitationRef, AgentEvidenceItem } from "../features/evidence/evidence-types"
 
 export type AgentRunStatus = "completed" | "confirmation_required"
 export type AgentPlanAction = "answer" | "tool"
@@ -77,6 +80,8 @@ export interface AgentRunResponse {
   request_id: number
   conversation_id: string
   tool_result: AgentToolExecuteResponse | null
+  evidence: AgentEvidenceItem[]
+  citations: AgentCitationRef[]
 }
 
 export interface AgentTraceEvent {

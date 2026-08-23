@@ -46,6 +46,7 @@ export type DesktopWindowAdapter = WindowAdapter & WindowControlsAdapter
 
 export interface DesktopFilesAdapter {
   pickKnowledgeDocument(): Promise<string | null>
+  openEvidenceSource(resourceUrl: string): Promise<void>
 }
 
 export interface OverlayWindowAdapter extends WindowAdapter {

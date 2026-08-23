@@ -2,17 +2,23 @@ import { Bot } from "lucide-react"
 
 import { AITPanel } from "@/shared/components/AITPanel"
 import type { AgentWorkspacePhase } from "../../agent/state/agent-workspace-state"
+import { CitedAnswer } from "../../evidence/CitedAnswer"
+import type { AgentCitationRef, AgentEvidenceItem } from "../../evidence/evidence-types"
 
 export function AgentMessage({
   content,
   phase,
   provider,
   model,
+  evidence,
+  citations,
 }: {
   content: string
   phase: AgentWorkspacePhase
   provider: string
   model: string
+  evidence: AgentEvidenceItem[]
+  citations: AgentCitationRef[]
 }) {
   return (
     <AITPanel className="p-5">
@@ -48,7 +54,7 @@ export function AgentMessage({
       ) : null}
 
       {content ? (
-        <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-800">{content}</p>
+        <CitedAnswer content={content} evidence={evidence} citations={citations} />
       ) : null}
 
       {provider || model ? (

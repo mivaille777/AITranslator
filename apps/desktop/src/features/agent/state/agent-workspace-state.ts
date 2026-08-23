@@ -1,4 +1,5 @@
 import type { AgentRunTraceResponse, AgentTraceEvent, AgentTraceEventType } from "../../../api/agent"
+import type { AgentCitationRef, AgentEvidenceItem } from "../../evidence/evidence-types"
 
 export type AgentWorkspacePhase =
   | "idle"
@@ -31,6 +32,8 @@ export interface AgentWorkspaceViewState {
   confirmationTool: string
   activities: AgentActivityItem[]
   errorMessage: string
+  evidence: AgentEvidenceItem[]
+  citations: AgentCitationRef[]
 }
 
 function text(value: unknown): string {
@@ -186,6 +189,8 @@ export function deriveAgentWorkspaceState({
     traceId: trace?.trace_id ?? liveEvents.at(-1)?.trace_id ?? "",
     totalDurationMs: trace?.total_duration_ms ?? liveEvents.at(-1)?.elapsed_ms ?? 0,
     activities,
+    evidence: trace?.run.evidence ?? [],
+    citations: trace?.run.citations ?? [],
   }
 
   if (errorMessage) {

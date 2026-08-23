@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
+    path::{Path, PathBuf},
+    process::Command,
     sync::atomic::{AtomicU64, Ordering},
     thread,
     time::Duration,
@@ -117,6 +119,46 @@ fn pick_knowledge_document() -> Option<String> {
         .map(|path| path.to_string_lossy().into_owned())
 }
 
+fn evidence_file_path(resource_url: &str) -> Result<PathBuf, String> {
+    let parsed = url::Url::parse(resource_url).map_err(|_| "Evidence source URI is invalid.")?;
+    if parsed.scheme() != "file" {
+        return Err("Only verified local file evidence can be opened.".to_string());
+    }
+    let path = parsed
+        .to_file_path()
+        .map_err(|_| "Evidence source URI is not a local file path.")?;
+    if !path.is_absolute() {
+        return Err("Evidence source path must be absolute.".to_string());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| "Evidence source file no longer exists.".to_string())?;
+    if !canonical.is_file() {
+        return Err("Evidence source is not a file.".to_string());
+    }
+    Ok(canonical)
+}
+
+fn launch_file(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer.exe");
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = Command::new("xdg-open");
+
+    command
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Unable to open evidence source: {error}"))
+}
+
+#[tauri::command]
+fn open_evidence_source(resource_url: String) -> Result<(), String> {
+    launch_file(&evidence_file_path(&resource_url)?)
+}
+
 #[tauri::command]
 fn update_overlay_window_shape(app: tauri::AppHandle) -> Result<(), String> {
     let overlay = app
@@ -218,6 +260,7 @@ fn main() {
             window_is_maximized,
             window_close,
             pick_knowledge_document,
+            open_evidence_source,
             update_overlay_window_shape
         ])
         .run(tauri::generate_context!())

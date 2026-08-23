@@ -4,7 +4,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from backend.models.agent_runtime import AgentPlanContext
+from backend.models.agent_runtime import (
+    AgentCitationRef,
+    AgentEvidenceItem,
+    AgentPlanContext,
+)
 from backend.models.quick_actions import ReadingContextPayload
 
 AgentToolEffect = Literal["read", "compute", "write"]
@@ -97,6 +101,8 @@ class AgentRunResponse(BaseModel):
     request_id: int = 0
     conversation_id: str = ""
     tool_result: AgentToolExecuteResponse | None = None
+    evidence: list[AgentEvidenceItem] = Field(default_factory=list)
+    citations: list[AgentCitationRef] = Field(default_factory=list)
 
 
 class AgentTraceEvent(BaseModel):

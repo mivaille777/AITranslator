@@ -271,7 +271,12 @@ class AgentState(BaseModel):
         )
         if self.plan.mode != "multi_step":
             raise ValueError("apply_multi_step_plan requires mode='multi_step'.")
-        self.planned_action = {}
+        self.planned_action = {
+            "action": "answer",
+            "tool_name": "",
+            "user_visible_reason": self.plan.goal,
+            "arguments": {},
+        }
         self.intent = "complex"
         return self.sync_contract()
 

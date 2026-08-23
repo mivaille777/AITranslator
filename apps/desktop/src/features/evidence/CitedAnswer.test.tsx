@@ -37,6 +37,7 @@ describe("RAG citation interaction", () => {
     render(<CitedAnswer content="The response is bounded [1]." evidence={[evidence]} citations={[citation]} />)
 
     expect(screen.getByRole("button", { name: "Open citation [1]" })).not.toBeNull()
+    expect(screen.getByRole("button", { name: "Open citation [1]" }).getAttribute("title")).toContain("Control Systems Paper")
     expect(citationSegments("Unknown [9]", [citation])).toEqual([
       { text: "Unknown " },
       { text: "[9]" },
@@ -49,7 +50,7 @@ describe("RAG citation interaction", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open citation [1]" }))
 
     expect(screen.getByRole("dialog", { name: "Citation detail [1]" })).not.toBeNull()
-    expect(screen.getAllByText("Control Systems Paper")).toHaveLength(2)
+    expect(screen.getByText("Control Systems Paper")).not.toBeNull()
     expect(screen.getByText("Page 8 · Section Stability")).not.toBeNull()
     expect(screen.getByText(evidence.excerpt)).not.toBeNull()
   })
@@ -59,7 +60,7 @@ describe("RAG citation interaction", () => {
     render(<CitedAnswer content="Supported claim [1]" evidence={[evidence]} citations={[citation]} />)
 
     await userEvent.click(screen.getByRole("button", { name: "Open citation [1]" }))
-    await userEvent.click(screen.getByRole("button", { name: "Open source" }))
+    await userEvent.click(screen.getByRole("button", { name: "Open document" }))
 
     expect(openSource).toHaveBeenCalledWith(evidence.resource_url)
     expect(isSafeEvidenceResource("https://example.org/invented.pdf")).toBe(false)
@@ -72,7 +73,7 @@ describe("RAG citation interaction", () => {
       <CitedAnswer content="Missing source [1]" evidence={[]} citations={[citation]} />,
     )
     await userEvent.click(screen.getByRole("button", { name: "Open citation [1]" }))
-    expect(screen.getAllByText("Source unavailable")).toHaveLength(2)
+    expect(screen.getByText("Source unavailable")).not.toBeNull()
     unmount()
 
     render(
@@ -83,7 +84,20 @@ describe("RAG citation interaction", () => {
       />,
     )
     await userEvent.click(screen.getByRole("button", { name: "Open citation [1]" }))
-    expect((screen.getByRole("button", { name: "Open source" }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole("button", { name: "Open document" }) as HTMLButtonElement).disabled).toBe(true)
     expect(openSource).not.toHaveBeenCalled()
+  })
+
+  it("keeps the sources footer compact until the user expands it", async () => {
+    render(<CitedAnswer content="Supported claim [1]" evidence={[evidence]} citations={[citation]} />)
+
+    const toggle = screen.getByRole("button", { name: /Sources 1/ })
+    expect(toggle.getAttribute("aria-expanded")).toBe("false")
+    expect(screen.queryByRole("list", { name: "Answer sources" })).toBeNull()
+
+    await userEvent.click(toggle)
+    expect(toggle.getAttribute("aria-expanded")).toBe("true")
+    expect(screen.getByRole("list", { name: "Answer sources" })).not.toBeNull()
+    expect(screen.queryByText("0.923")).toBeNull()
   })
 })

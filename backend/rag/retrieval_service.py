@@ -7,6 +7,7 @@ from backend.rag.embeddings.base import EmbeddingProvider
 from backend.rag.exceptions import RagRetrievalError
 from backend.rag.fusion import rrf_fuse
 from backend.rag.models import RetrievalResult
+from backend.rag.rerankers.base import RerankerProvider
 from backend.rag.sparse.store import SparseRetriever
 from backend.rag.stores.base import VectorSearchFilter, VectorStore
 
@@ -19,11 +20,13 @@ class RetrievalService:
         vector_store: VectorStore,
         sparse_retriever: SparseRetriever,
         config: RagRetrievalConfig | None = None,
+        reranker: RerankerProvider | None = None,
     ) -> None:
         self._embedding = embedding_provider
         self._vector_store = vector_store
         self._sparse = sparse_retriever
         self._config = config or RagRetrievalConfig()
+        self._reranker = reranker
 
     def retrieve(
         self,
@@ -75,6 +78,19 @@ class RetrievalService:
             "sparse-only" if dense_error else "dense-only" if sparse_error else "hybrid"
         )
         fallback_reason = dense_error or sparse_error
+        reranker_applied = False
+        reranker_fallback_reason = ""
+        if self._reranker is not None:
+            try:
+                candidates = self._reranker.rerank(
+                    query, candidates, top_k=self._config.final_top_k
+                )
+                reranker_applied = True
+            except Exception as exc:  # noqa: BLE001 - RRF fallback is intentional
+                reranker_fallback_reason = str(exc) or exc.__class__.__name__
+                candidates = candidates[: self._config.final_top_k]
+        else:
+            candidates = candidates[: self._config.final_top_k]
         return RetrievalResult(
             query=query,
             candidates=candidates,
@@ -88,6 +104,8 @@ class RetrievalService:
                 "sparse_search_ms": sparse_ms,
                 "fusion_ms": fusion_ms,
                 "fallback_reason": fallback_reason,
+                "reranker_applied": reranker_applied,
+                "reranker_fallback_reason": reranker_fallback_reason,
             },
         )
 

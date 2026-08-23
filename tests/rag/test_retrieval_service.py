@@ -158,3 +158,26 @@ def test_latency_and_count_metadata_are_present() -> None:
     assert result.metadata["dense_search_ms"] >= 0
     assert result.metadata["sparse_search_ms"] >= 0
     assert result.metadata["fusion_ms"] >= 0
+
+
+def test_reranker_is_applied_and_failure_falls_back_to_rrf() -> None:
+    class Reranker:
+        def __init__(self, fail=False):
+            self.fail = fail
+
+        def rerank(self, _query, candidates, *, top_k):
+            if self.fail:
+                raise RuntimeError("rerank failed")
+            return list(reversed(candidates))[:top_k]
+
+    dense = [item("first", dense=True), item("second", dense=True, rank=2)]
+    retrieval, *_ = service(dense=dense)
+    retrieval._reranker = Reranker()
+    applied = retrieval.retrieve("query")
+    assert applied.metadata["reranker_applied"] is True
+    assert applied.candidates[0].chunk.chunk_id == "second"
+
+    retrieval._reranker = Reranker(fail=True)
+    fallback = retrieval.retrieve("query")
+    assert fallback.metadata["reranker_applied"] is False
+    assert fallback.metadata["reranker_fallback_reason"] == "rerank failed"

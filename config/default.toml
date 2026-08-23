@@ -111,3 +111,12 @@ sparse_top_k = 30
 fusion_top_k = 20
 final_top_k = 8
 fusion = "rrf"
+
+[rag.reranker]
+provider = "qwen3"
+model = "Qwen/Qwen3-Reranker-0.6B"
+device = "auto"
+batch_size = 8
+lazy_load = true
+local_files_only = false
+model_path = ""

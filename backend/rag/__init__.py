@@ -5,6 +5,7 @@ from backend.rag.config import (
     RagChunkingConfig,
     RagConfig,
     RagEmbeddingConfig,
+    RagRerankerConfig,
     RagRetrievalConfig,
     RagVectorStoreConfig,
 )
@@ -69,6 +70,7 @@ __all__ = [
     "RagError",
     "RagInvariantError",
     "RagParsingError",
+    "RagRerankerConfig",
     "RagRetrievalConfig",
     "RagRetrievalError",
     "RagVectorStoreConfig",

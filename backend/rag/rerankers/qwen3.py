@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import math
+from collections.abc import Callable, Sequence
+from threading import RLock
+from typing import Any
+
+from backend.rag.config import RagRerankerConfig
+from backend.rag.embeddings.runtime import resolve_embedding_device
+from backend.rag.exceptions import RagRetrievalError
+
+
+def _factory(*args: Any, **kwargs: Any) -> Any:
+    from sentence_transformers import CrossEncoder
+
+    return CrossEncoder(*args, **kwargs)
+
+
+class Qwen3RerankerProvider:
+    def __init__(
+        self,
+        config: RagRerankerConfig | None = None,
+        *,
+        model_factory: Callable[..., Any] | None = None,
+        torch_module: Any | None = None,
+    ) -> None:
+        self._config = config or RagRerankerConfig()
+        self._factory = model_factory or _factory
+        self._torch = torch_module
+        self._model: Any | None = None
+        self._lock = RLock()
+        if not self._config.lazy_load:
+            self._ensure_model()
+
+    def rerank(self, query, candidates, *, top_k):
+        if top_k <= 0:
+            raise ValueError("top_k must be positive")
+        if not candidates:
+            return []
+        model = self._ensure_model()
+        pairs = [(query, candidate.chunk.text) for candidate in candidates]
+        scores = model.predict(
+            pairs,
+            batch_size=self._config.batch_size,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        if hasattr(scores, "tolist"):
+            scores = scores.tolist()
+        if not isinstance(scores, Sequence) or len(scores) != len(candidates):
+            raise RagRetrievalError("reranker score count mismatch")
+        scored = []
+        for candidate, score in zip(candidates, scores, strict=True):
+            value = float(score)
+            if not math.isfinite(value):
+                raise RagRetrievalError("reranker produced a non-finite score")
+            scored.append(candidate.model_copy(update={"rerank_score": value}))
+        ordered = sorted(
+            scored,
+            key=lambda item: (
+                -float(item.rerank_score),
+                item.rank or 10**9,
+                item.chunk.chunk_id,
+            ),
+        )[:top_k]
+        return [
+            item.model_copy(update={"rank": rank})
+            for rank, item in enumerate(ordered, 1)
+        ]
+
+    def _ensure_model(self):
+        with self._lock:
+            if self._model is not None:
+                return self._model
+            if self._torch is None:
+                import torch
+
+                self._torch = torch
+            device = resolve_embedding_device(self._config.device, self._torch)
+            source = self._config.model_path.strip() or self._config.model
+            self._model = self._factory(
+                source,
+                device=device,
+                local_files_only=self._config.local_files_only,
+            )
+            return self._model
+
+
+__all__ = ["Qwen3RerankerProvider"]

@@ -65,12 +65,31 @@ class RagRetrievalConfig(RagConfigModel):
         return self
 
 
+class RagRerankerConfig(RagConfigModel):
+    provider: str = "qwen3"
+    model: str = "Qwen/Qwen3-Reranker-0.6B"
+    device: str = "auto"
+    batch_size: int = Field(default=8, ge=1)
+    lazy_load: bool = True
+    local_files_only: bool = False
+    model_path: str = ""
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"auto", "cuda", "cpu"}:
+            raise ValueError("device must be one of: auto, cuda, cpu")
+        return normalized
+
+
 class RagConfig(RagConfigModel):
     enabled: bool = True
     chunking: RagChunkingConfig = Field(default_factory=RagChunkingConfig)
     embedding: RagEmbeddingConfig = Field(default_factory=RagEmbeddingConfig)
     vector_store: RagVectorStoreConfig = Field(default_factory=RagVectorStoreConfig)
     retrieval: RagRetrievalConfig = Field(default_factory=RagRetrievalConfig)
+    reranker: RagRerankerConfig = Field(default_factory=RagRerankerConfig)
 
 
 __all__ = [
@@ -78,6 +97,7 @@ __all__ = [
     "RagConfig",
     "RagConfigModel",
     "RagEmbeddingConfig",
+    "RagRerankerConfig",
     "RagRetrievalConfig",
     "RagVectorStoreConfig",
 ]

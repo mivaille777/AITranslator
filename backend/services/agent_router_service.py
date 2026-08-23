@@ -141,6 +141,28 @@ _SAVE_NOTE_COMMANDS = frozenset(
     }
 )
 
+_COMPOUND_CONNECTORS = (
+    "然后",
+    "之后",
+    "再",
+    "并且",
+    "并",
+    "同时",
+    "接着",
+    "and then",
+    " then ",
+    " and ",
+    "after that",
+)
+_COMPOUND_ACTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("translate", re.compile(r"(翻译|翻成|译成|\btranslate\b)", re.I)),
+    ("explain", re.compile(r"(解释|\bexplain\b)", re.I)),
+    ("summarize", re.compile(r"(总结|概括|\bsummarize\b)", re.I)),
+    ("polish", re.compile(r"(润色|\bpolish\b)", re.I)),
+    ("section_role", re.compile(r"(分析.{0,12}(作用|角色)|section\s+role)", re.I)),
+    ("save_note", re.compile(r"(保存.{0,8}笔记|记到笔记|记入笔记|save.{0,10}note)", re.I)),
+)
+
 
 def _normalize_command(value: object) -> str:
     text = unicodedata.normalize("NFKC", str(value or ""))
@@ -151,6 +173,20 @@ def _normalize_command(value: object) -> str:
 
 def _tool_names(tools: tuple[AgentToolSpec, ...]) -> frozenset[str]:
     return frozenset(tool.name for tool in tools)
+
+
+def _looks_like_compound_request(value: object) -> bool:
+    """Recognize explicit multi-action requests supported by the current tool set."""
+
+    command = _normalize_command(value)
+    if not command or not any(connector in command for connector in _COMPOUND_CONNECTORS):
+        return False
+    actions = {
+        name
+        for name, pattern in _COMPOUND_ACTION_PATTERNS
+        if pattern.search(command)
+    }
+    return len(actions) >= 2
 
 
 class AgentDeterministicRouterService:
@@ -244,12 +280,7 @@ class AgentDeterministicRouterService:
 
 
 class AgentSemanticRouterService:
-    """Compatibility semantic router backed by the existing single-step LLM planner.
-
-    Stage 10.3 separates semantic routing from deterministic routing without
-    introducing multi-step planning yet. ``complex`` remains reserved in the
-    state contract for Stage 10.6; this adapter currently returns answer/tool.
-    """
+    """Semantic router with a conservative Stage 10.6 complex-task boundary."""
 
     def __init__(
         self,
@@ -272,6 +303,14 @@ class AgentSemanticRouterService:
         return str(getattr(self._planner, "prompt_id", "") or "")
 
     def route(self, *, tools: tuple[AgentToolSpec, ...], **payload: Any) -> AgentRouteDecision:
+        if _looks_like_compound_request(payload.get("user_message", "")):
+            return AgentRouteDecision(
+                kind="complex",
+                source="semantic_router",
+                intent="complex",
+                user_visible_reason="This request combines multiple reading actions.",
+            )
+
         plan = self._planner.plan(tools=tools, **payload)
         if plan.action == "tool":
             return AgentRouteDecision(

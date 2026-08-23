@@ -61,7 +61,7 @@ AgentConversationServiceDependency = Annotated[
 def get_agent_runtime(
     service: ProductAgentServiceDependency,
     resolver: ReadingSelectionResolverDependency,
-    conversation_service: AgentConversationServiceDependency,
+    conversation_service: AgentConversationServiceDependency = None,
     trace_store: AgentTraceStoreDependency = None,
 ) -> AgentRuntime:
     """Build one lightweight Agent Core runtime for the current API request.
@@ -70,6 +70,10 @@ def get_agent_runtime(
     durable Conversation storage are shared services injected through stable
     adapters; the Agent adapter coordinates one exchange with the existing
     Conversation lifecycle before and after every run.
+
+    ``conversation_service`` remains optional for direct unit-test construction
+    and other non-FastAPI callers. FastAPI still resolves it from the dependency
+    metadata carried by ``AgentConversationServiceDependency``.
     """
 
     return AgentRuntime(

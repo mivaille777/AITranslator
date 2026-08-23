@@ -3,6 +3,7 @@ export type WorkspaceRoutePath =
   | "/reading"
   | "/chat"
   | "/agent"
+  | "/knowledge"
   | "/research"
   | "/settings"
 
@@ -32,6 +33,11 @@ export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
     path: "/agent",
     label: "Agent Workspace",
     description: "Run Agent tasks with visible context, execution trace, tool activity, and results.",
+  },
+  {
+    path: "/knowledge",
+    label: "Knowledge",
+    description: "Import local documents and manage their retrieval index.",
   },
   {
     path: "/research",

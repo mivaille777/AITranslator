@@ -44,6 +44,10 @@ export interface WindowControlsAdapter {
 
 export type DesktopWindowAdapter = WindowAdapter & WindowControlsAdapter
 
+export interface DesktopFilesAdapter {
+  pickKnowledgeDocument(): Promise<string | null>
+}
+
 export interface OverlayWindowAdapter extends WindowAdapter {
   place(
     mode: OverlayPositionMode,
@@ -72,4 +76,5 @@ export interface DesktopAdapter {
   readonly runtime: DesktopRuntime
   readonly window: DesktopWindowAdapter
   readonly overlay: OverlayWindowAdapter
+  readonly files: DesktopFilesAdapter
 }

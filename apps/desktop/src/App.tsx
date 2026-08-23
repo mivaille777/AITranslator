@@ -12,6 +12,7 @@ import WorkspaceRouteBoundary from "./shared/errors/WorkspaceRouteBoundary"
 const ReadingWorkspace = lazy(() => import("./features/reading/ReadingWorkspace"))
 const CompanionWorkspaceV2 = lazy(() => import("./features/companion/CompanionWorkspaceV2"))
 const ResearchRoute = lazy(() => import("./features/research/ResearchRoute"))
+const KnowledgeRoute = lazy(() => import("./features/knowledge/KnowledgeRoute"))
 const SettingsWorkspace = lazy(() => import("./features/settings/SettingsWorkspace"))
 
 function WorkspaceRouteFallback() {
@@ -69,6 +70,7 @@ function App() {
               <Route path="/reading" element={<ReadingWorkspace workspace={workspace} />} />
               <Route path="/chat" element={<CompanionWorkspaceV2 />} />
               <Route path="/agent" element={<AgentWorkspace workspace={workspace} />} />
+              <Route path="/knowledge" element={<KnowledgeRoute backendState={workspace.backendState} />} />
               <Route path="/research" element={<ResearchRoute backendState={workspace.backendState} />} />
               <Route path="/settings" element={<SettingsWorkspace workspace={workspace} />} />
               <Route path="*" element={<Navigate to="/translation" replace />} />

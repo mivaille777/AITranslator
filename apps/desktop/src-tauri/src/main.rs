@@ -106,6 +106,18 @@ fn window_close(app: tauri::AppHandle, window_label: String) -> Result<(), Strin
 }
 
 #[tauri::command]
+fn pick_knowledge_document() -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title("Add document to Knowledge Library")
+        .add_filter(
+            "Knowledge documents",
+            &["pdf", "docx", "txt", "md", "html", "htm"],
+        )
+        .pick_file()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 fn update_overlay_window_shape(app: tauri::AppHandle) -> Result<(), String> {
     let overlay = app
         .get_webview_window("overlay")
@@ -205,6 +217,7 @@ fn main() {
             window_toggle_maximize,
             window_is_maximized,
             window_close,
+            pick_knowledge_document,
             update_overlay_window_shape
         ])
         .run(tauri::generate_context!())

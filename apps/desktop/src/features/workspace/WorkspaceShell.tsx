@@ -5,6 +5,7 @@ import {
   Languages,
   MessageSquareText,
   NotebookText,
+  LibraryBig,
   Settings2,
   Sparkles,
 } from "lucide-react"
@@ -21,6 +22,7 @@ const icons = {
   "/reading": BookOpenText,
   "/chat": MessageSquareText,
   "/agent": Bot,
+  "/knowledge": LibraryBig,
   "/research": NotebookText,
   "/settings": Settings2,
 } as const

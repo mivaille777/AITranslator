@@ -32,6 +32,10 @@ export const queryKeys = {
     source: (sourceId: string) => ["research", "source", sourceId] as const,
     detail: (noteId: string) => ["research", "detail", noteId] as const,
   },
+  knowledge: {
+    documents: ["knowledge", "documents"] as const,
+    runtime: ["knowledge", "runtime"] as const,
+  },
 } as const
 
 export const queryPolling = {
@@ -48,4 +52,6 @@ export const queryPolling = {
   conversationList: 5_000,
   researchNotes: 5_000,
   researchWorkspace: 5_000,
+  knowledgeDocuments: 5_000,
+  knowledgeActiveDocuments: 1_000,
 } as const

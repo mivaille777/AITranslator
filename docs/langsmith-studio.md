@@ -17,22 +17,49 @@ langgraph --help
 
 ## 2. Configure LangSmith access
 
-Create a LangSmith API key in your LangSmith account and expose it only in the current shell:
+Create a fresh LangSmith API key and expose it only to the current PowerShell process:
 
 ```powershell
 $env:LANGSMITH_API_KEY="lsv2_..."
-$env:LANGSMITH_TRACING="false"
 ```
 
-`langgraph.json` also defaults `LANGSMITH_TRACING` to `false`. This keeps AITrans reading content and graph traces local while using Studio as the local development UI. Do not commit API keys.
+Do not commit the key. The repository ignores `.env` and `langgraph.json` loads that local file through:
+
+```json
+"env": ".env"
+```
+
+The recommended launcher synchronizes the current shell key into the ignored `.env` file without printing it:
+
+```powershell
+.\scripts\start_langsmith_studio.ps1
+```
+
+Use remote LangSmith tracing only when intentionally debugging non-sensitive content:
+
+```powershell
+.\scripts\start_langsmith_studio.ps1 -EnableTracing
+```
+
+Without `-EnableTracing`, the launcher writes `LANGSMITH_TRACING=false` to `.env`.
 
 ## 3. Start the local Agent Server
+
+Recommended:
 
 ```powershell
 cd D:\AITranslator
 conda activate aitrans
-langgraph dev
+.\scripts\start_langsmith_studio.ps1
 ```
+
+If the Studio CLI is missing:
+
+```powershell
+.\scripts\start_langsmith_studio.ps1 -Install
+```
+
+The launcher also sets `PYTHONUTF8=1` before spawning LangGraph. This avoids the Windows GBK decoding failure seen when `langgraph_api` reads packaged UTF-8 OpenAPI resources.
 
 The default local Agent Server is available at:
 
@@ -70,7 +97,7 @@ Stage 10.6 will expand `execute_single_step` into explicit routing/planning/tool
 
 The public graph state is deliberately JSON-serializable. Runtime-only objects such as cancellation controls and event callbacks are passed through LangGraph runtime context and do not appear in Studio state.
 
-Studio may render a form from the graph state schema. For precise testing, choose **View Raw** and start with:
+For precise testing, choose **View Raw** and start with:
 
 ```json
 {
@@ -95,6 +122,6 @@ The graph will fill the remaining `AgentState` defaults. If the selected action 
 
 ## 6. Privacy boundary
 
-`LANGSMITH_TRACING=false` is the default Studio development mode for AITrans. Do not enable remote tracing for private reading content unless you intentionally want that data sent to LangSmith.
+`LANGSMITH_TRACING=false` is the default launcher behavior. Do not enable remote tracing for private reading content unless you intentionally want that trace data sent to LangSmith.
 
 The SQLite Conversation store remains the AITrans source of truth. Studio threads/checkpoints are debugging state and must not replace the production Conversation lifecycle.

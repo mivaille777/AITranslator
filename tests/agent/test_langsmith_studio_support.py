@@ -62,7 +62,7 @@ def test_graph_state_is_json_serializable_without_runtime_objects() -> None:
     assert "control" not in result
 
 
-def test_langgraph_config_exposes_reading_agent_factory() -> None:
+def test_langgraph_config_exposes_reading_agent_factory_and_dotenv() -> None:
     root = Path(__file__).resolve().parents[2]
     config = json.loads((root / "langgraph.json").read_text(encoding="utf-8"))
 
@@ -70,7 +70,7 @@ def test_langgraph_config_exposes_reading_agent_factory() -> None:
         "reading_agent": "./backend/agent_graph/studio.py:make_graph"
     }
     assert config["dependencies"] == ["."]
-    assert config["env"]["LANGSMITH_TRACING"] == "false"
+    assert config["env"] == ".env"
     assert callable(make_graph)
 
 
@@ -79,3 +79,13 @@ def test_repository_ignores_local_studio_credentials() -> None:
     ignore = (root / ".gitignore").read_text(encoding="utf-8")
 
     assert ".env" in ignore
+
+
+def test_studio_launcher_handles_windows_utf8_and_dotenv_sync() -> None:
+    root = Path(__file__).resolve().parents[2]
+    script = (root / "scripts" / "start_langsmith_studio.ps1").read_text(encoding="utf-8")
+
+    assert '$env:PYTHONUTF8 = "1"' in script
+    assert 'Set-DotEnvValue -Path $dotEnvPath -Name "LANGSMITH_API_KEY"' in script
+    assert 'Set-DotEnvValue -Path $dotEnvPath -Name "LANGSMITH_TRACING"' in script
+    assert "$env:LANGSMITH_API_KEY" in script

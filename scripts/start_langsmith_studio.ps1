@@ -5,6 +5,29 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Set-DotEnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Value
+    )
+
+    $lines = @()
+    if (Test-Path $Path) {
+        $lines = @(Get-Content -Encoding UTF8 $Path)
+    }
+
+    $pattern = "^\s*" + [regex]::Escape($Name) + "\s*="
+    $filtered = @($lines | Where-Object { $_ -notmatch $pattern })
+    $filtered += "$Name=$Value"
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllLines($Path, $filtered, $utf8NoBom)
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $previousPythonUtf8 = $env:PYTHONUTF8
 $previousLangSmithTracing = $env:LANGSMITH_TRACING
@@ -46,10 +69,13 @@ try {
     }
 
     try {
-        $null = Get-Content -Raw -Encoding UTF8 $langGraphConfig | ConvertFrom-Json
+        $config = Get-Content -Raw -Encoding UTF8 $langGraphConfig | ConvertFrom-Json
     }
     catch {
         throw "langgraph.json is not valid UTF-8 JSON: $($_.Exception.Message)"
+    }
+    if ($config.env -ne ".env") {
+        throw "langgraph.json must load Studio environment variables from the repository .env file."
     }
 
     if ($Install) {
@@ -71,10 +97,18 @@ try {
 
     $env:LANGSMITH_TRACING = if ($EnableTracing) { "true" } else { "false" }
 
+    # LangSmith Studio expects the local Agent Server to load credentials from
+    # the .env file referenced by langgraph.json. Keep any unrelated local
+    # settings, replace only the LangSmith entries, and never print the key.
+    $dotEnvPath = Join-Path $repoRoot ".env"
+    Set-DotEnvValue -Path $dotEnvPath -Name "LANGSMITH_API_KEY" -Value $env:LANGSMITH_API_KEY
+    Set-DotEnvValue -Path $dotEnvPath -Name "LANGSMITH_TRACING" -Value $env:LANGSMITH_TRACING
+
     Write-Host "Starting LangSmith Studio development server..."
     Write-Host "Repository: $repoRoot"
     Write-Host "Python:     $pythonExecutable ($pythonVersion)"
     Write-Host "UTF-8 mode: enabled (PYTHONUTF8=1)"
+    Write-Host "Studio env: synchronized to ignored .env"
     Write-Host "Tracing:    $env:LANGSMITH_TRACING"
     Write-Host "API:        http://127.0.0.1:2024"
     Write-Host "Studio:     https://smith.langchain.com/studio/?baseUrl=http://127.0.0.1:2024"

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "reading_agent": "./backend/agent_graph/studio.py:make_graph"
+  },
+  "env": {
+    "LANGSMITH_TRACING": "false"
+  },
+  "python_version": "3.11"
+}

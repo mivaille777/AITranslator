@@ -26,6 +26,11 @@ config/*.sqlite3-wal
 # Legacy JSON is no longer read, but keep any old local file untracked.
 config/chat_history.json
 
+# Local LangSmith/LangGraph credentials and developer overrides.
+.env
+.env.*
+!.env.example
+
 *.log
 
 # Private development plan; keep it local and never publish it.

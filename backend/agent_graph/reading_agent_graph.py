@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Callable, TypedDict
 
 from langgraph.graph import END, START, StateGraph
+from langgraph.runtime import Runtime
 
 from backend.agent_core.events import AgentEventType
 from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
@@ -14,24 +16,80 @@ GraphEventSink = Callable[[AgentEventType, dict[str, Any]], None]
 
 
 class ReadingAgentGraphState(TypedDict, total=False):
-    agent_state: AgentState
-    conversation_run: Any
-    emitted_event_types: set[AgentEventType]
+    """Serializable state exposed by the Reading Agent graph.
+
+    Runtime-only objects such as callbacks and cancellation controls are passed
+    through LangGraph runtime context instead of being persisted in graph state.
+    """
+
+    agent_state: dict[str, Any]
+    conversation_run: dict[str, Any]
+    emitted_event_types: list[str]
+
+
+class ReadingAgentRuntimeContext(TypedDict, total=False):
+    """Per-invocation objects that must never become Studio/checkpoint state."""
+
     event_sink: GraphEventSink | None
     control: AgentRunControl
+
+
+def _coerce_agent_state(value: AgentState | dict[str, Any]) -> AgentState:
+    if isinstance(value, AgentState):
+        return value
+    return AgentState.model_validate(value)
+
+
+def _dump_agent_state(state: AgentState) -> dict[str, Any]:
+    return state.model_dump(mode="json")
+
+
+def _dump_conversation_run(run: Any) -> dict[str, Any]:
+    if run is None:
+        return {}
+    history = getattr(run, "history", ()) or ()
+    return {
+        "conversation_id": str(getattr(run, "conversation_id", "") or ""),
+        "user_message_id": str(getattr(run, "user_message_id", "") or ""),
+        "assistant_message_id": str(getattr(run, "assistant_message_id", "") or ""),
+        "history": [
+            [str(item[0]), str(item[1])]
+            for item in history
+            if isinstance(item, (list, tuple)) and len(item) >= 2
+        ],
+        "owner_id": str(getattr(run, "owner_id", "") or ""),
+        "request_id": max(0, int(getattr(run, "request_id", 0) or 0)),
+    }
+
+
+def _load_conversation_run(payload: dict[str, Any] | None) -> Any:
+    if not payload:
+        return None
+    history = tuple(
+        (str(item[0]), str(item[1]))
+        for item in payload.get("history", ())
+        if isinstance(item, (list, tuple)) and len(item) >= 2
+    )
+    return SimpleNamespace(
+        conversation_id=str(payload.get("conversation_id", "") or ""),
+        user_message_id=str(payload.get("user_message_id", "") or ""),
+        assistant_message_id=str(payload.get("assistant_message_id", "") or ""),
+        history=history,
+        owner_id=str(payload.get("owner_id", "") or ""),
+        request_id=max(0, int(payload.get("request_id", 0) or 0)),
+    )
 
 
 class ReadingAgentGraph:
     """LangGraph orchestration shell for the production Reading Agent.
 
-    Stage 10.5 deliberately preserves the existing single-step ProductAgent
-    behavior. LangGraph now owns the durable workflow boundaries—Conversation
-    preparation, one bounded product-agent execution, and Conversation
-    finalization—while ``AgentRuntime`` remains responsible for correlation,
-    budgets, cancellation, lifecycle telemetry and trace persistence.
+    Stage 10.5 preserves the existing single-step ProductAgent behavior while
+    LangGraph owns the workflow boundaries. Stage 10.5.1 keeps graph state
+    JSON-serializable for LangSmith Studio/checkpoint inspection and moves
+    runtime-only callbacks/control objects into LangGraph runtime context.
 
-    Stage 10.6 can replace ``execute_single_step`` with explicit planner/tool
-    branches without changing the outer Runtime or API contracts.
+    Stage 10.6 can replace ``execute_single_step`` with explicit router/planner/
+    tool branches without changing the outer AgentRuntime or API contracts.
     """
 
     node_names = (
@@ -42,7 +100,10 @@ class ReadingAgentGraph:
 
     def __init__(self, adapter: ProductAgentRuntimeAdapter) -> None:
         self._adapter = adapter
-        builder = StateGraph(ReadingAgentGraphState)
+        builder = StateGraph(
+            ReadingAgentGraphState,
+            context_schema=ReadingAgentRuntimeContext,
+        )
         builder.add_node("prepare_conversation", self._prepare_conversation)
         builder.add_node("execute_single_step", self._execute_single_step)
         builder.add_node("finalize_conversation", self._finalize_conversation)
@@ -60,21 +121,23 @@ class ReadingAgentGraph:
         self,
         graph_state: ReadingAgentGraphState,
     ) -> dict[str, Any]:
-        state = graph_state["agent_state"]
+        state = _coerce_agent_state(graph_state["agent_state"])
         conversation_run = self._adapter.begin_conversation(state)
         return {
-            "agent_state": state,
-            "conversation_run": conversation_run,
+            "agent_state": _dump_agent_state(state),
+            "conversation_run": _dump_conversation_run(conversation_run),
         }
 
     def _execute_single_step(
         self,
         graph_state: ReadingAgentGraphState,
+        runtime: Runtime[ReadingAgentRuntimeContext],
     ) -> dict[str, Any]:
-        state = graph_state["agent_state"]
-        conversation_run = graph_state.get("conversation_run")
-        emit = graph_state.get("event_sink")
-        control = graph_state.get("control")
+        state = _coerce_agent_state(graph_state["agent_state"])
+        conversation_run = _load_conversation_run(graph_state.get("conversation_run"))
+        runtime_context = runtime.context or {}
+        emit = runtime_context.get("event_sink")
+        control = runtime_context.get("control") or AgentRunControl()
 
         try:
             state, emitted = self._adapter.execute_product(
@@ -87,20 +150,20 @@ class ReadingAgentGraph:
             raise
 
         return {
-            "agent_state": state,
-            "emitted_event_types": emitted,
+            "agent_state": _dump_agent_state(state),
+            "emitted_event_types": sorted(item.value for item in emitted),
         }
 
     def _finalize_conversation(
         self,
         graph_state: ReadingAgentGraphState,
     ) -> dict[str, Any]:
-        state = graph_state["agent_state"]
+        state = _coerce_agent_state(graph_state["agent_state"])
         self._adapter.complete_conversation(
-            graph_state.get("conversation_run"),
+            _load_conversation_run(graph_state.get("conversation_run")),
             state,
         )
-        return {"agent_state": state}
+        return {"agent_state": _dump_agent_state(state)}
 
     def _invoke(
         self,
@@ -110,14 +173,22 @@ class ReadingAgentGraph:
         control: AgentRunControl | None,
     ) -> tuple[AgentState, set[AgentEventType]]:
         initial: ReadingAgentGraphState = {
-            "agent_state": state,
-            "event_sink": emit,
-            "control": control or AgentRunControl(),
-            "emitted_event_types": set(),
+            "agent_state": _dump_agent_state(state),
+            "conversation_run": {},
+            "emitted_event_types": [],
         }
-        result = self._compiled.invoke(initial)
-        final_state = result.get("agent_state", state)
-        emitted = set(result.get("emitted_event_types", set()))
+        result = self._compiled.invoke(
+            initial,
+            context={
+                "event_sink": emit,
+                "control": control or AgentRunControl(),
+            },
+        )
+        final_state = _coerce_agent_state(result.get("agent_state", initial["agent_state"]))
+        emitted = {
+            AgentEventType(item)
+            for item in result.get("emitted_event_types", ())
+        }
         return final_state, emitted
 
     def __call__(self, state: AgentState) -> AgentState:
@@ -139,4 +210,8 @@ class ReadingAgentGraph:
         self._adapter.close()
 
 
-__all__ = ["ReadingAgentGraph", "ReadingAgentGraphState"]
+__all__ = [
+    "ReadingAgentGraph",
+    "ReadingAgentGraphState",
+    "ReadingAgentRuntimeContext",
+]

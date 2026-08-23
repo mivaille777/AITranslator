@@ -38,6 +38,10 @@ dev = [
     "httpx>=0.27,<1",
     "ruff>=0.12,<1",
 ]
+studio = [
+    # Local Agent Server + LangSmith Studio development only.
+    "langgraph-cli[inmem]>=0.4.31,<0.5",
+]
 build = [
     "pyinstaller>=6.10,<7",
 ]

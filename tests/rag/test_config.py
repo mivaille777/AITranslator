@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+from pathlib import Path
+import tomllib
+
+import pytest
+from pydantic import ValidationError
+
+from backend.rag.config import RagChunkingConfig, RagConfig, RagEmbeddingConfig, RagRetrievalConfig
+
+
+def test_rag_config_defaults_match_v1_contract() -> None:
+    config = RagConfig()
+
+    assert config.enabled is True
+    assert config.chunking.target_tokens == 512
+    assert config.chunking.overlap_tokens == 80
+    assert config.embedding.model == "Qwen/Qwen3-Embedding-0.6B"
+    assert config.embedding.dimension == 1024
+    assert config.embedding.batch_size == 8
+    assert config.embedding.normalize is True
+    assert config.vector_store.provider == "qdrant_local"
+    assert config.vector_store.collection_name == "aitrans_knowledge"
+    assert config.vector_store.distance == "cosine"
+    assert config.retrieval.fusion == "rrf"
+    assert config.retrieval.final_top_k == 8
+
+
+def test_embedding_dimension_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        RagEmbeddingConfig(dimension=0)
+
+
+def test_chunk_overlap_must_be_smaller_than_target() -> None:
+    with pytest.raises(ValidationError):
+        RagChunkingConfig(target_tokens=128, overlap_tokens=128, minimum_tokens=64)
+
+
+def test_chunk_minimum_must_not_exceed_target() -> None:
+    with pytest.raises(ValidationError):
+        RagChunkingConfig(target_tokens=128, overlap_tokens=16, minimum_tokens=129)
+
+
+def test_final_top_k_must_not_exceed_fusion_top_k() -> None:
+    with pytest.raises(ValidationError):
+        RagRetrievalConfig(fusion_top_k=4, final_top_k=8)
+
+
+def test_default_toml_rag_section_validates_against_contract() -> None:
+    root = Path(__file__).resolve().parents[2]
+    with (root / "config" / "default.toml").open("rb") as handle:
+        raw = tomllib.load(handle)
+
+    config = RagConfig.model_validate(raw["rag"])
+
+    assert config.embedding.dimension == 1024
+    assert config.retrieval.dense_top_k == 30

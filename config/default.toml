@@ -78,3 +78,33 @@ custom_position_x = 80
 custom_position_y = 80
 mouse_offset_x = 16
 mouse_offset_y = 16
+
+[rag]
+enabled = true
+
+[rag.chunking]
+target_tokens = 512
+overlap_tokens = 80
+minimum_tokens = 100
+
+[rag.embedding]
+provider = "qwen3"
+model = "Qwen/Qwen3-Embedding-0.6B"
+device = "auto"
+dimension = 1024
+batch_size = 8
+normalize = true
+max_input_tokens = 2048
+warmup = true
+
+[rag.vector_store]
+provider = "qdrant_local"
+collection_name = "aitrans_knowledge"
+distance = "cosine"
+
+[rag.retrieval]
+dense_top_k = 30
+sparse_top_k = 30
+fusion_top_k = 20
+final_top_k = 8
+fusion = "rrf"

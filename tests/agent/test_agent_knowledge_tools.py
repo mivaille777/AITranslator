@@ -106,6 +106,12 @@ def test_search_maps_typed_results_without_embedding_vectors() -> None:
     assert len(result.data["results"]) == 1
     assert result.data["results"][0]["chunk_id"] == "chunk-1"
     assert "vector" not in result.data["results"][0]
+    assert result.data["evidence"][0]["evidence_id"] == "evidence:chunk-1"
+    assert result.data["citations"][0] == {
+        "citation_id": "citation-1",
+        "evidence_ids": ["evidence:chunk-1"],
+        "label": "[1]",
+    }
     filters = retrieval.calls[0][1]
     assert filters is not None
     assert filters.document_ids == ["doc-1", "doc-2"]

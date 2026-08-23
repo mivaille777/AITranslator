@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 from time import monotonic
-from typing import Any, Callable
+from typing import Any
 
 from app.ai.errors import AIConfigurationError, AIError
 from backend.agent_core.exceptions import (
@@ -14,9 +15,17 @@ from backend.agent_core.exceptions import (
     AgentToolTimeoutError,
 )
 from backend.agent_core.reliability import AgentRunControl, run_safe_tool_with_timeout
-from backend.models.agent_runtime import AgentPlanContext, AgentRouteDecision
+from backend.models.agent_runtime import (
+    AgentCitationRef,
+    AgentEvidenceItem,
+    AgentPlanContext,
+    AgentRouteDecision,
+)
 from backend.models.agent_tools import AgentPlan
-from backend.services.agent_multi_step_planner_service import AgentMultiStepPlannerService
+from backend.rag.citation_service import CitationService, build_evidence_citations
+from backend.services.agent_multi_step_planner_service import (
+    AgentMultiStepPlannerService,
+)
 from backend.services.agent_planner_service import AgentPlannerService
 from backend.services.agent_router_service import (
     AgentDeterministicRouterService,
@@ -27,6 +36,7 @@ from backend.services.agent_tool_registry import (
     AgentToolRegistry,
 )
 from backend.services.companion_chat_service import CompanionChatService
+from backend.services.grounded_synthesis_service import GroundedSynthesisService
 
 AgentLifecycleSink = Callable[[str, dict[str, Any]], None]
 
@@ -41,6 +51,8 @@ class ProductAgentRunResult:
     request_id: int = 0
     tool_result: AgentToolExecutionResult | None = None
     route: AgentRouteDecision | None = None
+    evidence: tuple[AgentEvidenceItem, ...] = ()
+    citations: tuple[AgentCitationRef, ...] = ()
 
 
 def _duration_ms(started: float) -> int:
@@ -93,12 +105,17 @@ class ProductAgentService:
         semantic_router: AgentSemanticRouterService | Any | None = None,
         planner: AgentPlannerService | Any | None = None,
         multi_step_planner: AgentMultiStepPlannerService | Any | None = None,
+        grounded_synthesis_service: GroundedSynthesisService | Any | None = None,
     ) -> None:
         self._registry = registry
         self._chat_service = chat_service
         self._router = router or AgentDeterministicRouterService()
         self._semantic_router = semantic_router or planner or AgentSemanticRouterService()
         self._multi_step_planner = multi_step_planner or AgentMultiStepPlannerService()
+        self._grounded_synthesis_service = (
+            grounded_synthesis_service
+            or GroundedSynthesisService(chat_service=chat_service)
+        )
 
     @staticmethod
     def _reading_fields(payload: dict[str, Any]) -> dict[str, Any]:
@@ -398,6 +415,72 @@ class ProductAgentService:
         )
         return tool_result, False
 
+    @staticmethod
+    def _knowledge_grounding(
+        data: dict[str, Any] | None,
+    ) -> tuple[list[AgentEvidenceItem], list[AgentCitationRef]]:
+        payload = dict(data or {})
+        try:
+            evidence = [
+                AgentEvidenceItem.model_validate(item)
+                for item in payload.get("evidence", [])
+            ]
+            citations = [
+                AgentCitationRef.model_validate(item)
+                for item in payload.get("citations", [])
+            ]
+            CitationService().validate(citations, evidence)
+        except Exception as exc:
+            raise AgentToolError(
+                f"Knowledge tool returned invalid evidence or citations: {exc}",
+                stage="synthesis",
+                fallback_reason="invalid_knowledge_citations",
+            ) from exc
+        return evidence, citations
+
+    def _synthesize_grounded(
+        self,
+        *,
+        payload: dict[str, Any],
+        reading: dict[str, Any],
+        history: tuple[tuple[str, str], ...],
+        request_id: int,
+        control: AgentRunControl,
+        event_sink: AgentLifecycleSink | None,
+        evidence: list[AgentEvidenceItem],
+        citations: list[AgentCitationRef],
+    ):
+        control.checkpoint("synthesis")
+        started = monotonic()
+        answer = self._grounded_synthesis_service.send(
+            session_id=str(payload.get("session_id", "agent-session")),
+            user_message=str(payload["user_message"]),
+            **reading,
+            history=history,
+            request_id=request_id,
+            context_mode="reading",
+            evidence=evidence,
+            citations=citations,
+        )
+        control.checkpoint("synthesis_result")
+        self._emit(
+            event_sink,
+            "synthesis_ready",
+            {
+                "provider": answer.provider,
+                "model": answer.model,
+                "request_id": answer.request_id,
+                "duration_ms": _duration_ms(started),
+                "prompt_id": str(
+                    getattr(self._grounded_synthesis_service, "prompt_id", "") or ""
+                ),
+                "grounded": True,
+                "evidence_count": len(evidence),
+                "citation_count": len(citations),
+            },
+        )
+        return answer
+
     def _synthesize(
         self,
         *,
@@ -493,16 +576,46 @@ class ProductAgentService:
             },
             ensure_ascii=False,
         )
-        answer = self._synthesize(
-            payload=payload,
-            reading=reading,
-            history=history,
-            request_id=request_id,
-            control=active_control,
-            event_sink=event_sink,
-            tool_name="multi_step_plan",
-            tool_context=observation,
-        )
+        knowledge_results = [
+            item
+            for item in results
+            if str(item.get("tool_name", "") or item.get("name", "") or "")
+            == "search_knowledge_base"
+        ]
+        evidence: list[AgentEvidenceItem] = []
+        citations: list[AgentCitationRef] = []
+        if knowledge_results:
+            seen_evidence: set[str] = set()
+            for item in knowledge_results:
+                item_evidence, _item_citations = self._knowledge_grounding(
+                    dict(item.get("data", {}) or {})
+                )
+                for evidence_item in item_evidence:
+                    if evidence_item.evidence_id not in seen_evidence:
+                        evidence.append(evidence_item)
+                        seen_evidence.add(evidence_item.evidence_id)
+            citations = build_evidence_citations(evidence)
+            answer = self._synthesize_grounded(
+                payload=payload,
+                reading=reading,
+                history=history,
+                request_id=request_id,
+                control=active_control,
+                event_sink=event_sink,
+                evidence=evidence,
+                citations=citations,
+            )
+        else:
+            answer = self._synthesize(
+                payload=payload,
+                reading=reading,
+                history=history,
+                request_id=request_id,
+                control=active_control,
+                event_sink=event_sink,
+                tool_name="multi_step_plan",
+                tool_context=observation,
+            )
         return ProductAgentRunResult(
             status="completed",
             plan=AgentPlan(
@@ -519,6 +632,8 @@ class ProductAgentService:
                 intent="complex",
                 user_visible_reason="Completed the bounded multi-step plan.",
             ),
+            evidence=tuple(evidence),
+            citations=tuple(citations),
         )
 
     def run(
@@ -613,6 +728,11 @@ class ProductAgentService:
                 fallback_reason="missing_tool_result",
             )
 
+        evidence: list[AgentEvidenceItem] = []
+        citations: list[AgentCitationRef] = []
+        if tool_result.tool_name == "search_knowledge_base":
+            evidence, citations = self._knowledge_grounding(tool_result.data)
+
         if tool_result.effect == "write" or skip_synthesis:
             return ProductAgentRunResult(
                 status="completed",
@@ -623,6 +743,32 @@ class ProductAgentService:
                 request_id=request_id,
                 tool_result=tool_result,
                 route=route,
+                evidence=tuple(evidence),
+                citations=tuple(citations),
+            )
+
+        if tool_result.tool_name == "search_knowledge_base":
+            answer = self._synthesize_grounded(
+                payload=payload,
+                reading=reading,
+                history=history,
+                request_id=request_id,
+                control=control,
+                event_sink=event_sink,
+                evidence=evidence,
+                citations=citations,
+            )
+            return ProductAgentRunResult(
+                status="completed",
+                plan=plan,
+                output_text=answer.output_text,
+                provider=answer.provider,
+                model=answer.model,
+                request_id=answer.request_id,
+                tool_result=tool_result,
+                route=route,
+                evidence=tuple(evidence),
+                citations=tuple(citations),
             )
 
         observation = json.dumps(

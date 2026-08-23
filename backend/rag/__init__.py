@@ -10,6 +10,7 @@ from backend.rag.config import (
     RagRetrievalConfig,
     RagVectorStoreConfig,
 )
+from backend.rag.context_builder import GroundedContext, GroundedContextBuilder
 from backend.rag.embeddings import (
     EmbeddingProvider,
     EmbeddingRuntimeSnapshot,
@@ -56,6 +57,8 @@ __all__ = [
     "EmbeddingProvider",
     "EmbeddingRuntimeSnapshot",
     "EmbeddingRuntimeStatus",
+    "GroundedContext",
+    "GroundedContextBuilder",
     "HeuristicTokenCounter",
     "IndexDocumentResult",
     "IndexManifest",

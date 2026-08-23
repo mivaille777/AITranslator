@@ -11,6 +11,9 @@ from backend.agent_tools.base import (
     TypedAgentToolDefinition,
     typed_tool_definition,
 )
+from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
+from backend.rag.citation_service import build_evidence_citations
+from backend.rag.evidence_builder import build_agent_evidence
 from backend.rag.models import RetrievalCandidate
 from backend.rag.stores.base import VectorSearchFilter
 
@@ -49,6 +52,8 @@ class KnowledgeSearchResultData(AgentToolModel):
     results: list[KnowledgeSearchResultItem] = Field(default_factory=list)
     elapsed_ms: float = Field(ge=0.0)
     fallback_reason: str = ""
+    evidence: list[AgentEvidenceItem] = Field(default_factory=list)
+    citations: list[AgentCitationRef] = Field(default_factory=list)
 
 
 def _document_ids(args: KnowledgeSearchArgs) -> list[str]:
@@ -114,6 +119,9 @@ class KnowledgeAgentTools:
         candidates = retrieval.candidates
         if typed.top_k is not None:
             candidates = candidates[: typed.top_k]
+        limited_retrieval = retrieval.model_copy(update={"candidates": candidates})
+        evidence = build_agent_evidence(limited_retrieval)
+        citations = build_evidence_citations(evidence)
         results = [_result_item(candidate) for candidate in candidates]
         fallback_reason = str(
             retrieval.metadata.get("fallback_reason")
@@ -138,6 +146,8 @@ class KnowledgeAgentTools:
                 "results": results,
                 "elapsed_ms": retrieval.elapsed_ms,
                 "fallback_reason": fallback_reason,
+                "evidence": [item.model_dump(mode="json") for item in evidence],
+                "citations": [item.model_dump(mode="json") for item in citations],
             },
         )
 

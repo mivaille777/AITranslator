@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
-from typing import Any, Callable
+from typing import Any
 
 from backend.agent_core.events import AgentEventType
 from backend.agent_core.exceptions import AgentCancelledError
 from backend.agent_core.reliability import AgentRunControl
 from backend.agent_core.state import AgentState
-from backend.models.agent_runtime import AgentPlanContext, AgentPlanStep, AgentRouteDecision
+from backend.models.agent_runtime import (
+    AgentCitationRef,
+    AgentEvidenceItem,
+    AgentPlanContext,
+    AgentPlanStep,
+    AgentRouteDecision,
+)
 from backend.services.agent_conversation_service import AgentConversationService
-
 
 _UI_MODE_BY_TOOL = {
     "translate_selection": "translation",
@@ -19,6 +25,7 @@ _UI_MODE_BY_TOOL = {
     "polish_selection": "assistant",
     "save_research_note": "note",
     "inspect_reading_context": "assistant",
+    "search_knowledge_base": "research",
 }
 
 
@@ -82,6 +89,23 @@ class ProductAgentRuntimeAdapter:
     _payload = build_payload
 
     @staticmethod
+    def _apply_grounding(state: AgentState, result: Any) -> None:
+        if hasattr(result, "evidence"):
+            state.evidence = [
+                item
+                if isinstance(item, AgentEvidenceItem)
+                else AgentEvidenceItem.model_validate(item)
+                for item in (getattr(result, "evidence", ()) or ())
+            ]
+        if hasattr(result, "citations"):
+            state.citations = [
+                item
+                if isinstance(item, AgentCitationRef)
+                else AgentCitationRef.model_validate(item)
+                for item in (getattr(result, "citations", ()) or ())
+            ]
+
+    @staticmethod
     def apply_result(state: AgentState, result: Any) -> AgentState:
         plan = _structured(result.plan)
         state.apply_plan(plan)
@@ -106,6 +130,7 @@ class ProductAgentRuntimeAdapter:
         tool_result = getattr(result, "tool_result", None)
         if tool_result is not None:
             state.record_tool_result(_structured(tool_result))
+        ProductAgentRuntimeAdapter._apply_grounding(state, result)
 
         state.ui_mode = _UI_MODE_BY_TOOL.get(tool_name, "assistant")
         state.apply_response(
@@ -295,6 +320,7 @@ class ProductAgentRuntimeAdapter:
         structured = _structured(tool_result)
         structured["step_id"] = step.step_id
         state.record_tool_result(structured)
+        self._apply_grounding(state, result)
         state.ui_mode = _UI_MODE_BY_TOOL.get(step.tool_name, "assistant")
         return state, emitted
 
@@ -313,6 +339,7 @@ class ProductAgentRuntimeAdapter:
             **self.build_payload(state),
         )
         state.ui_mode = "assistant"
+        self._apply_grounding(state, result)
         state.apply_response(
             {
                 "status": str(getattr(result, "status", "completed") or "completed"),

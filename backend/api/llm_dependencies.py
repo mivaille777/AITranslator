@@ -6,10 +6,13 @@ from threading import Lock
 
 from app.ai.chat.service import AIChatService
 from app.ai.gateway import LLMGateway
-from backend.services.agent_multi_step_planner_service import AgentMultiStepPlannerService
+from backend.services.agent_multi_step_planner_service import (
+    AgentMultiStepPlannerService,
+)
 from backend.services.agent_router_service import AgentSemanticRouterService
 from backend.services.agent_tool_registry import AgentToolRegistry
 from backend.services.companion_chat_service import CompanionChatService
+from backend.services.grounded_synthesis_service import GroundedSynthesisService
 from backend.services.product_agent_service import ProductAgentService
 from backend.services.quick_action_service import QuickActionService
 from backend.services.reading_selection_resolver import ReadingSelectionResolver
@@ -57,6 +60,7 @@ def build_routed_product_agent_service(
     return ProductAgentService(
         registry=registry,
         chat_service=synthesis,
+        grounded_synthesis_service=GroundedSynthesisService(chat_service=synthesis),
         semantic_router=semantic_router,
         multi_step_planner=multi_step_planner,
     )

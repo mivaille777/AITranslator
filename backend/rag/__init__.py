@@ -16,6 +16,7 @@ from backend.rag.embeddings import (
     Qwen3EmbeddingProvider,
     create_embedding_provider,
 )
+from backend.rag.evidence_builder import build_agent_evidence, build_evidence_item
 from backend.rag.exceptions import (
     RagConfigurationError,
     RagEmbeddingError,
@@ -81,6 +82,8 @@ __all__ = [
     "TokenCounter",
     "TransformersTokenCounter",
     "UnsupportedDocumentTypeError",
+    "build_agent_evidence",
+    "build_evidence_item",
     "build_stable_chunk_id",
     "chunk_document",
     "create_embedding_provider",

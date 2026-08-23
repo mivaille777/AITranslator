@@ -7,6 +7,7 @@ from backend.agent_core.events import AgentEventType
 from backend.agent_core.exceptions import AgentCancelledError
 from backend.agent_core.reliability import AgentRunControl
 from backend.agent_core.state import AgentState
+from backend.models.agent_runtime import AgentPlanContext, AgentPlanStep, AgentRouteDecision
 from backend.services.agent_conversation_service import AgentConversationService
 
 
@@ -37,13 +38,7 @@ def _structured(value: Any) -> dict[str, Any]:
 
 
 class ProductAgentRuntimeAdapter:
-    """Compatibility bridge between ProductAgentService and AgentState.
-
-    Production orchestration now lives in ``ReadingAgentGraph``. This adapter
-    keeps the state projection, product-service invocation and Conversation
-    lifecycle primitives reusable while preserving the pre-graph callable API
-    for focused unit tests and migration compatibility.
-    """
+    """Compatibility/projection bridge between ProductAgentService and AgentState."""
 
     def __init__(
         self,
@@ -126,6 +121,23 @@ class ProductAgentRuntimeAdapter:
 
     _apply_result = apply_result
 
+    @staticmethod
+    def _event_forwarder(
+        emit: Callable[[AgentEventType, dict[str, Any]], None] | None,
+    ) -> tuple[set[AgentEventType], Callable[[str, dict[str, Any]], None]]:
+        emitted: set[AgentEventType] = set()
+
+        def forward(event_type: str, payload: dict[str, Any]) -> None:
+            try:
+                core_type = AgentEventType(event_type)
+            except ValueError:
+                return
+            emitted.add(core_type)
+            if emit is not None:
+                emit(core_type, payload)
+
+        return emitted, forward
+
     def begin_conversation(self, state: AgentState):
         service = self._conversation_service
         if service is None:
@@ -152,30 +164,165 @@ class ProductAgentRuntimeAdapter:
 
     _abort_conversation = abort_conversation
 
+    def resolve_route(
+        self,
+        state: AgentState,
+        *,
+        control: AgentRunControl | None = None,
+    ) -> tuple[AgentRouteDecision, dict[str, Any]]:
+        resolve = getattr(self._service, "resolve_route", None)
+        if callable(resolve):
+            route, metadata = resolve(
+                control=control,
+                **self.build_payload(state),
+            )
+        else:
+            route = AgentRouteDecision(
+                kind="answer",
+                source="legacy_planner",
+                intent="answer",
+                user_visible_reason="Compatibility direct route.",
+            )
+            metadata = {
+                "duration_ms": 0,
+                "provider": "",
+                "model": "",
+                "prompt_id": "",
+                "llm_called": False,
+            }
+        state.apply_route(route)
+        return route, dict(metadata)
+
+    def plan_multi_step(
+        self,
+        state: AgentState,
+        *,
+        control: AgentRunControl | None = None,
+    ) -> tuple[AgentPlanContext, dict[str, Any]]:
+        plan, metadata = self._service.plan_multi_step(
+            control=control,
+            **self.build_payload(state),
+        )
+        state.apply_multi_step_plan(plan)
+        return plan, dict(metadata)
+
     def execute_product(
         self,
         state: AgentState,
         emit: Callable[[AgentEventType, dict[str, Any]], None] | None = None,
         *,
         control: AgentRunControl | None = None,
+        resolved_route: AgentRouteDecision | dict[str, Any] | None = None,
+        route_metadata: dict[str, Any] | None = None,
     ) -> tuple[AgentState, set[AgentEventType]]:
-        emitted: set[AgentEventType] = set()
-
-        def forward(event_type: str, payload: dict[str, Any]) -> None:
-            try:
-                core_type = AgentEventType(event_type)
-            except ValueError:
-                return
-            emitted.add(core_type)
-            if emit is not None:
-                emit(core_type, payload)
-
+        emitted, forward = self._event_forwarder(emit)
+        payload = self.build_payload(state)
+        if resolved_route is not None:
+            payload["_resolved_route"] = (
+                resolved_route.model_dump()
+                if isinstance(resolved_route, AgentRouteDecision)
+                else dict(resolved_route)
+            )
+            payload["_route_metadata"] = dict(route_metadata or {})
         result = self._service.run(
+            event_sink=forward,
+            control=control,
+            **payload,
+        )
+        return self.apply_result(state, result), emitted
+
+    def execute_plan_step(
+        self,
+        state: AgentState,
+        step: AgentPlanStep,
+        emit: Callable[[AgentEventType, dict[str, Any]], None] | None = None,
+        *,
+        control: AgentRunControl | None = None,
+    ) -> tuple[AgentState, set[AgentEventType]]:
+        emitted, forward = self._event_forwarder(emit)
+        route = AgentRouteDecision(
+            kind="tool",
+            source="planner",
+            intent=step.tool_name,
+            tool_name=step.tool_name,
+            user_visible_reason=f"Execute {step.step_id}.",
+            arguments={str(key): str(value) for key, value in step.arguments.items()},
+        )
+        payload = self.build_payload(state)
+        payload.update(
+            {
+                "_resolved_route": route.model_dump(),
+                "_route_metadata": {
+                    "duration_ms": 0,
+                    "provider": "",
+                    "model": "",
+                    "prompt_id": "",
+                    "llm_called": False,
+                },
+                "_suppress_plan_event": True,
+                "_skip_synthesis": True,
+            }
+        )
+        result = self._service.run(
+            event_sink=forward,
+            control=control,
+            **payload,
+        )
+
+        state.record_tool_call(
+            {
+                "name": step.tool_name,
+                "arguments": dict(step.arguments),
+                "step_id": step.step_id,
+            }
+        )
+        if str(getattr(result, "status", "") or "") == "confirmation_required":
+            state.ui_mode = _UI_MODE_BY_TOOL.get(step.tool_name, "assistant")
+            state.apply_response(
+                {
+                    "status": "confirmation_required",
+                    "output_text": "",
+                    "provider": "",
+                    "model": "",
+                    "request_id": max(0, int(getattr(result, "request_id", 0) or 0)),
+                }
+            )
+            return state, emitted
+
+        tool_result = getattr(result, "tool_result", None)
+        if tool_result is None:
+            raise RuntimeError(f"Plan step {step.step_id} completed without a tool result.")
+        structured = _structured(tool_result)
+        structured["step_id"] = step.step_id
+        state.record_tool_result(structured)
+        state.ui_mode = _UI_MODE_BY_TOOL.get(step.tool_name, "assistant")
+        return state, emitted
+
+    def synthesize_multi_step(
+        self,
+        state: AgentState,
+        emit: Callable[[AgentEventType, dict[str, Any]], None] | None = None,
+        *,
+        control: AgentRunControl | None = None,
+    ) -> tuple[AgentState, set[AgentEventType]]:
+        emitted, forward = self._event_forwarder(emit)
+        result = self._service.synthesize_multi_step(
+            tool_results=list(state.tool_results),
             event_sink=forward,
             control=control,
             **self.build_payload(state),
         )
-        return self.apply_result(state, result), emitted
+        state.ui_mode = "assistant"
+        state.apply_response(
+            {
+                "status": str(getattr(result, "status", "completed") or "completed"),
+                "output_text": str(getattr(result, "output_text", "") or ""),
+                "provider": str(getattr(result, "provider", "") or ""),
+                "model": str(getattr(result, "model", "") or ""),
+                "request_id": max(0, int(getattr(result, "request_id", 0) or 0)),
+            }
+        )
+        return state, emitted
 
     @staticmethod
     def emit_compatibility_events(
@@ -184,7 +331,18 @@ class ProductAgentRuntimeAdapter:
         emit: Callable[[AgentEventType, dict[str, Any]], None],
     ) -> None:
         if AgentEventType.PLAN_READY not in emitted:
-            emit(AgentEventType.PLAN_READY, dict(state.planned_action))
+            payload: dict[str, Any]
+            if state.plan.mode == "multi_step":
+                payload = {
+                    "mode": "multi_step",
+                    "goal": state.plan.goal,
+                    "steps": [step.model_dump(mode="json") for step in state.plan.steps],
+                    "route_kind": state.route.kind,
+                    "route_source": state.route.source,
+                }
+            else:
+                payload = dict(state.planned_action)
+            emit(AgentEventType.PLAN_READY, payload)
         if state.tool_calls and AgentEventType.TOOL_CALL not in emitted:
             emit(AgentEventType.TOOL_CALL, dict(state.tool_calls[-1]))
         if state.tool_results and AgentEventType.TOOL_RESULT not in emitted:

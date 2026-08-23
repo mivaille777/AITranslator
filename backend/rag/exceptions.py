@@ -13,4 +13,18 @@ class RagInvariantError(RagError):
     """Raised when a RAG-domain invariant is violated at runtime."""
 
 
-__all__ = ["RagConfigurationError", "RagError", "RagInvariantError"]
+class RagParsingError(RagError):
+    """Raised when a source document cannot be normalized safely."""
+
+
+class UnsupportedDocumentTypeError(RagParsingError):
+    """Raised when no basic ingestion parser supports a document type."""
+
+
+__all__ = [
+    "RagConfigurationError",
+    "RagError",
+    "RagInvariantError",
+    "RagParsingError",
+    "UnsupportedDocumentTypeError",
+]

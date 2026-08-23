@@ -1,4 +1,4 @@
-"""RAG domain contracts for AITrans knowledge retrieval."""
+"""RAG domain contracts and ingestion boundary for AITrans knowledge retrieval."""
 
 from backend.rag.config import (
     RagChunkingConfig,
@@ -7,7 +7,13 @@ from backend.rag.config import (
     RagRetrievalConfig,
     RagVectorStoreConfig,
 )
-from backend.rag.exceptions import RagConfigurationError, RagError, RagInvariantError
+from backend.rag.exceptions import (
+    RagConfigurationError,
+    RagError,
+    RagInvariantError,
+    RagParsingError,
+    UnsupportedDocumentTypeError,
+)
 from backend.rag.models import (
     DocumentChunk,
     DocumentPage,
@@ -18,6 +24,7 @@ from backend.rag.models import (
     RetrievalResult,
     build_stable_chunk_id,
 )
+from backend.rag.parsers import get_parser_for_path, parse_document
 
 __all__ = [
     "DocumentChunk",
@@ -31,9 +38,13 @@ __all__ = [
     "RagEmbeddingConfig",
     "RagError",
     "RagInvariantError",
+    "RagParsingError",
     "RagRetrievalConfig",
     "RagVectorStoreConfig",
     "RetrievalCandidate",
     "RetrievalResult",
+    "UnsupportedDocumentTypeError",
     "build_stable_chunk_id",
+    "get_parser_for_path",
+    "parse_document",
 ]

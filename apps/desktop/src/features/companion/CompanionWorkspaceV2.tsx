@@ -14,6 +14,7 @@ import { Badge } from "../../shared/ui/Badge"
 import { Button } from "../../shared/ui/Button"
 import { buttonClassName } from "../../shared/ui/button-styles"
 import { EmptyState } from "../../shared/ui/EmptyState"
+import { CitedAnswer } from "../evidence/CitedAnswer"
 import {
   companionContextSnapshot,
   companionHandoffRuntimeSeed,
@@ -24,6 +25,7 @@ import {
   type CompanionRuntimeMessage,
 } from "./companion-runtime"
 import ConversationHistoryPanel from "./ConversationHistoryPanel"
+import { KnowledgeRetrievalControl } from "./components/KnowledgeRetrievalControl"
 import { useCompanionConversationRuntime } from "./useCompanionConversationRuntime"
 
 export default function CompanionWorkspaceV2() {
@@ -376,6 +378,14 @@ export default function CompanionWorkspaceV2() {
             </Button>
           )}
         </div>
+
+        <KnowledgeRetrievalControl
+          enabled={runtime.knowledgeEnabled}
+          selectedDocumentIds={runtime.knowledgeDocumentIds}
+          disabled={runtime.activeRequestId !== null || runtime.openingConversation}
+          onEnabledChange={runtime.setKnowledgeEnabled}
+          onScopeChange={runtime.setKnowledgeDocumentIds}
+        />
       </aside>
 
       <div className="flex min-h-0 flex-col bg-white/95">
@@ -420,7 +430,15 @@ export default function CompanionWorkspaceV2() {
                     <>
                       {message.content ? (
                         <div className="max-w-none">
-                          <ReactMarkdown>{message.content}</ReactMarkdown>
+                          {(message.citations?.length ?? 0) > 0 ? (
+                            <CitedAnswer
+                              content={message.content}
+                              evidence={message.evidence ?? []}
+                              citations={message.citations ?? []}
+                            />
+                          ) : (
+                            <ReactMarkdown>{message.content}</ReactMarkdown>
+                          )}
                         </div>
                       ) : message.status === "streaming" ? (
                         <div className="flex items-center gap-2 text-slate-400">
@@ -439,6 +457,13 @@ export default function CompanionWorkspaceV2() {
                         {message.status === "complete" && message.provider && (
                           <Badge tone="success">
                             {message.provider}{message.model ? ` · ${message.model}` : ""}
+                          </Badge>
+                        )}
+                        {message.status === "complete" && message.knowledgeEnabled && (
+                          <Badge tone={(message.evidence?.length ?? 0) > 0 ? "info" : "warning"}>
+                            {(message.evidence?.length ?? 0) > 0
+                              ? `Knowledge · ${message.evidence?.length} sources`
+                              : "General answer · No knowledge sources"}
                           </Badge>
                         )}
                         {userBefore && message.status !== "streaming" && (
@@ -523,6 +548,18 @@ export default function CompanionWorkspaceV2() {
               AI Chat 未配置：{runtime.chatStatusDetail}
             </p>
           )}
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            <Badge tone={runtime.contextMode === "reading" ? "info" : "neutral"}>
+              {runtime.contextMode === "reading" ? "Reading" : "General"}
+            </Badge>
+            {runtime.knowledgeEnabled && (
+              <Badge tone="info">
+                Knowledge · {runtime.knowledgeDocumentIds.length > 0
+                  ? `${runtime.knowledgeDocumentIds.length} selected`
+                  : "All"}
+              </Badge>
+            )}
+          </div>
           <div className="flex items-end gap-2">
             <textarea
               className="max-h-36 min-h-12 flex-1 resize-none rounded-[16px] border border-slate-200/80 bg-slate-50/85 px-3.5 py-2.5 text-sm leading-6 outline-none transition focus:border-slate-400 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
@@ -560,7 +597,7 @@ export default function CompanionWorkspaceV2() {
             )}
           </div>
           <p className="mt-2 text-[10px] text-slate-400">
-            Enter 发送 · Shift+Enter 换行 · {runtime.contextMode === "reading" ? "Reading-grounded" : "General"} · Shared Companion Runtime
+            Enter 发送 · Shift+Enter 换行 · {runtime.contextMode === "reading" ? "Reading context" : "General"}{runtime.knowledgeEnabled ? " · Knowledge ON" : ""} · Shared Companion Runtime
           </p>
         </form>
       </div>

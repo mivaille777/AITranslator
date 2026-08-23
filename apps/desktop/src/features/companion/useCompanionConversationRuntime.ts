@@ -87,6 +87,10 @@ export interface CompanionConversationRuntime {
   chatStatusLoaded: boolean
   openingConversation: boolean
   contextUpdating: boolean
+  knowledgeEnabled: boolean
+  setKnowledgeEnabled: (enabled: boolean) => void
+  knowledgeDocumentIds: string[]
+  setKnowledgeDocumentIds: (documentIds: string[]) => void
   conversationBusyElsewhere: boolean
   ownerSurface: CompanionClientSurface
   recoveryState: CompanionRecoveryState
@@ -123,6 +127,8 @@ export function useCompanionConversationRuntime(
   )
   const [openingConversation, setOpeningConversation] = useState(false)
   const [contextUpdating, setContextUpdating] = useState(false)
+  const [knowledgeEnabled, setKnowledgeEnabled] = useState(false)
+  const [knowledgeDocumentIds, setKnowledgeDocumentIds] = useState<string[]>([])
   const [recoveryState, setRecoveryState] = useState<CompanionRecoveryState>("idle")
   const [recoveryDetail, setRecoveryDetail] = useState("")
 
@@ -510,6 +516,10 @@ export function useCompanionConversationRuntime(
                 serverMessageId: event.message_id,
                 provider: event.provider,
                 model: event.model,
+                knowledgeEnabled: event.knowledge_enabled,
+                knowledgeFallbackReason: event.knowledge_fallback_reason,
+                evidence: event.evidence,
+                citations: event.citations,
                 status: "complete",
               }
             : message,
@@ -613,6 +623,7 @@ export function useCompanionConversationRuntime(
         role: "assistant",
         content: "",
         status: "streaming",
+        knowledgeEnabled,
       },
     ])
 
@@ -634,6 +645,8 @@ export function useCompanionConversationRuntime(
       context: currentContext,
       messages: baseMessages,
       requestId,
+      knowledgeEnabled,
+      knowledgeDocumentIds,
     })
 
     streamHandleRef.current = streamCompanionChat(payload, {
@@ -683,6 +696,8 @@ export function useCompanionConversationRuntime(
     draft,
     finishRequest,
     handleStreamEvent,
+    knowledgeDocumentIds,
+    knowledgeEnabled,
     messages,
     ownerSurface,
     recoverConversation,
@@ -825,6 +840,10 @@ export function useCompanionConversationRuntime(
     chatStatusLoaded: chatStatusQuery.isSuccess,
     openingConversation,
     contextUpdating,
+    knowledgeEnabled,
+    setKnowledgeEnabled,
+    knowledgeDocumentIds,
+    setKnowledgeDocumentIds,
     conversationBusyElsewhere,
     ownerSurface,
     recoveryState,

@@ -169,7 +169,8 @@ def get_companion_chat_service() -> CompanionChatService:
     with _companion_chat_service_lock:
         if _companion_chat_service is None:
             _companion_chat_service = CompanionChatService(
-                reading_resolver=get_reading_selection_resolver()
+                reading_resolver=get_reading_selection_resolver(),
+                retrieval_service=get_retrieval_service(),
             )
         return _companion_chat_service
 

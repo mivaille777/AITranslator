@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any
 
 from app.ai.chat.models import (
     ChatContext,
@@ -14,7 +15,20 @@ from app.ai.chat.service import AIChatService
 from app.ai.chat.stream_service import ProviderStreamingAIChatService
 from app.ai.errors import AIConfigurationError
 from app.ai.service import AITextService
+from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
+from backend.rag.citation_service import build_evidence_citations
+from backend.rag.context_builder import GroundedContextBuilder
+from backend.rag.evidence_builder import build_agent_evidence
+from backend.rag.stores.base import VectorSearchFilter
 from backend.services.reading_context_adapter import to_reading_context
+
+
+@dataclass(frozen=True, slots=True)
+class CompanionKnowledgeGrounding:
+    evidence: tuple[AgentEvidenceItem, ...] = ()
+    citations: tuple[AgentCitationRef, ...] = ()
+    tool_context: str = ""
+    fallback_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +39,10 @@ class CompanionChatResult:
     provider: str
     model: str
     request_id: int = 0
+    knowledge_enabled: bool = False
+    knowledge_fallback_reason: str = ""
+    evidence: tuple[AgentEvidenceItem, ...] = ()
+    citations: tuple[AgentCitationRef, ...] = ()
 
 
 class CompanionChatService:
@@ -37,11 +55,55 @@ class CompanionChatService:
         chat_service: AIChatService | Any | None = None,
         stream_service: ProviderStreamingAIChatService | Any | None = None,
         reading_resolver: Any | None = None,
+        retrieval_service: Any | None = None,
     ) -> None:
         self._text_service = text_service
         self._chat_service = chat_service
         self._stream_service = stream_service
         self._reading_resolver = reading_resolver
+        self._retrieval_service = retrieval_service
+        self._grounded_context_builder = GroundedContextBuilder()
+
+    def prepare_knowledge(
+        self,
+        query: str,
+        document_ids: tuple[str, ...] = (),
+    ) -> CompanionKnowledgeGrounding:
+        if self._retrieval_service is None:
+            return CompanionKnowledgeGrounding(
+                tool_context="No relevant knowledge evidence was found. Answer generally if possible and do not cite a source.",
+                fallback_reason="retrieval_unavailable",
+            )
+        normalized_ids = tuple(dict.fromkeys(item.strip() for item in document_ids if item.strip()))
+        filters = VectorSearchFilter(document_ids=list(normalized_ids)) if normalized_ids else None
+        try:
+            result = self._retrieval_service.retrieve(query, filters=filters)
+        except Exception as exc:  # noqa: BLE001 - Chat degrades to a source-free answer
+            return CompanionKnowledgeGrounding(
+                tool_context="Knowledge retrieval was unavailable. Answer generally if possible and do not cite a source.",
+                fallback_reason=str(exc) or "retrieval_failed",
+            )
+        evidence = build_agent_evidence(result)
+        citations = build_evidence_citations(evidence)
+        if not evidence:
+            return CompanionKnowledgeGrounding(
+                tool_context="No relevant knowledge evidence was found. Answer generally if possible and do not cite a source.",
+                fallback_reason="no_relevant_evidence",
+            )
+        context = self._grounded_context_builder.build(evidence, citations)
+        included = set(context.included_evidence_ids)
+        bounded_evidence = tuple(item for item in evidence if item.evidence_id in included)
+        bounded_citations = tuple(
+            citation
+            for citation in citations
+            if all(evidence_id in included for evidence_id in citation.evidence_ids)
+        )
+        return CompanionKnowledgeGrounding(
+            evidence=bounded_evidence,
+            citations=bounded_citations,
+            tool_context=context.text,
+            fallback_reason="" if bounded_evidence else "context_budget_exhausted",
+        )
 
     def _ensure_text_service(self) -> AITextService | Any:
         if self._text_service is None:
@@ -172,7 +234,19 @@ class CompanionChatService:
         )
 
     def send(self, **kwargs: Any) -> CompanionChatResult:
-        request = self._build_request(**self._with_resolved_reading(kwargs))
+        payload = dict(kwargs)
+        knowledge_enabled = bool(payload.pop("knowledge_enabled", False))
+        raw_document_ids = payload.pop("knowledge_document_ids", ())
+        document_ids = tuple(str(item) for item in raw_document_ids)
+        grounding = (
+            self.prepare_knowledge(str(payload.get("user_message", "")), document_ids)
+            if knowledge_enabled
+            else CompanionKnowledgeGrounding()
+        )
+        if knowledge_enabled:
+            payload["tool_name"] = "search_knowledge_base"
+            payload["tool_context"] = grounding.tool_context
+        request = self._build_request(**self._with_resolved_reading(payload))
         result = self._ensure_chat_service().execute(request)
         return CompanionChatResult(
             session_id=result.session_id,
@@ -181,6 +255,10 @@ class CompanionChatService:
             provider=result.provider,
             model=result.model,
             request_id=result.request_id,
+            knowledge_enabled=knowledge_enabled,
+            knowledge_fallback_reason=grounding.fallback_reason,
+            evidence=grounding.evidence,
+            citations=grounding.citations,
         )
 
     def stream(self, **kwargs: Any) -> Iterator[str]:

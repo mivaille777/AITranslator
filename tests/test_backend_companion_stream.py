@@ -86,6 +86,9 @@ def test_companion_websocket_streams_and_commits_completed_exchange(tmp_path) ->
     assert done["output_text"] == "GP anchors localize the search."
     assert done["provider"] == "stub-ai"
     assert done["model"] == "stub-model"
+    assert done["knowledge_enabled"] is False
+    assert done["evidence"] == []
+    assert done["citations"] == []
 
     stored = store.get(conversation_id)
     assert stored is not None

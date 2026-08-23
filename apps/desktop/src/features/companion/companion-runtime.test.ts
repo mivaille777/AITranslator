@@ -53,6 +53,8 @@ describe("companion runtime", () => {
       },
       messages: [message("u1", "user", "previous question")],
       requestId: 7,
+      knowledgeEnabled: true,
+      knowledgeDocumentIds: ["doc-1", "doc-2"],
     })
 
     expect(request).toMatchObject({
@@ -65,6 +67,8 @@ describe("companion runtime", () => {
       resource_title: "Paper",
       section_heading: "3.4",
       request_id: 7,
+      knowledge_enabled: true,
+      knowledge_document_ids: ["doc-1", "doc-2"],
     })
     expect(request.history).toEqual([
       { role: "user", content: "previous question" },

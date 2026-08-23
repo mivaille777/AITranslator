@@ -62,6 +62,8 @@ def _stream_kwargs(payload: Any) -> dict[str, Any]:
         "history": tuple((item.role, item.content) for item in payload.history),
         "request_id": payload.request_id,
         "context_mode": payload.context_mode,
+        "knowledge_enabled": payload.knowledge_enabled,
+        "knowledge_document_ids": tuple(payload.knowledge_document_ids),
     }
 
 
@@ -306,7 +308,19 @@ async def stream_companion_chat(
             persisted_length = 0
             last_flush = monotonic()
             try:
-                for delta in service.stream(**_stream_kwargs(payload)):
+                stream_kwargs = _stream_kwargs(payload)
+                grounding = None
+                prepare_knowledge = getattr(service, "prepare_knowledge", None)
+                if payload.knowledge_enabled and callable(prepare_knowledge):
+                    grounding = prepare_knowledge(
+                        payload.user_message,
+                        tuple(payload.knowledge_document_ids),
+                    )
+                    stream_kwargs["tool_name"] = "search_knowledge_base"
+                    stream_kwargs["tool_context"] = grounding.tool_context
+                stream_kwargs.pop("knowledge_enabled", None)
+                stream_kwargs.pop("knowledge_document_ids", None)
+                for delta in service.stream(**stream_kwargs):
                     if cancel_event.is_set():
                         return
                     ownership.touch(
@@ -355,6 +369,10 @@ async def stream_companion_chat(
                         "output_text": text,
                         "provider": service.provider_name,
                         "model": service.model,
+                        "knowledge_enabled": payload.knowledge_enabled,
+                        "knowledge_fallback_reason": getattr(grounding, "fallback_reason", "") if grounding else "",
+                        "evidence": [item.model_dump(mode="json") for item in getattr(grounding, "evidence", ())],
+                        "citations": [item.model_dump(mode="json") for item in getattr(grounding, "citations", ())],
                     }
                 )
             except Exception as exc:

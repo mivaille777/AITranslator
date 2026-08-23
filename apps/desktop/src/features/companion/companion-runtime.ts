@@ -7,6 +7,7 @@ import type {
   ConversationDetail,
   ConversationMessage,
 } from "../../api/types"
+import type { AgentCitationRef, AgentEvidenceItem } from "../evidence/evidence-types"
 
 export type CompanionMessageStatus = "complete" | "streaming" | "cancelled" | "error"
 
@@ -17,6 +18,10 @@ export interface CompanionRuntimeMessage extends CompanionChatMessage {
   model?: string
   serverMessageId?: string
   errorCode?: string
+  knowledgeEnabled?: boolean
+  knowledgeFallbackReason?: string
+  evidence?: AgentEvidenceItem[]
+  citations?: AgentCitationRef[]
 }
 
 export interface CompanionContextSnapshot {
@@ -144,6 +149,8 @@ export interface CompanionRequestInput {
   context?: CompanionContextSnapshot | null
   messages: CompanionRuntimeMessage[]
   requestId: number
+  knowledgeEnabled?: boolean
+  knowledgeDocumentIds?: string[]
 }
 
 export function buildCompanionChatRequest({
@@ -156,6 +163,8 @@ export function buildCompanionChatRequest({
   context = EMPTY_COMPANION_CONTEXT,
   messages,
   requestId,
+  knowledgeEnabled = false,
+  knowledgeDocumentIds = [],
 }: CompanionRequestInput): CompanionChatRequestWithClient {
   const resolvedContext = context ?? EMPTY_COMPANION_CONTEXT
   return {
@@ -178,5 +187,7 @@ export function buildCompanionChatRequest({
     source_kind: resolvedContext.source_kind,
     history: companionHistory(messages),
     request_id: requestId,
+    knowledge_enabled: knowledgeEnabled,
+    knowledge_document_ids: knowledgeEnabled ? knowledgeDocumentIds : [],
   }
 }

@@ -68,9 +68,8 @@ class AgentState(BaseModel):
     """Shared state passed through the Agent execution lifecycle.
 
     Strongly typed contracts coexist with legacy flat fields while the runtime
-    is migrated in stages. Explicit Stage 10 routing decisions are preserved
-    across compatibility synchronization instead of being overwritten by the
-    legacy single-step plan projection.
+    is migrated in stages. Explicit routing and Conversation lifecycle metadata
+    are preserved across compatibility synchronization.
     """
 
     run_id: str = Field(default_factory=_run_id)
@@ -117,9 +116,17 @@ class AgentState(BaseModel):
             session_id=str(self.session_id or ""),
             request_id=request_id,
         )
+        mode = str(context.get("conversation_context_mode", "reading") or "reading").strip().lower()
+        if mode not in {"general", "reading"}:
+            mode = "reading"
         self.conversation = AgentConversationContext(
             conversation_id=str(context.get("conversation_id", "") or "").strip(),
             history=_history_from_context(context),
+            user_message_id=str(context.get("conversation_user_message_id", "") or "").strip(),
+            assistant_message_id=str(
+                context.get("conversation_assistant_message_id", "") or ""
+            ).strip(),
+            context_mode=mode,  # type: ignore[arg-type]
         )
         self.request = AgentRequestContext(
             user_input=self.user_input,
@@ -216,6 +223,32 @@ class AgentState(BaseModel):
         self.browser_context = dict(context)
         if "source_text" in context:
             self.selected_text = str(context.get("source_text", "") or "")
+        return self.sync_contract()
+
+    def apply_conversation(
+        self,
+        *,
+        conversation_id: str,
+        history: tuple[tuple[str, str], ...] | list[tuple[str, str]],
+        user_message_id: str = "",
+        assistant_message_id: str = "",
+        context_mode: str = "reading",
+    ) -> "AgentState":
+        context = dict(self.browser_context)
+        context["conversation_id"] = str(conversation_id or "").strip()
+        context["conversation_history"] = [
+            {"role": str(role), "content": str(content)}
+            for role, content in history
+            if str(role).strip() and str(content).strip()
+        ]
+        context["conversation_user_message_id"] = str(user_message_id or "").strip()
+        context["conversation_assistant_message_id"] = str(
+            assistant_message_id or ""
+        ).strip()
+        context["conversation_context_mode"] = (
+            context_mode if context_mode in {"general", "reading"} else "reading"
+        )
+        self.browser_context = context
         return self.sync_contract()
 
     def apply_plan(self, plan: dict[str, Any]) -> "AgentState":

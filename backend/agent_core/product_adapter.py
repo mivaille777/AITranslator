@@ -4,8 +4,10 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Callable
 
 from backend.agent_core.events import AgentEventType
+from backend.agent_core.exceptions import AgentCancelledError
 from backend.agent_core.reliability import AgentRunControl
 from backend.agent_core.state import AgentState
+from backend.services.agent_conversation_service import AgentConversationService
 
 
 _UI_MODE_BY_TOOL = {
@@ -37,8 +39,13 @@ def _structured(value: Any) -> dict[str, Any]:
 class ProductAgentRuntimeAdapter:
     """Map ProductAgentService results onto the shared AgentState contract."""
 
-    def __init__(self, service: Any) -> None:
+    def __init__(
+        self,
+        service: Any,
+        conversation_service: AgentConversationService | Any | None = None,
+    ) -> None:
         self._service = service
+        self._conversation_service = conversation_service
 
     @staticmethod
     def _payload(state: AgentState) -> dict[str, Any]:
@@ -46,6 +53,11 @@ class ProductAgentRuntimeAdapter:
         confirmed = context.get("confirmed_write_tools", ())
         if not isinstance(confirmed, (list, tuple, set, frozenset)):
             confirmed = ()
+        history = tuple(
+            (item.role, item.content)
+            for item in state.conversation.history
+            if item.role in {"user", "assistant"} and item.content.strip()
+        )
         return {
             "session_id": state.session_id or "agent-session",
             "user_message": state.user_input,
@@ -60,7 +72,8 @@ class ProductAgentRuntimeAdapter:
             "context_after": str(context.get("context_after", "") or ""),
             "source_kind": str(context.get("source_kind", "desktop") or "desktop"),
             "style": str(context.get("style", "academic") or "academic"),
-            "conversation_id": str(context.get("conversation_id", "") or ""),
+            "conversation_id": state.conversation.conversation_id,
+            "history": history,
             "confirmed_write_tools": [str(item) for item in confirmed if str(item).strip()],
             "request_id": max(0, int(context.get("request_id", 0) or 0)),
         }
@@ -103,9 +116,36 @@ class ProductAgentRuntimeAdapter:
         )
         return state
 
+    def _begin_conversation(self, state: AgentState):
+        service = self._conversation_service
+        if service is None:
+            return None
+        run = service.begin(state)
+        service.apply_to_state(state, run)
+        return run
+
+    def _complete_conversation(self, run: Any, state: AgentState) -> None:
+        if run is not None and self._conversation_service is not None:
+            self._conversation_service.complete(run, state)
+
+    def _abort_conversation(self, run: Any, exc: Exception) -> None:
+        if run is None or self._conversation_service is None:
+            return
+        if isinstance(exc, AgentCancelledError):
+            self._conversation_service.cancel(run)
+        else:
+            self._conversation_service.fail(run, exc)
+
     def __call__(self, state: AgentState) -> AgentState:
-        result = self._service.run(**self._payload(state))
-        return self._apply_result(state, result)
+        conversation_run = self._begin_conversation(state)
+        try:
+            result = self._service.run(**self._payload(state))
+            state = self._apply_result(state, result)
+            self._complete_conversation(conversation_run, state)
+            return state
+        except Exception as exc:
+            self._abort_conversation(conversation_run, exc)
+            raise
 
     def run_with_events(
         self,
@@ -124,12 +164,18 @@ class ProductAgentRuntimeAdapter:
             emitted.add(core_type)
             emit(core_type, payload)
 
-        result = self._service.run(
-            event_sink=forward,
-            control=control,
-            **self._payload(state),
-        )
-        state = self._apply_result(state, result)
+        conversation_run = self._begin_conversation(state)
+        try:
+            result = self._service.run(
+                event_sink=forward,
+                control=control,
+                **self._payload(state),
+            )
+            state = self._apply_result(state, result)
+            self._complete_conversation(conversation_run, state)
+        except Exception as exc:
+            self._abort_conversation(conversation_run, exc)
+            raise
 
         # Compatibility fallback for lightweight mocks or alternative services.
         if AgentEventType.PLAN_READY not in emitted:

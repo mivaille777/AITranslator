@@ -28,6 +28,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
   const [errorMessage, setErrorMessage] = useState("")
   const [observabilityRefresh, setObservabilityRefresh] = useState(0)
   const sessionId = useRef(`agent-workspace-${Date.now().toString(36)}`)
+  const conversationId = useRef("")
   const requestId = useRef(0)
   const lastPayload = useRef<AgentRunRequest | null>(null)
   const streamHandle = useRef<AgentStreamHandle | null>(null)
@@ -69,6 +70,18 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
     setObservabilityRefresh((current) => current + 1)
   }
 
+  function rememberConversation(nextConversationId: string) {
+    const normalized = nextConversationId.trim()
+    if (!normalized) return
+    conversationId.current = normalized
+    if (lastPayload.current) {
+      lastPayload.current = {
+        ...lastPayload.current,
+        conversation_id: normalized,
+      }
+    }
+  }
+
   function execute(payload: AgentRunRequest) {
     streamHandle.current?.close()
     streamHandle.current = null
@@ -103,6 +116,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
         }
 
         if (event.type === "done") {
+          rememberConversation(event.trace.run.conversation_id || "")
           setTrace(event.trace)
           setLiveEvents(event.trace.events)
           setCancelRequested(false)
@@ -142,6 +156,8 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
     const payload: AgentRunRequest = {
       ...context,
       session_id: sessionId.current,
+      client_id: sessionId.current,
+      client_surface: "main",
       trace_id: `trace-${sessionId.current}-${requestId.current}-${Date.now().toString(36)}`,
       user_message: userMessage,
       source_text: sourceText,
@@ -149,6 +165,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
       source_language: workspace.sourceLanguage,
       target_language: workspace.targetLanguage,
       style: "academic",
+      conversation_id: conversationId.current,
       confirmed_write_tools: [],
       request_id: requestId.current,
     }
@@ -164,6 +181,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
     requestId.current += 1
     const payload: AgentRunRequest = {
       ...previous,
+      conversation_id: conversationId.current || previous.conversation_id,
       confirmed_write_tools: [toolName],
       request_id: requestId.current,
     }

@@ -32,6 +32,7 @@ from backend.models.agent_tools import (
     AgentToolExecuteResponse,
     AgentTraceEvent,
 )
+from backend.services.agent_conversation_service import AgentConversationBusyError
 from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolRegistry
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
@@ -95,6 +96,7 @@ def _run_response(state: AgentState) -> AgentRunResponse:
         provider=str(response.get("provider", "") or ""),
         model=str(response.get("model", "") or ""),
         request_id=max(0, int(response.get("request_id", 0) or 0)),
+        conversation_id=state.conversation.conversation_id,
         tool_result=tool_result,
     )
 
@@ -102,6 +104,11 @@ def _run_response(state: AgentState) -> AgentRunResponse:
 def _execute_runtime(payload: AgentRunRequest, runtime: AgentRuntime) -> AgentState:
     try:
         return runtime.execute(_state_from_run_request(payload))
+    except AgentConversationBusyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except AIConfigurationError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -148,6 +155,8 @@ def _trace_response(state: AgentState, runtime: AgentRuntime) -> AgentRunTraceRe
 def _stream_error_code(exc: Exception) -> str:
     if isinstance(exc, AgentCancelledError):
         return "cancelled"
+    if isinstance(exc, AgentConversationBusyError):
+        return exc.reason
     if isinstance(exc, AgentBudgetExceededError):
         return "budget_exceeded"
     if isinstance(exc, AgentToolTimeoutError):

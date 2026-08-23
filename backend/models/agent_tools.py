@@ -9,6 +9,7 @@ from backend.models.quick_actions import ReadingContextPayload
 AgentToolEffect = Literal["read", "compute", "write"]
 AgentRunStatus = Literal["completed", "confirmation_required"]
 AgentPlanAction = Literal["answer", "tool"]
+AgentClientSurface = Literal["main", "overlay", "unknown"]
 AgentTraceEventType = Literal[
     "agent_start",
     "context_ready",
@@ -76,6 +77,8 @@ class AgentPlan(BaseModel):
 class AgentRunRequest(ReadingContextPayload):
     session_id: str = Field(default="agent-session", min_length=1, max_length=128)
     trace_id: str = Field(default="", max_length=128)
+    client_id: str = Field(default="", max_length=128)
+    client_surface: AgentClientSurface = "unknown"
     user_message: str = Field(min_length=1, max_length=20_000)
     style: str = Field(default="academic", min_length=1, max_length=64)
     conversation_id: str = Field(default="", max_length=128)
@@ -90,6 +93,7 @@ class AgentRunResponse(BaseModel):
     provider: str = ""
     model: str = ""
     request_id: int = 0
+    conversation_id: str = ""
     tool_result: AgentToolExecuteResponse | None = None
 
 

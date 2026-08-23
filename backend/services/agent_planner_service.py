@@ -75,6 +75,25 @@ class AgentPlannerService:
             )
         return client
 
+    @staticmethod
+    def _history_text(history: object) -> str:
+        if not isinstance(history, (list, tuple)):
+            return ""
+        lines: list[str] = []
+        for item in history[-32:]:
+            if isinstance(item, dict):
+                role = str(item.get("role", "") or "").strip()
+                content = str(item.get("content", "") or "").strip()
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                role = str(item[0] or "").strip()
+                content = str(item[1] or "").strip()
+            else:
+                continue
+            if role not in {"user", "assistant"} or not content:
+                continue
+            lines.append(f"{role}: {content}")
+        return "\n".join(lines)
+
     def _planner_payload(
         self,
         *,
@@ -88,6 +107,7 @@ class AgentPlannerService:
         context_after: str,
         source_kind: str,
         tools: tuple[AgentToolSpec, ...],
+        history: object = (),
         **_: Any,
     ) -> str:
         inspection = self._security.inspect_untrusted_context(
@@ -102,6 +122,12 @@ class AgentPlannerService:
             (
                 ContextField("user_message", user_message, priority=0, max_chars=6_000),
                 ContextField("source_text", source_text, priority=1, max_chars=8_000),
+                ContextField(
+                    "conversation_history",
+                    self._history_text(history),
+                    priority=2,
+                    max_chars=6_000,
+                ),
                 ContextField("translated_text", translated_text, priority=2, max_chars=3_000),
                 ContextField("section_heading", section_heading, priority=2, max_chars=800),
                 ContextField("resource_title", resource_title, priority=2, max_chars=800),
@@ -113,6 +139,7 @@ class AgentPlannerService:
         values = budget.values
         payload = {
             "user_request": values.get("user_message", ""),
+            "conversation_history": values.get("conversation_history", ""),
             "selected_context": {
                 "source_text": values.get("source_text", ""),
                 "translated_text": values.get("translated_text", ""),

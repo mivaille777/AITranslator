@@ -4,6 +4,7 @@ import type { ReadingContextFields } from "./types"
 export type AgentRunStatus = "completed" | "confirmation_required"
 export type AgentPlanAction = "answer" | "tool"
 export type AgentToolEffect = "read" | "compute" | "write"
+export type AgentClientSurface = "main" | "overlay" | "unknown"
 export type AgentTraceEventType =
   | "agent_start"
   | "context_ready"
@@ -36,6 +37,8 @@ export interface AgentToolExecuteResponse {
 export interface AgentRunRequest extends ReadingContextFields {
   session_id: string
   trace_id?: string
+  client_id?: string
+  client_surface?: AgentClientSurface
   user_message: string
   source_text: string
   translated_text: string
@@ -54,6 +57,7 @@ export interface AgentRunResponse {
   provider: string
   model: string
   request_id: number
+  conversation_id: string
   tool_result: AgentToolExecuteResponse | null
 }
 

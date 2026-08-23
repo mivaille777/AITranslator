@@ -47,6 +47,9 @@ class AgentConversationMessage(AgentContractModel):
 class AgentConversationContext(AgentContractModel):
     conversation_id: str = ""
     history: list[AgentConversationMessage] = Field(default_factory=list)
+    user_message_id: str = ""
+    assistant_message_id: str = ""
+    context_mode: Literal["general", "reading"] = "reading"
 
 
 class AgentRequestContext(AgentContractModel):

@@ -107,6 +107,26 @@ class ProductAgentService:
         }
 
     @staticmethod
+    def _conversation_history(payload: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+        raw = payload.get("history", ())
+        if not isinstance(raw, (list, tuple)):
+            return ()
+        history: list[tuple[str, str]] = []
+        for item in raw:
+            if isinstance(item, dict):
+                role = str(item.get("role", "") or "").strip()
+                content = str(item.get("content", "") or "").strip()
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                role = str(item[0] or "").strip()
+                content = str(item[1] or "").strip()
+            else:
+                continue
+            if role not in {"user", "assistant"} or not content:
+                continue
+            history.append((role, content))
+        return tuple(history[-32:])
+
+    @staticmethod
     def _emit(
         sink: AgentLifecycleSink | None,
         event_type: str,
@@ -148,6 +168,7 @@ class ProductAgentService:
         tools,
         user_message: str,
         reading: dict[str, Any],
+        history: tuple[tuple[str, str], ...],
     ) -> tuple[AgentRouteDecision, dict[str, Any]]:
         control.checkpoint("deterministic_route")
         deterministic_started = monotonic()
@@ -174,6 +195,7 @@ class ProductAgentService:
             "context_before": str(reading["context_before"]),
             "context_after": str(reading["context_after"]),
             "source_kind": str(reading["source_kind"]),
+            "history": history,
         }
         route = self._semantic_route(tools=tools, payload=semantic_payload)
         control.checkpoint("semantic_router_result")
@@ -210,6 +232,7 @@ class ProductAgentService:
     ) -> ProductAgentRunResult:
         control = control or AgentRunControl()
         reading = self._reading_fields(payload)
+        history = self._conversation_history(payload)
         tools = self._registry.list_tools()
         request_id = max(0, int(payload.get("request_id", 0) or 0))
         user_message = str(payload["user_message"])
@@ -219,6 +242,7 @@ class ProductAgentService:
             tools=tools,
             user_message=user_message,
             reading=reading,
+            history=history,
         )
         plan = _route_to_plan(route)
         self._emit(
@@ -243,6 +267,7 @@ class ProductAgentService:
                 session_id=str(payload.get("session_id", "agent-session")),
                 user_message=user_message,
                 **reading,
+                history=history,
                 request_id=request_id,
                 context_mode="reading",
             )
@@ -408,6 +433,7 @@ class ProductAgentService:
             session_id=str(payload.get("session_id", "agent-session")),
             user_message=user_message,
             **reading,
+            history=history,
             request_id=request_id,
             context_mode="reading",
             tool_name=tool_result.tool_name,

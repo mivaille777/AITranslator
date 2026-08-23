@@ -67,6 +67,8 @@ class BaseFileParser:
         metadata: dict[str, object] | None = None,
     ) -> KnowledgeDocument:
         content_hash = sha256(raw_bytes).hexdigest()
+        source_uri = path.as_uri()
+        source_identity = sha256(source_uri.casefold().encode("utf-8")).hexdigest()
         document_metadata: dict[str, object] = {
             "file_name": path.name,
             "size_bytes": len(raw_bytes),
@@ -74,9 +76,9 @@ class BaseFileParser:
         if metadata:
             document_metadata.update(metadata)
         return KnowledgeDocument(
-            document_id=f"doc_{content_hash[:24]}",
+            document_id=f"doc_{source_identity[:24]}",
             title=title.strip() or path.stem,
-            source_uri=path.as_uri(),
+            source_uri=source_uri,
             source_kind=source_kind,
             mime_type=mime_type,
             language=language,

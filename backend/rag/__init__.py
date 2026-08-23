@@ -24,6 +24,8 @@ from backend.rag.exceptions import (
     RagVectorStoreError,
     UnsupportedDocumentTypeError,
 )
+from backend.rag.index_manifest import IndexManifest, IndexManifestRecord, IndexStatus
+from backend.rag.index_service import IndexDocumentResult, IndexService
 from backend.rag.models import (
     DocumentChunk,
     DocumentPage,
@@ -50,6 +52,11 @@ __all__ = [
     "EmbeddingRuntimeSnapshot",
     "EmbeddingRuntimeStatus",
     "HeuristicTokenCounter",
+    "IndexDocumentResult",
+    "IndexManifest",
+    "IndexManifestRecord",
+    "IndexService",
+    "IndexStatus",
     "KnowledgeDocument",
     "NormalizedDocument",
     "Qwen3EmbeddingProvider",

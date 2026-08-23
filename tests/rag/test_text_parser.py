@@ -17,6 +17,19 @@ def test_text_parser_preserves_unicode_and_stable_identity(tmp_path: Path) -> No
     assert first.document.source_kind == "text"
 
 
+def test_text_parser_identity_survives_content_changes(tmp_path: Path) -> None:
+    path = tmp_path / "notes.txt"
+    path.write_text("first version", encoding="utf-8")
+    parser = TextDocumentParser()
+    first = parser.parse(path)
+    path.write_text("second version", encoding="utf-8")
+
+    second = parser.parse(path)
+
+    assert second.document.document_id == first.document.document_id
+    assert second.document.content_hash != first.document.content_hash
+
+
 def test_markdown_parser_extracts_title_and_sections(tmp_path: Path) -> None:
     path = tmp_path / "paper.md"
     path.write_text(

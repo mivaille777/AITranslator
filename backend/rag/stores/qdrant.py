@@ -169,6 +169,22 @@ class QdrantLocalVectorStore:
                 f"failed to delete Qdrant document: {document_id}"
             ) from exc
 
+    def delete_chunks(self, chunk_ids: list[str]) -> None:
+        if not chunk_ids:
+            return
+        self.ensure_collection()
+        selector = qdrant_models.PointIdsList(
+            points=[self._point_id(chunk_id) for chunk_id in chunk_ids]
+        )
+        try:
+            self._client.delete(
+                collection_name=self.collection_name,
+                points_selector=selector,
+                wait=True,
+            )
+        except Exception as exc:
+            raise RagVectorStoreError("failed to delete stale Qdrant chunks") from exc
+
     def get_chunk(self, chunk_id: str) -> DocumentChunk | None:
         if not chunk_id:
             return None

@@ -20,12 +20,15 @@ class AgentExecutionPolicy:
     """Bounded execution policy for one Agent run.
 
     Retries are intentionally limited to read/compute tools by ProductAgentService.
-    Write tools are never automatically retried.
+    Write tools are never automatically retried. Multi-step planning/execution
+    is also hard-bounded so LangGraph loops cannot grow without limit.
     """
 
     total_timeout_seconds: float = 45.0
     tool_timeout_seconds: float = 20.0
     max_safe_retries: int = 1
+    max_plan_steps: int = 4
+    max_tool_calls: int = 4
 
     def __post_init__(self) -> None:
         if self.total_timeout_seconds <= 0:
@@ -34,6 +37,10 @@ class AgentExecutionPolicy:
             raise ValueError("tool_timeout_seconds must be positive")
         if self.max_safe_retries < 0:
             raise ValueError("max_safe_retries must be non-negative")
+        if self.max_plan_steps < 2:
+            raise ValueError("max_plan_steps must be at least 2")
+        if self.max_tool_calls < 1:
+            raise ValueError("max_tool_calls must be positive")
 
 
 @dataclass(slots=True)

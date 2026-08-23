@@ -5,6 +5,7 @@ import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import {
   addKnowledgeDocument,
   deleteKnowledgeDocument,
+  getKnowledgeRuntime,
   listKnowledgeDocuments,
   reindexKnowledgeDocument,
 } from "./knowledge-api"
@@ -20,8 +21,18 @@ export function useKnowledgeLibrary() {
         ? queryPolling.knowledgeActiveDocuments
         : queryPolling.knowledgeDocuments,
   })
+  const runtimeQuery = useQuery({
+    queryKey: queryKeys.knowledge.runtime,
+    queryFn: getKnowledgeRuntime,
+    refetchInterval: queryPolling.knowledgeDocuments,
+  })
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents })
+  const refresh = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.documents }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledge.runtime }),
+    ])
+  }
   const addMutation = useMutation({
     mutationFn: async () => {
       const path = await desktop.files.pickKnowledgeDocument()
@@ -43,6 +54,7 @@ export function useKnowledgeLibrary() {
 
   return {
     documentsQuery,
+    runtimeQuery,
     addMutation,
     deleteMutation,
     reindexMutation,

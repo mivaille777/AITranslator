@@ -1,4 +1,4 @@
-import { AlertTriangle, FileText, LoaderCircle, RefreshCw, Trash2 } from "lucide-react"
+import { AlertTriangle, ExternalLink, FileText, LoaderCircle, MoreHorizontal, RefreshCw, Trash2 } from "lucide-react"
 
 import { Badge } from "../../shared/ui/Badge"
 import { Button } from "../../shared/ui/Button"
@@ -13,13 +13,17 @@ export default function KnowledgeDocumentRow({
   document,
   deleting,
   reindexing,
-  onDelete,
+  onOpen,
+  onReveal,
+  onRemove,
   onReindex,
 }: {
   document: KnowledgeDocument
   deleting: boolean
   reindexing: boolean
-  onDelete: () => void
+  onOpen: () => void
+  onReveal: () => void
+  onRemove: () => void
   onReindex: () => void
 }) {
   const active = isKnowledgeDocumentActive(document.status)
@@ -33,9 +37,9 @@ export default function KnowledgeDocumentRow({
           </span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-slate-900">
+              <button type="button" className="truncate text-left text-sm font-semibold text-slate-900 hover:text-cyan-800" onClick={onOpen}>
                 {document.title || "Untitled document"}
-              </h3>
+              </button>
               <Badge tone={knowledgeStatusTone(document.status)}>
                 {active && <LoaderCircle size={10} className="mr-1 animate-spin" />}
                 {knowledgeStatusLabel(document.status)}
@@ -73,16 +77,16 @@ export default function KnowledgeDocumentRow({
             <RefreshCw size={13} className={reindexing ? "animate-spin" : ""} />
             {reindexing ? "Reindexing…" : "Reindex"}
           </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            disabled={deleting || reindexing}
-            onClick={onDelete}
-            aria-label={`Delete ${document.title}`}
-          >
-            <Trash2 size={13} />
-            {deleting ? "Deleting…" : "Delete"}
-          </Button>
+          <details className="relative">
+            <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-[9px] text-slate-500 transition hover:bg-slate-100" aria-label={`More actions for ${document.title}`}>
+              <MoreHorizontal size={15} />
+            </summary>
+            <div className="absolute right-0 z-20 mt-1 w-44 rounded-[14px] border border-slate-200 bg-white p-1.5 text-xs shadow-xl">
+              <button type="button" className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-slate-700 hover:bg-slate-50" onClick={onOpen}><FileText size={13} />Open details</button>
+              <button type="button" className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-slate-700 hover:bg-slate-50" onClick={onReveal}><ExternalLink size={13} />Reveal source</button>
+              <button type="button" className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-rose-600 hover:bg-rose-50" disabled={deleting || reindexing} onClick={onRemove}><Trash2 size={13} />Remove</button>
+            </div>
+          </details>
         </div>
       </div>
     </article>

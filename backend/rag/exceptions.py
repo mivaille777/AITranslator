@@ -25,6 +25,10 @@ class RagVectorStoreError(RagError):
     """Raised when the local vector store cannot complete an operation."""
 
 
+class RagRetrievalError(RagError):
+    """Raised when no configured retrieval path can serve a query."""
+
+
 class UnsupportedDocumentTypeError(RagParsingError):
     """Raised when no basic ingestion parser supports a document type."""
 
@@ -35,6 +39,7 @@ __all__ = [
     "RagError",
     "RagInvariantError",
     "RagParsingError",
+    "RagRetrievalError",
     "RagVectorStoreError",
     "UnsupportedDocumentTypeError",
 ]

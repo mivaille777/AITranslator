@@ -11,13 +11,19 @@ from backend.rag.exceptions import RagInvariantError
 from backend.rag.models import DocumentChunk, RetrievalCandidate
 from backend.rag.sparse.bm25 import BM25Index
 from backend.rag.sparse.tokenizer import SparseTokenizer
+from backend.rag.stores.base import VectorSearchFilter
 
 
 @runtime_checkable
 class SparseRetriever(Protocol):
     def index_chunks(self, chunks: list[DocumentChunk]) -> None: ...
 
-    def search(self, query: str, top_k: int) -> list[RetrievalCandidate]: ...
+    def search(
+        self,
+        query: str,
+        top_k: int,
+        filters: VectorSearchFilter | None = None,
+    ) -> list[RetrievalCandidate]: ...
 
     def delete_document(self, document_id: str) -> None: ...
 
@@ -52,13 +58,23 @@ class BM25SparseRetriever:
         self._rebuild_index()
         self._save()
 
-    def search(self, query: str, top_k: int) -> list[RetrievalCandidate]:
+    def search(
+        self,
+        query: str,
+        top_k: int,
+        filters: VectorSearchFilter | None = None,
+    ) -> list[RetrievalCandidate]:
         if top_k <= 0:
             raise ValueError("top_k must be positive")
         query_tokens = self._tokenizer.tokenize(query)
         if not query_tokens:
             return []
         scores = self._index.score(query_tokens)
+        scores = {
+            chunk_id: score
+            for chunk_id, score in scores.items()
+            if self._matches_filter(self._data.chunks[chunk_id], filters)
+        }
         ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))[:top_k]
         return [
             RetrievalCandidate(
@@ -91,6 +107,26 @@ class BM25SparseRetriever:
                 chunk_id: self._tokenizer.tokenize(chunk.text)
                 for chunk_id, chunk in self._data.chunks.items()
             }
+        )
+
+    @staticmethod
+    def _matches_filter(
+        chunk: DocumentChunk,
+        filters: VectorSearchFilter | None,
+    ) -> bool:
+        if filters is None:
+            return True
+        if filters.document_ids and chunk.document_id not in filters.document_ids:
+            return False
+        if (
+            filters.source_kind
+            and chunk.metadata.get("source_kind") != filters.source_kind
+        ):
+            return False
+        if filters.language and chunk.language != filters.language:
+            return False
+        return all(
+            chunk.metadata.get(key) == value for key, value in filters.metadata.items()
         )
 
     def _load(self) -> _SparseData:

@@ -2,6 +2,7 @@ import { Check, Circle, LoaderCircle, TriangleAlert } from "lucide-react"
 
 import { AITPanel } from "@/shared/components/AITPanel"
 import type { AgentActivityItem } from "../state/agent-workspace-state"
+import { AgentRetrievalActivity } from "./AgentRetrievalActivity"
 import {
   deriveAgentTimelineStages,
   getAgentTimelineEventLabel,
@@ -95,6 +96,8 @@ export function AgentTimeline({
           </div>
         ))}
       </div>
+
+      <AgentRetrievalActivity activities={activities} running={running} />
 
       <div className="mt-5">
         {activities.length === 0 ? (

@@ -18,6 +18,7 @@ export interface AgentActivityItem {
   label: string
   detail: string
   tone: AgentActivityTone
+  payload?: Record<string, unknown>
 }
 
 export interface AgentWorkspaceViewState {
@@ -255,7 +256,10 @@ export function deriveAgentWorkspaceState({
   cancelledMessage?: string
   errorMessage?: string
 }): AgentWorkspaceViewState {
-  const activities = activitySource(trace, liveEvents).map(eventToActivity)
+  const activities = activitySource(trace, liveEvents).map((event) => ({
+    ...eventToActivity(event),
+    payload: event.payload,
+  }))
   const shared = {
     uiMode: trace?.ui_mode ?? "assistant",
     outputText: trace?.run.output_text ?? "",

@@ -39,3 +39,26 @@ export interface KnowledgeDocumentDeleteResponse {
   deleted: boolean
   source_file_preserved: boolean
 }
+
+export interface KnowledgeDocumentStatusResponse {
+  document_id: string
+  status: KnowledgeDocumentStatus
+  chunk_count: number
+  indexed_at: string | null
+  error: string
+}
+
+export interface KnowledgeRuntime {
+  enabled: boolean
+  embedding_provider: string
+  embedding_model: string
+  embedding_status: string
+  device: string
+  dimension: number
+  vector_store_provider: string
+  collection_name: string
+  document_count: number
+  ready_document_count: number
+  indexed_chunk_count: number
+  max_file_bytes: number
+}

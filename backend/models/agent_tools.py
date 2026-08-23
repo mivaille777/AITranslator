@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from backend.models.agent_runtime import AgentPlanContext
 from backend.models.quick_actions import ReadingContextPayload
 
 AgentToolEffect = Literal["read", "compute", "write"]
@@ -89,6 +90,7 @@ class AgentRunRequest(ReadingContextPayload):
 class AgentRunResponse(BaseModel):
     status: AgentRunStatus
     plan: AgentPlan
+    multi_step_plan: AgentPlanContext | None = None
     output_text: str = ""
     provider: str = ""
     model: str = ""

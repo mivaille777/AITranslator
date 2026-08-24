@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from backend.rag.config import (
+    RagAdvancedParsingConfig,
     RagChunkingConfig,
     RagConfig,
     RagEmbeddingConfig,
@@ -18,6 +19,7 @@ def test_rag_config_defaults_match_v1_contract() -> None:
     config = RagConfig()
 
     assert config.enabled is True
+    assert config.advanced_parsing.device == "cpu"
     assert config.chunking.target_tokens == 512
     assert config.chunking.overlap_tokens == 80
     assert config.embedding.model == "Qwen/Qwen3-Embedding-0.6B"
@@ -35,6 +37,11 @@ def test_rag_config_defaults_match_v1_contract() -> None:
 def test_embedding_dimension_must_be_positive() -> None:
     with pytest.raises(ValidationError):
         RagEmbeddingConfig(dimension=0)
+
+
+def test_advanced_parser_device_is_bounded() -> None:
+    with pytest.raises(ValidationError):
+        RagAdvancedParsingConfig(device="metal")
 
 
 def test_chunk_overlap_must_be_smaller_than_target() -> None:
@@ -61,6 +68,7 @@ def test_default_toml_rag_section_validates_against_contract() -> None:
 
     assert config.advanced_parsing.enabled is True
     assert config.advanced_parsing.provider == "docling"
+    assert config.advanced_parsing.device == "cpu"
     assert config.advanced_parsing.layout_enabled is True
     assert config.advanced_parsing.table_enabled is True
     assert config.advanced_parsing.ocr_enabled is False

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Protocol
 
 from backend.rag.config import RagAdvancedParsingConfig
 from backend.rag.exceptions import RagParsingError
-from backend.rag.models import NormalizedDocument
+from backend.rag.models import DocumentPage, DocumentSection, NormalizedDocument
 from backend.rag.parsers.base import (
     BaseFileParser,
     DocumentParser,
@@ -15,15 +16,33 @@ from backend.rag.parsers.base import (
     compose_blocks,
 )
 
+_IMAGE_PLACEHOLDER = "<!-- image -->"
+
+
+@dataclass(frozen=True, slots=True)
+class DoclingConversion:
+    """Text exported by Docling, optionally split by physical PDF page."""
+
+    text: str = ""
+    pages: tuple[tuple[int, str], ...] = ()
+
 
 class DoclingBackend(Protocol):
-    def convert(self, path: Path, config: RagAdvancedParsingConfig) -> str: ...
+    def convert(
+        self,
+        path: Path,
+        config: RagAdvancedParsingConfig,
+    ) -> str | DoclingConversion: ...
 
 
 class DefaultDoclingBackend:
     """Lazy adapter that keeps Docling outside the normal installation path."""
 
-    def convert(self, path: Path, config: RagAdvancedParsingConfig) -> str:
+    def convert(
+        self,
+        path: Path,
+        config: RagAdvancedParsingConfig,
+    ) -> DoclingConversion:
         try:
             from docling.datamodel.base_models import InputFormat
             from docling.datamodel.pipeline_options import PdfPipelineOptions
@@ -49,9 +68,34 @@ class DefaultDoclingBackend:
                 }
             )
             document = converter.convert(path).document
-            if config.layout_enabled:
-                return str(document.export_to_markdown())
-            return str(document.export_to_text())
+            if not config.layout_enabled:
+                return DoclingConversion(text=str(document.export_to_text()))
+
+            page_numbers = sorted(int(page_no) for page_no in document.pages)
+            if page_numbers:
+                page_markdown = tuple(
+                    (
+                        page_no,
+                        str(
+                            document.export_to_markdown(
+                                page_no=page_no,
+                                image_placeholder=_IMAGE_PLACEHOLDER,
+                                traverse_pictures=True,
+                            )
+                        ),
+                    )
+                    for page_no in page_numbers
+                )
+                return DoclingConversion(pages=page_markdown)
+
+            return DoclingConversion(
+                text=str(
+                    document.export_to_markdown(
+                        image_placeholder=_IMAGE_PLACEHOLDER,
+                        traverse_pictures=True,
+                    )
+                )
+            )
         except Exception as exc:
             raise RagParsingError(f"Docling failed to parse document: {path}") from exc
 
@@ -61,7 +105,7 @@ def _markdown_blocks(text: str, *, layout_enabled: bool) -> list[ParsedBlock]:
         return [ParsedBlock(text=text)]
     blocks: list[ParsedBlock] = []
     for raw_block in re.split(r"\n\s*\n", text):
-        block = raw_block.strip()
+        block = raw_block.replace(_IMAGE_PLACEHOLDER, "").strip()
         if not block:
             continue
         heading = re.fullmatch(r"(#{1,6})\s+(.+)", block)
@@ -77,6 +121,98 @@ def _markdown_blocks(text: str, *, layout_enabled: bool) -> list[ParsedBlock]:
     return blocks
 
 
+def _compose_page_aware_blocks(
+    pages: tuple[tuple[int, str], ...],
+    *,
+    layout_enabled: bool,
+) -> tuple[str, list[DocumentSection], list[DocumentPage]]:
+    """Compose canonical text while retaining both section and page offsets."""
+
+    page_blocks: list[tuple[int, ParsedBlock]] = []
+    ordered_page_numbers: list[int] = []
+    for page_number, page_text in pages:
+        if page_number not in ordered_page_numbers:
+            ordered_page_numbers.append(page_number)
+        normalized = BaseFileParser._normalize_text(page_text)
+        for block in _markdown_blocks(normalized, layout_enabled=layout_enabled):
+            if block.text.strip():
+                page_blocks.append((page_number, block))
+
+    if not page_blocks:
+        return "", [], [
+            DocumentPage(page_number=page_number)
+            for page_number in ordered_page_numbers
+        ]
+
+    parts: list[str] = []
+    positions: list[tuple[int, int]] = []
+    cursor = 0
+    for index, (_page_number, block) in enumerate(page_blocks):
+        if index:
+            parts.append("\n\n")
+            cursor += 2
+        start = cursor
+        parts.append(block.text.strip())
+        cursor += len(block.text.strip())
+        positions.append((start, cursor))
+    text = "".join(parts)
+
+    document_pages: list[DocumentPage] = []
+    previous_end = 0
+    for page_number in ordered_page_numbers:
+        indices = [
+            index
+            for index, (block_page, _block) in enumerate(page_blocks)
+            if block_page == page_number
+        ]
+        if not indices:
+            document_pages.append(
+                DocumentPage(
+                    page_number=page_number,
+                    start_char=previous_end,
+                    end_char=previous_end,
+                )
+            )
+            continue
+        start = positions[indices[0]][0]
+        end = positions[indices[-1]][1]
+        document_pages.append(
+            DocumentPage(
+                page_number=page_number,
+                text=text[start:end],
+                start_char=start,
+                end_char=end,
+            )
+        )
+        previous_end = end
+
+    heading_indices = [
+        index
+        for index, (_page_number, block) in enumerate(page_blocks)
+        if block.heading_level is not None
+    ]
+    sections: list[DocumentSection] = []
+    for heading_position, block_index in enumerate(heading_indices):
+        page_number, block = page_blocks[block_index]
+        start = positions[block_index][0]
+        if heading_position + 1 < len(heading_indices):
+            next_start = positions[heading_indices[heading_position + 1]][0]
+            end = len(text[:next_start].rstrip())
+        else:
+            end = len(text)
+        sections.append(
+            DocumentSection(
+                heading=block.text.strip(),
+                level=block.heading_level or 1,
+                text=text[start:end],
+                start_char=start,
+                end_char=end,
+                metadata={"page_number": page_number},
+            )
+        )
+    return text, sections, document_pages
+
+
 def _parser_profile_version(config: RagAdvancedParsingConfig) -> str:
     """Return an index-invalidating parser profile identifier.
 
@@ -86,7 +222,7 @@ def _parser_profile_version(config: RagAdvancedParsingConfig) -> str:
     """
 
     return (
-        "docling-v2"
+        "docling-v3"
         f";layout={int(config.layout_enabled)}"
         f";table={int(config.table_enabled)}"
         f";ocr={int(config.ocr_enabled)}"
@@ -96,7 +232,7 @@ def _parser_profile_version(config: RagAdvancedParsingConfig) -> str:
 
 class DoclingDocumentParser(BaseFileParser):
     name = "docling"
-    version = "docling-v2"
+    version = "docling-v3"
     supported_suffixes = frozenset({".pdf"})
 
     def __init__(
@@ -117,13 +253,22 @@ class DoclingDocumentParser(BaseFileParser):
             raise
         except Exception as exc:
             raise RagParsingError(f"Docling failed to parse document: {path}") from exc
-        normalized = self._normalize_text(converted)
-        if not normalized:
+
+        pages: list[DocumentPage] = []
+        if isinstance(converted, DoclingConversion) and converted.pages:
+            text, sections, pages = _compose_page_aware_blocks(
+                converted.pages,
+                layout_enabled=self.config.layout_enabled,
+            )
+        else:
+            raw_text = converted.text if isinstance(converted, DoclingConversion) else converted
+            normalized = self._normalize_text(raw_text)
+            text, sections = compose_blocks(
+                _markdown_blocks(normalized, layout_enabled=self.config.layout_enabled)
+            )
+        if not text.strip():
             raise RagParsingError(f"Docling produced no extractable text: {path}")
 
-        text, sections = compose_blocks(
-            _markdown_blocks(normalized, layout_enabled=self.config.layout_enabled)
-        )
         title = sections[0].heading if sections else path.stem
         try:
             library_version = version("docling")
@@ -144,14 +289,16 @@ class DoclingDocumentParser(BaseFileParser):
                 "table_structure_enabled": self.config.table_enabled,
                 "ocr_enabled": self.config.ocr_enabled,
                 "formula_enrichment_enabled": self.config.formula_enabled,
+                "figure_caption_preserved": self.config.layout_enabled,
                 "image_understanding_enabled": False,
-                "visual_content_mode": "textual_export_only",
+                "visual_content_mode": "caption_and_text_only",
             },
         )
         return NormalizedDocument(
             document=document,
             text=text,
             sections=sections,
+            pages=pages,
             metadata={
                 "parser_name": self.name,
                 "parser_version": parser_version,
@@ -161,8 +308,10 @@ class DoclingDocumentParser(BaseFileParser):
                 "ocr_enabled": self.config.ocr_enabled,
                 "formula_enabled": self.config.formula_enabled,
                 "section_count": len(sections),
+                "page_count": len(pages),
+                "figure_caption_preserved": self.config.layout_enabled,
                 "image_understanding_enabled": False,
-                "visual_content_mode": "textual_export_only",
+                "visual_content_mode": "caption_and_text_only",
             },
         )
 
@@ -203,5 +352,6 @@ __all__ = [
     "AdvancedParserWithFallback",
     "DefaultDoclingBackend",
     "DoclingBackend",
+    "DoclingConversion",
     "DoclingDocumentParser",
 ]

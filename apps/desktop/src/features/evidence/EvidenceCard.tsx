@@ -1,5 +1,5 @@
 import { ExternalLink } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useInRouterContext } from "react-router-dom"
 
 import { desktop } from "../../desktop"
 import { Badge } from "../../shared/ui/Badge"
@@ -19,6 +19,15 @@ export function EvidenceCard({
 }) {
   const canOpen = isSafeEvidenceResource(item.resource_url)
   const navigation = evidenceNavigation(item)
+  const inRouterContext = useInRouterContext()
+  const knowledgeDetailsHref = navigation.knowledgeDocumentId
+    ? `/knowledge?document=${encodeURIComponent(navigation.knowledgeDocumentId)}`
+    : ""
+  const knowledgeDetailsClassName = buttonClassName({
+    size: "xs",
+    variant: "ghost",
+    className: "mt-4 ml-2",
+  })
 
   return (
     <article className={`rounded-[18px] border border-slate-200 bg-slate-50/70 ${compact ? "p-3" : "p-4"}`}>
@@ -53,13 +62,16 @@ export function EvidenceCard({
             <ExternalLink size={13} />
             Open document
           </Button>
-          {navigation.knowledgeDocumentId && (
-            <Link
-              className={buttonClassName({ size: "xs", variant: "ghost", className: "mt-4 ml-2" })}
-              to={`/knowledge?document=${encodeURIComponent(navigation.knowledgeDocumentId)}`}
-            >
-              Knowledge details
-            </Link>
+          {knowledgeDetailsHref && (
+            inRouterContext ? (
+              <Link className={knowledgeDetailsClassName} to={knowledgeDetailsHref}>
+                Knowledge details
+              </Link>
+            ) : (
+              <a className={knowledgeDetailsClassName} href={knowledgeDetailsHref}>
+                Knowledge details
+              </a>
+            )
           )}
           {!canOpen && (
             <p className="mt-2 text-[11px] leading-5 text-amber-700">

@@ -14,14 +14,22 @@ from backend.rag.parsers import (
     PdfDocumentParser,
     get_parser_for_path,
 )
+from backend.rag.parsers.docling import DoclingConversion
 
 
 class FakeDoclingBackend:
-    def __init__(self, text: str = "# Paper title\n\nIntroduction text.") -> None:
+    def __init__(
+        self,
+        text: str | DoclingConversion = "# Paper title\n\nIntroduction text.",
+    ) -> None:
         self.text = text
         self.calls: list[tuple[Path, RagAdvancedParsingConfig]] = []
 
-    def convert(self, path: Path, config: RagAdvancedParsingConfig) -> str:
+    def convert(
+        self,
+        path: Path,
+        config: RagAdvancedParsingConfig,
+    ) -> str | DoclingConversion:
         self.calls.append((path, config))
         return self.text
 
@@ -99,7 +107,7 @@ def test_docling_parser_preserves_reading_order_sections_and_feature_flags(
     assert result.text.index("Intro text.") < result.text.index("Results")
     assert "| 1 | 2 |" in result.text
     assert result.metadata["parser_name"] == "docling"
-    assert result.metadata["parser_version"].startswith("docling-v2;")
+    assert result.metadata["parser_version"].startswith("docling-v3;")
     assert "table=1" in result.metadata["parser_version"]
     assert "formula=1" in result.metadata["parser_version"]
     assert result.metadata["section_count"] == 2
@@ -107,10 +115,47 @@ def test_docling_parser_preserves_reading_order_sections_and_feature_flags(
     assert result.metadata["ocr_enabled"] is False
     assert result.metadata["formula_enabled"] is True
     assert result.metadata["image_understanding_enabled"] is False
-    assert result.metadata["visual_content_mode"] == "textual_export_only"
+    assert result.metadata["visual_content_mode"] == "caption_and_text_only"
     assert result.document.metadata["layout_preserved"] is True
     assert result.document.metadata["table_structure_enabled"] is True
     assert backend.calls == [(source.resolve(), config)]
+
+
+def test_docling_parser_preserves_page_offsets_and_figure_caption_text(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "paper.pdf"
+    source.write_bytes(b"%PDF mock")
+    backend = FakeDoclingBackend(
+        DoclingConversion(
+            pages=(
+                (1, "# Paper title\n\nIntroduction text."),
+                (
+                    2,
+                    "## Results\n\n<!-- image -->\n\n"
+                    "Fig. 1. Controller comparison.\n\nResult text.",
+                ),
+            )
+        )
+    )
+
+    result = DoclingDocumentParser(
+        RagAdvancedParsingConfig(enabled=True, layout_enabled=True),
+        backend=backend,
+    ).parse(source)
+
+    assert [page.page_number for page in result.pages] == [1, 2]
+    assert result.metadata["page_count"] == 2
+    assert "<!-- image -->" not in result.text
+    assert "Fig. 1. Controller comparison." in result.text
+    assert result.text[
+        result.pages[0].start_char : result.pages[0].end_char
+    ] == result.pages[0].text
+    assert result.text[
+        result.pages[1].start_char : result.pages[1].end_char
+    ] == result.pages[1].text
+    assert result.pages[0].end_char <= result.pages[1].start_char
+    assert result.sections[1].metadata["page_number"] == 2
 
 
 def test_docling_parser_version_changes_when_parsing_profile_changes(

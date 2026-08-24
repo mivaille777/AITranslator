@@ -30,6 +30,12 @@ class FakeEmbedding:
         return [[1.0, 0.0, 0.0, 0.0] for _text in texts]
 
 
+class FailingEmbedding(FakeEmbedding):
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        _ = texts
+        raise RuntimeError("embedding runtime unavailable")
+
+
 class FakeVectorStore:
     def __init__(self) -> None:
         self.chunks: dict[str, DocumentChunk] = {}
@@ -88,9 +94,10 @@ def _service(
     allowed_root: Path,
     *,
     max_file_bytes: int = 1024,
+    embedding=None,
 ) -> tuple[KnowledgeLibraryService, FakeVectorStore, FakeSparse]:
     manifest = IndexManifest(state_path / "manifest.json")
-    embedding = FakeEmbedding()
+    embedding = embedding or FakeEmbedding()
     vector_store = FakeVectorStore()
     sparse = FakeSparse()
     config = RagConfig(
@@ -249,6 +256,27 @@ def test_import_normalizes_path_and_rejects_escape_from_allowed_root(
     )
 
     assert response.status_code == 403
+
+
+def test_import_returns_service_unavailable_when_indexing_fails(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    source = allowed / "control.md"
+    source.write_text("Gaussian process control.", encoding="utf-8")
+    service, *_ = _service(
+        tmp_path / "state",
+        allowed,
+        embedding=FailingEmbedding(),
+    )
+    client = _client(service)
+
+    response = client.post("/api/knowledge/documents", json={"path": str(source)})
+
+    assert response.status_code == 503
+    assert "embedding runtime unavailable" in response.json()["detail"]
+    listed = client.get("/api/knowledge/documents").json()
+    assert listed["total"] == 1
+    assert listed["documents"][0]["status"] == "failed"
 
 
 def test_unknown_document_operations_return_not_found(tmp_path: Path) -> None:

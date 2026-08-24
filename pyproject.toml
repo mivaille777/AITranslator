@@ -30,6 +30,9 @@ dependencies = [
     "pypdf>=5.0,<6",
     "python-docx>=1.1,<2",
     "lxml>=6.0,<7",
+    # Qdrant Local is imported by the normal FastAPI RAG runtime, so it is a
+    # core runtime dependency rather than an optional GPU/model dependency.
+    "qdrant-client>=1.19,<2",
 ]
 
 [project.optional-dependencies]

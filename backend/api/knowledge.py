@@ -16,7 +16,8 @@ from backend.models.knowledge_api import (
     KnowledgeDocumentStatusResponse,
     KnowledgeRuntimeResponse,
 )
-from backend.rag.index_manifest import IndexManifestRecord
+from backend.rag.index_manifest import IndexManifestRecord, IndexStatus
+from backend.rag.index_service import IndexDocumentResult
 from backend.services.knowledge_library_service import KnowledgeLibraryService
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
@@ -79,6 +80,16 @@ def _raise_path_error(exc: Exception) -> None:
     ) from exc
 
 
+def _ensure_index_succeeded(result: IndexDocumentResult) -> None:
+    if result.status is not IndexStatus.FAILED:
+        return
+    detail = result.error.strip() or "unknown indexing failure"
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=f"Knowledge indexing failed: {detail}",
+    )
+
+
 @router.post(
     "/documents",
     response_model=KnowledgeDocumentImportResponse,
@@ -92,6 +103,7 @@ def import_knowledge_document(
         result = service.import_document(payload.path)
     except (FileNotFoundError, PermissionError, ValueError) as exc:
         _raise_path_error(exc)
+    _ensure_index_succeeded(result)
     record = _record_or_404(result.document_id, service)
     return KnowledgeDocumentImportResponse(
         document=_document(record),
@@ -154,6 +166,7 @@ def reindex_knowledge_document(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Knowledge document not found.",
         )
+    _ensure_index_succeeded(result)
     record = _record_or_404(result.document_id, service)
     return KnowledgeDocumentImportResponse(
         document=_document(record),

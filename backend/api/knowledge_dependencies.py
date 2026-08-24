@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 
+from app.infrastructure.paths import data_root
 from app.infrastructure.settings import SettingsManager
 from backend.api.rag_model_dependencies import get_rag_model_manager
 from backend.rag.chunking import StructureAwareChunker
@@ -60,6 +61,20 @@ def _max_file_bytes() -> int:
         return DEFAULT_KNOWLEDGE_MAX_FILE_BYTES
 
 
+def _resolve_runtime_storage_path(configured_path: str | Path) -> Path:
+    """Resolve RAG state independently of the process working directory.
+
+    Development launches the backend from ``apps/desktop`` while packaged
+    builds can start from arbitrary working directories. Relative RAG paths
+    therefore belong under the application's writable data root, not cwd.
+    """
+
+    candidate = Path(configured_path).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (data_root() / candidate).resolve()
+
+
 def _build_runtime() -> RagRuntime:
     settings = SettingsManager().data
     raw_rag = settings.get("rag", {})
@@ -69,13 +84,17 @@ def _build_runtime() -> RagRuntime:
         config.embedding,
         model_manager=model_manager,
     )
+    resolved_storage_path = _resolve_runtime_storage_path(
+        config.vector_store.storage_path
+    )
+    vector_store_config = config.vector_store.model_copy(
+        update={"storage_path": str(resolved_storage_path)}
+    )
     vector_store = QdrantLocalVectorStore(
-        config.vector_store,
+        vector_store_config,
         dimension=config.embedding.dimension,
     )
-    state_directory = (
-        Path(config.vector_store.storage_path).expanduser().resolve().parent
-    )
+    state_directory = resolved_storage_path.parent
     sparse = BM25SparseRetriever(state_directory / "bm25_index.json")
     manifest = IndexManifest(state_directory / "index_manifest.json")
     retrieval = RetrievalService(

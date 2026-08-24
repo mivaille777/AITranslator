@@ -82,6 +82,18 @@ mouse_offset_y = 16
 [rag]
 enabled = true
 
+[rag.advanced_parsing]
+# Prefer structure-aware scientific PDF ingestion in the product runtime.
+# If Docling is not installed or cannot parse a PDF, indexing safely falls
+# back to the basic pypdf text-layer parser instead of failing the document.
+enabled = true
+provider = "docling"
+layout_enabled = true
+table_enabled = true
+ocr_enabled = false
+formula_enabled = false
+document_timeout_seconds = 120.0
+
 [rag.chunking]
 target_tokens = 512
 overlap_tokens = 80

@@ -116,8 +116,14 @@ function Get-GitDirtyClassification {
         # Ignore them only while they are UNTRACKED. If any of these files ever
         # become tracked, modifications must block the pull like normal source files.
         $safeGenerated = $status -eq "??" -and (
-            $path -eq "apps/desktop/src-tauri/Cargo.lock" -or
-            $path -match '^config/.+\.sqlite3(?:-shm|-wal)?$'
+            $path -match '^\.langgraph_api/' -or
+            $path -match '^config/[^/]+\.sqlite3$' -or
+            $path -match '^config/rag/' -or
+            $path -match '^data/' -or
+            $path -match '^models/' -or
+            $path -match '^\.cache/' -or
+            $path -match '\.(?:pkl|pickle)$' -or
+            $path -match '(?:^|/)[^/]*pycache[^/]*/'
         )
 
         if ($safeGenerated) {
@@ -198,7 +204,8 @@ if ($AllowLocalChanges) {
 }
 else {
     # Protect real source/config changes, but do not block normal verification on
-    # known untracked runtime artifacts such as the local SQLite DB or Cargo.lock.
+    # known untracked runtime artifacts such as local databases, model caches,
+    # RAG storage, and serialized runtime state.
     $DirtyFiles = @(git status --porcelain --untracked-files=all)
     Assert-LastExitCode "Unable to read Git working tree status."
     $DirtyClassification = Get-GitDirtyClassification $DirtyFiles

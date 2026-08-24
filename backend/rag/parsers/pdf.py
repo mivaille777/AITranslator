@@ -61,6 +61,18 @@ class PdfDocumentParser(BaseFileParser):
             if value:
                 pdf_metadata[key] = str(value)
         title_value = metadata.get("/Title") if hasattr(metadata, "get") else None
+        pdf_metadata.update(
+            {
+                "parser_name": self.name,
+                "parser_version": self.version,
+                "layout_preserved": False,
+                "table_structure_enabled": False,
+                "ocr_enabled": False,
+                "formula_enrichment_enabled": False,
+                "image_understanding_enabled": False,
+                "visual_content_mode": "text_layer_only",
+            }
+        )
 
         document = self._build_document(
             path=path,
@@ -79,6 +91,12 @@ class PdfDocumentParser(BaseFileParser):
                 "parser_version": self.version,
                 "library_version": pypdf_version,
                 "page_count": len(pages),
+                "layout_enabled": False,
+                "table_enabled": False,
+                "ocr_enabled": False,
+                "formula_enabled": False,
+                "image_understanding_enabled": False,
+                "visual_content_mode": "text_layer_only",
             },
         )
 

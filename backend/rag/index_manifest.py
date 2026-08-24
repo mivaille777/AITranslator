@@ -22,6 +22,16 @@ class IndexStatus(str, Enum):
     FAILED = "failed"
 
 
+ACTIVE_INDEX_STATUSES = frozenset(
+    {
+        IndexStatus.PARSING,
+        IndexStatus.CHUNKING,
+        IndexStatus.EMBEDDING,
+        IndexStatus.INDEXING,
+    }
+)
+
+
 class IndexManifestRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -118,6 +128,34 @@ class IndexManifest:
             self._save()
             return record.model_copy(deep=True)
 
+    def recover_interrupted_operations(self) -> list[str]:
+        """Fail persisted in-flight states left behind by a terminated backend.
+
+        Indexing is synchronous inside one backend process and there is no durable
+        worker queue that can resume a half-finished parse/embed/index operation.
+        Therefore any active status loaded while constructing a fresh runtime is
+        necessarily stale. Leaving it active makes the desktop poll forever even
+        though no work is running.
+        """
+
+        with self._lock:
+            recovered: list[str] = []
+            for document_id, existing in self._data.documents.items():
+                if existing.status not in ACTIVE_INDEX_STATUSES:
+                    continue
+                interrupted_stage = existing.status.value
+                record = existing.model_copy(deep=True)
+                record.status = IndexStatus.FAILED
+                record.error = (
+                    f"Previous indexing run was interrupted during {interrupted_stage}. "
+                    "Reindex the document to continue."
+                )
+                self._data.documents[document_id] = record
+                recovered.append(document_id)
+            if recovered:
+                self._save()
+            return recovered
+
     def _load(self) -> _ManifestData:
         if not self._path.exists():
             return _ManifestData()
@@ -184,6 +222,7 @@ def ready_manifest_record(
 
 
 __all__ = [
+    "ACTIVE_INDEX_STATUSES",
     "IndexManifest",
     "IndexManifestRecord",
     "IndexStatus",

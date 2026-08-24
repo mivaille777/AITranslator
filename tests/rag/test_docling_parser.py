@@ -77,6 +77,7 @@ def test_advanced_parsing_model_defaults_remain_safe_and_ocr_is_disabled() -> No
     config = RagConfig()
 
     assert config.advanced_parsing.enabled is False
+    assert config.advanced_parsing.device == "cpu"
     assert config.advanced_parsing.layout_enabled is True
     assert config.advanced_parsing.table_enabled is False
     assert config.advanced_parsing.ocr_enabled is False
@@ -107,9 +108,11 @@ def test_docling_parser_preserves_reading_order_sections_and_feature_flags(
     assert result.text.index("Intro text.") < result.text.index("Results")
     assert "| 1 | 2 |" in result.text
     assert result.metadata["parser_name"] == "docling"
-    assert result.metadata["parser_version"].startswith("docling-v3;")
+    assert result.metadata["parser_version"].startswith("docling-v4;")
+    assert "device=cpu" in result.metadata["parser_version"]
     assert "table=1" in result.metadata["parser_version"]
     assert "formula=1" in result.metadata["parser_version"]
+    assert result.metadata["parser_device"] == "cpu"
     assert result.metadata["section_count"] == 2
     assert result.metadata["table_enabled"] is True
     assert result.metadata["ocr_enabled"] is False
@@ -173,10 +176,16 @@ def test_docling_parser_version_changes_when_parsing_profile_changes(
         RagAdvancedParsingConfig(enabled=True, table_enabled=True),
         backend=backend,
     ).parse(source)
+    cuda_profile = DoclingDocumentParser(
+        RagAdvancedParsingConfig(enabled=True, device="cuda", table_enabled=True),
+        backend=backend,
+    ).parse(source)
 
     assert basic_profile.metadata["parser_version"] != table_profile.metadata["parser_version"]
+    assert table_profile.metadata["parser_version"] != cuda_profile.metadata["parser_version"]
     assert "table=0" in basic_profile.metadata["parser_version"]
     assert "table=1" in table_profile.metadata["parser_version"]
+    assert "device=cuda" in cuda_profile.metadata["parser_version"]
 
 
 def test_registry_keeps_basic_parser_by_default_and_wraps_opt_in_pdf() -> None:

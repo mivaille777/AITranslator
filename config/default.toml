@@ -86,8 +86,11 @@ enabled = true
 # Prefer structure-aware scientific PDF ingestion in the product runtime.
 # If Docling is not installed or cannot parse a PDF, indexing safely falls
 # back to the basic pypdf text-layer parser instead of failing the document.
+# Keep Docling on CPU so the laptop GPU remains available to Qwen embedding
+# and reranking immediately after document parsing.
 enabled = true
 provider = "docling"
+device = "cpu"
 layout_enabled = true
 table_enabled = true
 ocr_enabled = false

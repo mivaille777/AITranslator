@@ -58,7 +58,7 @@ def _registry(retrieval: Retrieval, planner: QueryPlanner) -> AgentToolRegistry:
     )
 
 
-def test_agent_runs_bounded_subqueries_and_merges_one_evidence_set() -> None:
+def test_agent_runs_bounded_rewritten_query_and_subqueries_then_merges_one_evidence_set() -> None:
     original = "论文里为什么 M10 比 C8 好？"
     plan = RagQueryPlan(
         original_query=original,
@@ -77,7 +77,12 @@ def test_agent_runs_bounded_subqueries_and_merges_one_evidence_set() -> None:
     )
 
     assert planner.calls == [original]
-    assert retrieval.calls == plan.subqueries
+    assert retrieval.calls == list(plan.retrieval_queries)
+    assert retrieval.calls == [
+        "M10 and C8 comparison",
+        "M10 mechanism",
+        "C8 mechanism",
+    ]
     assert result.data is not None
     assert result.data["query"] == original
     assert result.data["query_plan"] == plan.model_dump(mode="json")

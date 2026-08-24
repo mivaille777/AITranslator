@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from backend.rag.index_manifest import (
+    ACTIVE_INDEX_STATUSES,
     IndexManifest,
     IndexStatus,
     ready_manifest_record,
@@ -50,6 +51,32 @@ def test_manifest_status_updates_preserve_index_metadata(tmp_path: Path) -> None
     assert failed.error == "embedding failed"
     assert failed.chunk_ids == ["chunk_one"]
     assert failed.content_hash == "hash"
+
+
+def test_manifest_recovers_interrupted_active_states(tmp_path: Path) -> None:
+    path = tmp_path / "manifest.json"
+    manifest = IndexManifest(path)
+
+    for index, status in enumerate(sorted(ACTIVE_INDEX_STATUSES, key=lambda item: item.value)):
+        document_id = f"doc_{index}"
+        manifest.upsert(make_record(document_id))
+        manifest.mark_status(document_id, status)
+    manifest.upsert(make_record("doc_ready"))
+
+    reloaded = IndexManifest(path)
+    recovered = reloaded.recover_interrupted_operations()
+
+    assert set(recovered) == {f"doc_{index}" for index in range(len(ACTIVE_INDEX_STATUSES))}
+    for document_id in recovered:
+        record = reloaded.get(document_id)
+        assert record is not None
+        assert record.status is IndexStatus.FAILED
+        assert "Previous indexing run was interrupted during" in record.error
+        assert "Reindex the document" in record.error
+        assert record.chunk_ids == ["chunk_one"]
+    ready = reloaded.get("doc_ready")
+    assert ready is not None
+    assert ready.status is IndexStatus.READY
 
 
 def test_manifest_delete_persists(tmp_path: Path) -> None:

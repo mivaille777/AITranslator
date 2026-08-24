@@ -171,6 +171,7 @@ def get_companion_chat_service() -> CompanionChatService:
             _companion_chat_service = CompanionChatService(
                 reading_resolver=get_reading_selection_resolver(),
                 retrieval_service=get_retrieval_service(),
+                query_planner=build_rag_query_planner(),
             )
         return _companion_chat_service
 

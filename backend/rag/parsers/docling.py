@@ -77,9 +77,26 @@ def _markdown_blocks(text: str, *, layout_enabled: bool) -> list[ParsedBlock]:
     return blocks
 
 
+def _parser_profile_version(config: RagAdvancedParsingConfig) -> str:
+    """Return an index-invalidating parser profile identifier.
+
+    Parser output changes when layout, table, OCR, or formula enrichment changes.
+    Encoding those switches in ``parser_version`` prevents an old index from being
+    silently reused after the scientific-PDF parsing profile changes.
+    """
+
+    return (
+        "docling-v2"
+        f";layout={int(config.layout_enabled)}"
+        f";table={int(config.table_enabled)}"
+        f";ocr={int(config.ocr_enabled)}"
+        f";formula={int(config.formula_enabled)}"
+    )
+
+
 class DoclingDocumentParser(BaseFileParser):
     name = "docling"
-    version = "docling-v1"
+    version = "docling-v2"
     supported_suffixes = frozenset({".pdf"})
 
     def __init__(
@@ -112,13 +129,24 @@ class DoclingDocumentParser(BaseFileParser):
             library_version = version("docling")
         except PackageNotFoundError:
             library_version = "injected-backend"
+        parser_version = _parser_profile_version(self.config)
         document = self._build_document(
             path=path,
             raw_bytes=raw_bytes,
             title=title,
             source_kind="pdf",
             mime_type="application/pdf",
-            metadata={"advanced_parser": True},
+            metadata={
+                "advanced_parser": True,
+                "parser_name": self.name,
+                "parser_version": parser_version,
+                "layout_preserved": self.config.layout_enabled,
+                "table_structure_enabled": self.config.table_enabled,
+                "ocr_enabled": self.config.ocr_enabled,
+                "formula_enrichment_enabled": self.config.formula_enabled,
+                "image_understanding_enabled": False,
+                "visual_content_mode": "textual_export_only",
+            },
         )
         return NormalizedDocument(
             document=document,
@@ -126,12 +154,15 @@ class DoclingDocumentParser(BaseFileParser):
             sections=sections,
             metadata={
                 "parser_name": self.name,
-                "parser_version": self.version,
+                "parser_version": parser_version,
                 "library_version": library_version,
                 "layout_enabled": self.config.layout_enabled,
                 "table_enabled": self.config.table_enabled,
                 "ocr_enabled": self.config.ocr_enabled,
                 "formula_enabled": self.config.formula_enabled,
+                "section_count": len(sections),
+                "image_understanding_enabled": False,
+                "visual_content_mode": "textual_export_only",
             },
         )
 

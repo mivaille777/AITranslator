@@ -131,6 +131,8 @@ export function useCompanionConversationRuntime(
   const [knowledgeDocumentIds, setKnowledgeDocumentIds] = useState<string[]>([])
   const [recoveryState, setRecoveryState] = useState<CompanionRecoveryState>("idle")
   const [recoveryDetail, setRecoveryDetail] = useState("")
+  const [clientSurface] = useState<CompanionClientSurface>(options.clientSurface ?? "unknown")
+  const [clientId] = useState(() => createCompanionScope(`client-${clientSurface}`))
 
   const contextRef = useRef(context)
   const contextModeRef = useRef(contextMode)
@@ -141,8 +143,6 @@ export function useCompanionConversationRuntime(
   const scopeRef = useRef(
     options.initialScopeId ?? createCompanionScope("companion"),
   )
-  const clientSurfaceRef = useRef<CompanionClientSurface>(options.clientSurface ?? "unknown")
-  const clientIdRef = useRef(createCompanionScope(`client-${clientSurfaceRef.current}`))
   const requestCounterRef = useRef(0)
   const activeRequestRef = useRef<number | null>(null)
   const streamHandleRef = useRef<CompanionChatStreamHandle | null>(null)
@@ -174,7 +174,7 @@ export function useCompanionConversationRuntime(
   const conversationBusyElsewhere = Boolean(
     conversationId &&
       ownershipQuery.data?.busy &&
-      ownershipQuery.data.owner_id !== clientIdRef.current,
+      ownershipQuery.data.owner_id !== clientId,
   )
 
   const clearRecovery = useCallback(() => {
@@ -638,8 +638,8 @@ export function useCompanionConversationRuntime(
     const payload = buildCompanionChatRequest({
       conversationId: conversationIdRef.current,
       sessionId: sessionIdRef.current,
-      clientId: clientIdRef.current,
-      clientSurface: clientSurfaceRef.current,
+      clientId,
+      clientSurface,
       userMessage: normalized,
       contextMode: contextModeRef.current,
       context: currentContext,
@@ -692,6 +692,8 @@ export function useCompanionConversationRuntime(
     return true
   }, [
     clearRecovery,
+    clientId,
+    clientSurface,
     conversationBusyElsewhere,
     draft,
     finishRequest,

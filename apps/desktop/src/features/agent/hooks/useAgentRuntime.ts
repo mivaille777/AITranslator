@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useId, useMemo, useRef, useState } from "react"
 
 import type {
   AgentRunRequest,
@@ -25,7 +25,8 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
   const [errorMessage, setErrorMessage] = useState("")
   const [fallbackReason, setFallbackReason] = useState("")
   const [observabilityRefresh, setObservabilityRefresh] = useState(0)
-  const sessionId = useRef(`agent-workspace-${Date.now().toString(36)}`)
+  const reactInstanceId = useId()
+  const sessionId = `agent-workspace-${reactInstanceId.replace(/[^a-zA-Z0-9_-]/g, "")}`
   const conversationId = useRef("")
   const requestId = useRef(0)
   const lastPayload = useRef<AgentRunRequest | null>(null)
@@ -169,8 +170,8 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     requestId.current += 1
     const payload = buildAgentRunRequest({
       context,
-      sessionId: sessionId.current,
-      traceId: `trace-${sessionId.current}-${requestId.current}-${Date.now().toString(36)}`,
+      sessionId,
+      traceId: `trace-${sessionId}-${requestId.current}-${Date.now().toString(36)}`,
       requestId: requestId.current,
       userMessage,
       sourceText,

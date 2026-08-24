@@ -2,6 +2,7 @@ import { apiDelete, apiGet, apiPost } from "./client"
 
 export type RagModelId = "qwen3-embedding-0.6b" | "qwen3-reranker-0.6b"
 export type RagModelState = "not_installed" | "downloading" | "installed" | "invalid"
+export type RagModelSource = "none" | "managed" | "huggingface_cache"
 
 export interface RagModelStatus {
   model_id: RagModelId
@@ -10,6 +11,8 @@ export interface RagModelStatus {
   state: RagModelState
   installed: boolean
   verified: boolean
+  source: RagModelSource
+  removable: boolean
   path: string
   disk_usage_bytes: number
   error: string

@@ -12,7 +12,11 @@ from typing import Any
 from uuid import uuid4
 
 from app.infrastructure.paths import data_root
-from backend.models.rag_runtime import RagModelId, RagModelStatusResponse
+from backend.models.rag_runtime import (
+    RagModelId,
+    RagModelSource,
+    RagModelStatusResponse,
+)
 from backend.rag.exceptions import RagModelManagerError
 
 MODELS_DIRECTORY_ENVIRONMENT_VARIABLE = "AITRANS_MODELS_DIR"
@@ -21,6 +25,7 @@ EMBEDDING_MODEL_ID: RagModelId = "qwen3-embedding-0.6b"
 RERANKER_MODEL_ID: RagModelId = "qwen3-reranker-0.6b"
 
 SnapshotDownloader = Callable[..., Any]
+SnapshotResolver = Callable[..., str | Path]
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +36,13 @@ class RagManagedModelSpec:
     directory_name: str
     required_files: tuple[str, ...]
     required_any: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RagModelResolution:
+    path: Path
+    source: RagModelSource
+    error: str
 
 
 MODEL_SPECS: dict[RagModelId, RagManagedModelSpec] = {
@@ -91,11 +103,13 @@ class ModelManager:
         models_root: str | Path | None = None,
         *,
         downloader: SnapshotDownloader | None = None,
+        cache_resolver: SnapshotResolver | None = None,
     ) -> None:
         self.models_root = (
             Path(models_root or default_models_root()).expanduser().resolve()
         )
         self._downloader = downloader or _default_downloader
+        self._cache_resolver = cache_resolver or _default_downloader
         self._state_lock = Lock()
         self._active_downloads: set[RagModelId] = set()
         self._operation_locks = {model_id: RLock() for model_id in MODEL_SPECS}
@@ -158,31 +172,72 @@ class ModelManager:
                 return "completion manifest repository_id mismatch"
         return ""
 
+    def _cached_target(self, spec: RagManagedModelSpec) -> Path | None:
+        try:
+            cached = self._cache_resolver(
+                repo_id=spec.repository_id,
+                local_files_only=True,
+            )
+            if not cached:
+                return None
+            return Path(cached).expanduser().resolve()
+        except Exception:  # noqa: BLE001 - cache discovery must remain offline and optional
+            return None
+
+    def _resolve_model(self, spec: RagManagedModelSpec) -> RagModelResolution:
+        managed = self._target(spec)
+        if managed.exists():
+            return RagModelResolution(
+                path=managed,
+                source="managed",
+                error=self._verification_error(
+                    spec,
+                    managed,
+                    require_manifest=True,
+                ),
+            )
+
+        cached = self._cached_target(spec)
+        if cached is not None:
+            return RagModelResolution(
+                path=cached,
+                source="huggingface_cache",
+                error=self._verification_error(
+                    spec,
+                    cached,
+                    require_manifest=False,
+                ),
+            )
+
+        return RagModelResolution(
+            path=managed,
+            source="none",
+            error="model directory does not exist",
+        )
+
     def is_installed(self, model_id: str) -> bool:
         return self.verify(model_id)
 
     def get_model_path(self, model_id: str) -> Path:
         spec = self._spec(model_id)
-        target = self._target(spec)
-        error = self._verification_error(spec, target, require_manifest=True)
-        if error:
-            raise RagModelManagerError(f"{spec.display_name} is not installed: {error}")
-        return target
+        resolution = self._resolve_model(spec)
+        if resolution.error:
+            raise RagModelManagerError(
+                f"{spec.display_name} is not installed: {resolution.error}"
+            )
+        return resolution.path
 
     def verify(self, model_id: str) -> bool:
         spec = self._spec(model_id)
-        return not self._verification_error(
-            spec,
-            self._target(spec),
-            require_manifest=True,
-        )
+        return not self._resolve_model(spec).error
 
     def download(self, model_id: str) -> Path:
         spec = self._spec(model_id)
         target = self._target(spec)
         with self._operation_locks[spec.model_id]:
-            if self.verify(spec.model_id):
-                return target
+            resolution = self._resolve_model(spec)
+            if not resolution.error:
+                return resolution.path
             if target.exists():
                 raise RagModelManagerError(
                     f"invalid model directory already exists: {target}; remove it before downloading"
@@ -247,10 +302,14 @@ class ModelManager:
         spec = self._spec(model_id)
         target = self._target(spec)
         with self._operation_locks[spec.model_id]:
-            if not target.exists():
-                return False
-            self._remove_tree(target)
-            return True
+            if target.exists():
+                self._remove_tree(target)
+                return True
+            if self._cached_target(spec) is not None:
+                raise RagModelManagerError(
+                    "refusing to remove a shared Hugging Face cache model"
+                )
+            return False
 
     def _remove_tree(self, path: Path) -> None:
         resolved = path.resolve()
@@ -265,36 +324,40 @@ class ModelManager:
                 f"failed to remove model path: {resolved}"
             ) from exc
 
-    def disk_usage(self, model_id: str) -> int:
-        target = self._target(self._spec(model_id))
-        if not target.is_dir():
+    @staticmethod
+    def _disk_usage(path: Path) -> int:
+        if not path.is_dir():
             return 0
         total = 0
         try:
-            for path in target.rglob("*"):
-                if path.is_file():
-                    total += path.stat().st_size
+            for item in path.rglob("*"):
+                if item.is_file():
+                    total += item.stat().st_size
         except OSError as exc:
             raise RagModelManagerError(
-                f"failed to inspect model path: {target}"
+                f"failed to inspect model path: {path}"
             ) from exc
         return total
 
+    def disk_usage(self, model_id: str) -> int:
+        resolution = self._resolve_model(self._spec(model_id))
+        return 0 if resolution.source == "none" else self._disk_usage(resolution.path)
+
     def status(self, model_id: str) -> RagModelStatusResponse:
         spec = self._spec(model_id)
-        target = self._target(spec)
+        resolution = self._resolve_model(spec)
         with self._state_lock:
             downloading = spec.model_id in self._active_downloads
-        error = self._verification_error(spec, target, require_manifest=True)
-        installed = not error
+        installed = not resolution.error
         if downloading:
             state = "downloading"
         elif installed:
             state = "installed"
-        elif target.exists():
+        elif resolution.source != "none":
             state = "invalid"
         else:
             state = "not_installed"
+        source: RagModelSource = "managed" if downloading else resolution.source
         return RagModelStatusResponse(
             model_id=spec.model_id,
             display_name=spec.display_name,
@@ -302,9 +365,15 @@ class ModelManager:
             state=state,
             installed=installed,
             verified=installed,
-            path=str(target) if target.exists() else "",
-            disk_usage_bytes=self.disk_usage(spec.model_id),
-            error=error if state == "invalid" else "",
+            source=source,
+            removable=source == "managed" and not downloading,
+            path=str(resolution.path) if resolution.source != "none" else "",
+            disk_usage_bytes=(
+                self._disk_usage(resolution.path)
+                if resolution.source != "none"
+                else 0
+            ),
+            error=resolution.error if state == "invalid" else "",
         )
 
     def statuses(self) -> list[RagModelStatusResponse]:
@@ -319,5 +388,7 @@ __all__ = [
     "RERANKER_MODEL_ID",
     "ModelManager",
     "RagManagedModelSpec",
+    "RagModelResolution",
+    "SnapshotResolver",
     "default_models_root",
 ]

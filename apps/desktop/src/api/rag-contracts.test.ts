@@ -50,7 +50,7 @@ describe("RAG frontend contracts", () => {
   it("addresses list, download, verify and remove model operations", async () => {
     fetchMock.mockImplementation(async (input) => {
       const path = String(input)
-      const model = { model_id: "qwen3-embedding-0.6b", display_name: "Qwen3 Embedding", repository_id: "Qwen/model", state: "installed", installed: true, verified: true, path: "C:/models/qwen", disk_usage_bytes: 1024, error: "" }
+      const model = { model_id: "qwen3-embedding-0.6b", display_name: "Qwen3 Embedding", repository_id: "Qwen/model", state: "installed", installed: true, verified: true, source: "huggingface_cache", removable: false, path: "C:/models/qwen", disk_usage_bytes: 1024, error: "" }
       return jsonResponse(path.endsWith("/models") ? { models_root: "C:/models", models: [model] } : path.endsWith("/verify") ? model : { model, changed: true })
     })
     vi.stubGlobal("fetch", fetchMock)
@@ -61,6 +61,7 @@ describe("RAG frontend contracts", () => {
     await removeRagModel("qwen3-embedding-0.6b")
 
     expect(listed.models).toHaveLength(1)
+    expect(listed.models[0]?.source).toBe("huggingface_cache")
     expect(fetchMock.mock.calls.map(([, init]) => init?.method ?? "GET")).toEqual([
       "GET", "POST", "POST", "DELETE",
     ])

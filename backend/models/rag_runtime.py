@@ -14,6 +14,11 @@ RagModelState = Literal[
     "installed",
     "invalid",
 ]
+RagModelSource = Literal[
+    "none",
+    "managed",
+    "huggingface_cache",
+]
 
 
 class RagRuntimeContract(BaseModel):
@@ -27,6 +32,8 @@ class RagModelStatusResponse(RagRuntimeContract):
     state: RagModelState
     installed: bool
     verified: bool
+    source: RagModelSource = "none"
+    removable: bool = False
     path: str = ""
     disk_usage_bytes: int = Field(default=0, ge=0)
     error: str = ""
@@ -46,6 +53,7 @@ __all__ = [
     "RagModelId",
     "RagModelListResponse",
     "RagModelOperationResponse",
+    "RagModelSource",
     "RagModelState",
     "RagModelStatusResponse",
     "RagRuntimeContract",

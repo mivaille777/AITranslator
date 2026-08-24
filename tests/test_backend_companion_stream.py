@@ -45,7 +45,11 @@ class StubStreamingCompanionChatService:
 
 
 class GroundedStreamingCompanionChatService(StubStreamingCompanionChatService):
-    def prepare_knowledge(self, _query, _document_ids):
+    def __init__(self) -> None:
+        self.knowledge_history = ()
+
+    def prepare_knowledge(self, _query, _document_ids, *, history=()):
+        self.knowledge_history = history
         evidence = AgentEvidenceItem(
             evidence_id="evidence-1",
             source_type="knowledge",
@@ -125,13 +129,22 @@ def test_companion_websocket_streams_and_commits_completed_exchange(tmp_path) ->
 def test_companion_websocket_persists_completed_knowledge_grounding(tmp_path) -> None:
     app = create_app()
     store = ConversationStoreService(storage_path=tmp_path / "chat.sqlite3")
-    app.dependency_overrides[get_companion_chat_service] = (
-        lambda: GroundedStreamingCompanionChatService()
-    )
+    service = GroundedStreamingCompanionChatService()
+    app.dependency_overrides[get_companion_chat_service] = lambda: service
     app.dependency_overrides[get_conversation_store_service] = lambda: store
     payload = _payload(request_id=15)
     payload["knowledge_enabled"] = True
     payload["knowledge_document_ids"] = ["doc-1"]
+    payload["history"] = [
+        {
+            "role": "user",
+            "content": "We are discussing the water tank paper.",
+        },
+        {
+            "role": "assistant",
+            "content": "It uses MATLAB/Simulink.",
+        },
+    ]
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws/companion/chat") as websocket:
@@ -144,6 +157,8 @@ def test_companion_websocket_persists_completed_knowledge_grounding(tmp_path) ->
     assert done["type"] == "done"
     assert done["knowledge_enabled"] is True
     assert done["citations"][0]["label"] == "[1]"
+    assert len(service.knowledge_history) == 2
+    assert service.knowledge_history[0][1] == "We are discussing the water tank paper."
     grounding = load_message_grounding(store.storage_path, accepted["message_id"])
     assert grounding.knowledge_enabled is True
     assert grounding.evidence[0].evidence_id == "evidence-1"

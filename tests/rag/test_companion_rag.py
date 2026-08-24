@@ -3,15 +3,18 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from backend.rag.models import DocumentChunk, RetrievalCandidate, RetrievalResult
+from backend.rag.query_planner import RagQueryPlan
 from backend.services.companion_chat_service import CompanionChatService
 
 
 class RetrievalStub:
     def __init__(self) -> None:
         self.filters = None
+        self.queries: list[str] = []
 
     def retrieve(self, query, *, filters=None):
         self.filters = filters
+        self.queries.append(query)
         return RetrievalResult(
             query=query,
             retrieval_strategy="hybrid",
@@ -31,6 +34,27 @@ class RetrievalStub:
                     rank=1,
                     rerank_score=0.9,
                 )
+            ],
+            metadata={"reranker_applied": True},
+        )
+
+
+class PlannerStub:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[tuple[str, str], ...]]] = []
+
+    def plan(self, query, *, history=()):
+        normalized_history = tuple(
+            (str(getattr(role, "value", role)), str(content))
+            for role, content in history
+        )
+        self.calls.append((query, normalized_history))
+        return RagQueryPlan(
+            original_query=query,
+            rewritten_query="water tank paper final conclusions findings",
+            subqueries=[
+                "water tank paper conclusion",
+                "water tank paper limitations",
             ],
         )
 
@@ -53,24 +77,41 @@ class ChatStub:
         )
 
 
-def test_companion_rag_applies_document_scope_and_returns_verified_contracts() -> None:
+def test_companion_rag_uses_planned_queries_history_and_document_scope() -> None:
     retrieval = RetrievalStub()
+    planner = PlannerStub()
     chat = ChatStub()
-    service = CompanionChatService(chat_service=chat, retrieval_service=retrieval)
+    service = CompanionChatService(
+        chat_service=chat,
+        retrieval_service=retrieval,
+        query_planner=planner,
+    )
+    history = (
+        ("user", "We are discussing the water tank paper."),
+        ("assistant", "It uses MATLAB/Simulink."),
+    )
 
     result = service.send(
         session_id="session-1",
-        user_message="What is bounded?",
+        user_message="What did the authors conclude?",
         context_mode="general",
+        history=history,
         knowledge_enabled=True,
         knowledge_document_ids=("doc-1",),
     )
 
     assert retrieval.filters.document_ids == ["doc-1"]
+    assert retrieval.queries == [
+        "water tank paper final conclusions findings",
+        "water tank paper conclusion",
+        "water tank paper limitations",
+    ]
+    assert planner.calls == [("What did the authors conclude?", history)]
     assert result.output_text == "Grounded answer [1]"
     assert result.knowledge_enabled is True
     assert result.evidence[0].title == "Local Paper"
     assert result.citations[0].label == "[1]"
+    assert result.knowledge_fallback_reason == ""
     assert chat.request.tool_name == "search_knowledge_base"
     assert "ALLOWED CITATIONS" in chat.request.tool_context
 

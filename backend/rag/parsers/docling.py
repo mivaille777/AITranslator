@@ -44,6 +44,7 @@ class DefaultDoclingBackend:
         config: RagAdvancedParsingConfig,
     ) -> DoclingConversion:
         try:
+            from docling.datamodel.accelerator_options import AcceleratorOptions
             from docling.datamodel.base_models import InputFormat
             from docling.datamodel.pipeline_options import PdfPipelineOptions
             from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -59,6 +60,7 @@ class DefaultDoclingBackend:
                 do_ocr=config.ocr_enabled,
                 do_formula_enrichment=config.formula_enabled,
                 document_timeout=config.document_timeout_seconds,
+                accelerator_options=AcceleratorOptions(device=config.device),
             )
             converter = DocumentConverter(
                 format_options={
@@ -214,15 +216,11 @@ def _compose_page_aware_blocks(
 
 
 def _parser_profile_version(config: RagAdvancedParsingConfig) -> str:
-    """Return an index-invalidating parser profile identifier.
-
-    Parser output changes when layout, table, OCR, or formula enrichment changes.
-    Encoding those switches in ``parser_version`` prevents an old index from being
-    silently reused after the scientific-PDF parsing profile changes.
-    """
+    """Return an index-invalidating parser profile identifier."""
 
     return (
-        "docling-v3"
+        "docling-v4"
+        f";device={config.device}"
         f";layout={int(config.layout_enabled)}"
         f";table={int(config.table_enabled)}"
         f";ocr={int(config.ocr_enabled)}"
@@ -232,7 +230,7 @@ def _parser_profile_version(config: RagAdvancedParsingConfig) -> str:
 
 class DoclingDocumentParser(BaseFileParser):
     name = "docling"
-    version = "docling-v3"
+    version = "docling-v4"
     supported_suffixes = frozenset({".pdf"})
 
     def __init__(
@@ -285,6 +283,7 @@ class DoclingDocumentParser(BaseFileParser):
                 "advanced_parser": True,
                 "parser_name": self.name,
                 "parser_version": parser_version,
+                "parser_device": self.config.device,
                 "layout_preserved": self.config.layout_enabled,
                 "table_structure_enabled": self.config.table_enabled,
                 "ocr_enabled": self.config.ocr_enabled,
@@ -302,6 +301,7 @@ class DoclingDocumentParser(BaseFileParser):
             metadata={
                 "parser_name": self.name,
                 "parser_version": parser_version,
+                "parser_device": self.config.device,
                 "library_version": library_version,
                 "layout_enabled": self.config.layout_enabled,
                 "table_enabled": self.config.table_enabled,

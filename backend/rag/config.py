@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class RagConfigModel(BaseModel):
-    """Base model for RAG configuration contracts."""
+    """Base model for stable RAG configuration contracts."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -26,6 +26,7 @@ class RagChunkingConfig(RagConfigModel):
 class RagAdvancedParsingConfig(RagConfigModel):
     enabled: bool = False
     provider: str = "docling"
+    device: str = "cpu"
     layout_enabled: bool = True
     table_enabled: bool = False
     ocr_enabled: bool = False
@@ -38,6 +39,14 @@ class RagAdvancedParsingConfig(RagConfigModel):
         normalized = value.strip().lower()
         if normalized != "docling":
             raise ValueError("advanced parser provider must be docling")
+        return normalized
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"auto", "cpu", "cuda"}:
+            raise ValueError("advanced parser device must be one of: auto, cpu, cuda")
         return normalized
 
 
@@ -126,7 +135,6 @@ __all__ = [
     "RagAdvancedParsingConfig",
     "RagChunkingConfig",
     "RagConfig",
-    "RagConfigModel",
     "RagEmbeddingConfig",
     "RagRerankerConfig",
     "RagRetrievalConfig",

@@ -81,7 +81,10 @@ export default function KnowledgeDocumentRow({
             <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-[9px] text-slate-500 transition hover:bg-slate-100" aria-label={`More actions for ${document.title}`}>
               <MoreHorizontal size={15} />
             </summary>
-            <div className="absolute right-0 z-20 mt-1 w-44 rounded-[14px] border border-slate-200 bg-white p-1.5 text-xs shadow-xl">
+            <div
+              data-placement="top-end"
+              className="absolute bottom-full right-0 z-30 mb-1 w-44 origin-bottom-right rounded-[14px] border border-slate-200 bg-white p-1.5 text-xs shadow-xl"
+            >
               <button type="button" className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-slate-700 hover:bg-slate-50" onClick={onOpen}><FileText size={13} />Open details</button>
               <button type="button" className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-slate-700 hover:bg-slate-50" onClick={onReveal}><ExternalLink size={13} />Reveal source</button>
               <button type="button" className="flex w-full items-center gap-2 rounded-[9px] px-2.5 py-2 text-left text-rose-600 hover:bg-rose-50" disabled={deleting || reindexing} onClick={onRemove}><Trash2 size={13} />Remove</button>

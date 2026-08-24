@@ -59,5 +59,11 @@ def test_default_toml_rag_section_validates_against_contract() -> None:
 
     config = RagConfig.model_validate(raw["rag"])
 
+    assert config.advanced_parsing.enabled is True
+    assert config.advanced_parsing.provider == "docling"
+    assert config.advanced_parsing.layout_enabled is True
+    assert config.advanced_parsing.table_enabled is True
+    assert config.advanced_parsing.ocr_enabled is False
+    assert config.advanced_parsing.formula_enabled is False
     assert config.embedding.dimension == 1024
     assert config.retrieval.dense_top_k == 30

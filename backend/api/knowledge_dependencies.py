@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from threading import Lock
 
@@ -13,6 +14,7 @@ from backend.rag.config import RagConfig
 from backend.rag.embeddings import EmbeddingProvider, create_embedding_provider
 from backend.rag.index_manifest import IndexManifest
 from backend.rag.index_service import IndexService
+from backend.rag.parsers import parse_document
 from backend.rag.rerankers import Qwen3RerankerProvider
 from backend.rag.retrieval_service import RetrievalService
 from backend.rag.sparse import BM25SparseRetriever
@@ -75,6 +77,18 @@ def _resolve_runtime_storage_path(configured_path: str | Path) -> Path:
     return (data_root() / candidate).resolve()
 
 
+def _build_document_parser(config: RagConfig):
+    """Bind document parsing to the immutable runtime parsing profile.
+
+    ``parse_document`` keeps safe library defaults, while the product runtime can
+    opt into Docling for PDF layout/section recovery. A deep copy prevents later
+    settings mutation from changing an active indexing run halfway through.
+    """
+
+    advanced_config = config.advanced_parsing.model_copy(deep=True)
+    return partial(parse_document, advanced_config=advanced_config)
+
+
 def _build_runtime() -> RagRuntime:
     settings = SettingsManager().data
     raw_rag = settings.get("rag", {})
@@ -113,6 +127,7 @@ def _build_runtime() -> RagRuntime:
         vector_store=vector_store,
         sparse_retriever=sparse,
         manifest=manifest,
+        parser=_build_document_parser(config),
     )
     library = KnowledgeLibraryService(
         index_service=index,

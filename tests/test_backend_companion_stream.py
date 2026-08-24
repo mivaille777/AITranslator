@@ -9,6 +9,9 @@ from backend.api.dependencies import (
     get_conversation_store_service,
 )
 from backend.main import create_app
+from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
+from backend.services.companion_chat_service import CompanionKnowledgeGrounding
+from backend.services.conversation_grounding_service import load_message_grounding
 from backend.services.conversation_store_service import ConversationStoreService
 
 
@@ -39,6 +42,29 @@ class StubStreamingCompanionChatService:
     def stream(self, **_kwargs):
         yield "GP anchors "
         yield "localize the search."
+
+
+class GroundedStreamingCompanionChatService(StubStreamingCompanionChatService):
+    def prepare_knowledge(self, _query, _document_ids):
+        evidence = AgentEvidenceItem(
+            evidence_id="evidence-1",
+            source_type="knowledge",
+            source_id="doc-1",
+            title="Control Paper",
+            resource_url="file:///paper.pdf",
+            location="Page 8 · Section Stability",
+            excerpt="GP anchors localize the search.",
+        )
+        citation = AgentCitationRef(
+            citation_id="citation-1",
+            evidence_ids=["evidence-1"],
+            label="[1]",
+        )
+        return CompanionKnowledgeGrounding(
+            evidence=(evidence,),
+            citations=(citation,),
+            tool_context="[1] GP anchors localize the search.",
+        )
 
 
 class SlowStreamingCompanionChatService:
@@ -94,6 +120,34 @@ def test_companion_websocket_streams_and_commits_completed_exchange(tmp_path) ->
     assert stored is not None
     assert [message.status for message in stored.messages] == ["complete", "complete"]
     assert stored.messages[-1].content == "GP anchors localize the search."
+
+
+def test_companion_websocket_persists_completed_knowledge_grounding(tmp_path) -> None:
+    app = create_app()
+    store = ConversationStoreService(storage_path=tmp_path / "chat.sqlite3")
+    app.dependency_overrides[get_companion_chat_service] = (
+        lambda: GroundedStreamingCompanionChatService()
+    )
+    app.dependency_overrides[get_conversation_store_service] = lambda: store
+    payload = _payload(request_id=15)
+    payload["knowledge_enabled"] = True
+    payload["knowledge_document_ids"] = ["doc-1"]
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/companion/chat") as websocket:
+            websocket.send_json({"type": "start", "request": payload})
+            accepted = websocket.receive_json()
+            websocket.receive_json()
+            websocket.receive_json()
+            done = websocket.receive_json()
+
+    assert done["type"] == "done"
+    assert done["knowledge_enabled"] is True
+    assert done["citations"][0]["label"] == "[1]"
+    grounding = load_message_grounding(store.storage_path, accepted["message_id"])
+    assert grounding.knowledge_enabled is True
+    assert grounding.evidence[0].evidence_id == "evidence-1"
+    assert grounding.citations[0].label == "[1]"
 
 
 def test_companion_websocket_cancel_commits_terminal_cancelled_message(tmp_path) -> None:

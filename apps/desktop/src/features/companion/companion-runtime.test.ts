@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest"
 
-import type { CompanionHandoff } from "../../api/types"
+import type { CompanionHandoff, ConversationMessage } from "../../api/types"
 import {
   buildCompanionChatRequest,
   companionHandoffRuntimeSeed,
   companionHistory,
+  restoreCompanionMessages,
   type CompanionRuntimeMessage,
 } from "./companion-runtime"
 
@@ -31,6 +32,42 @@ describe("companion runtime", () => {
     expect(history).toHaveLength(16)
     expect(history[0]?.content).toBe("message 2")
     expect(history.at(-1)?.content).toBe("message 17")
+  })
+
+  it("restores persisted knowledge evidence and citations with assistant messages", () => {
+    const persisted = {
+      message_id: "assistant-1",
+      conversation_id: "conversation-1",
+      request_id: 7,
+      role: "assistant",
+      content: "Grounded answer [1]",
+      status: "complete",
+      provider: "stub",
+      model: "stub-model",
+      error_code: "",
+      created_at: "2026-08-24T00:00:00Z",
+      updated_at: "2026-08-24T00:00:01Z",
+      knowledge_enabled: true,
+      knowledge_fallback_reason: "",
+      evidence: [{
+        evidence_id: "evidence-1",
+        source_type: "knowledge",
+        source_id: "doc-1",
+        title: "Paper",
+        resource_url: "file:///paper.pdf",
+        location: "Page 8",
+        excerpt: "Evidence",
+        score: 0.9,
+        metadata: {},
+      }],
+      citations: [{ citation_id: "citation-1", evidence_ids: ["evidence-1"], label: "[1]" }],
+    } as ConversationMessage
+
+    const restored = restoreCompanionMessages([persisted])[0]
+
+    expect(restored?.knowledgeEnabled).toBe(true)
+    expect(restored?.evidence?.[0]?.evidence_id).toBe("evidence-1")
+    expect(restored?.citations?.[0]?.label).toBe("[1]")
   })
 
   it("builds the same reading-grounded request contract for every surface", () => {

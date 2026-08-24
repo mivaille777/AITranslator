@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
 from threading import Event, Lock
 from time import monotonic
@@ -24,6 +25,7 @@ from backend.services.companion_ownership_service import (
     CompanionConversationOwnershipService,
     CompanionOwnershipClaim,
 )
+from backend.services.conversation_grounding_service import save_message_grounding
 from backend.services.conversation_store_service import ConversationStoreService
 
 router = APIRouter(tags=["companion-stream"])
@@ -43,6 +45,7 @@ CompanionOwnershipDependency = Annotated[
 _TERMINAL_EVENT_TYPES = frozenset({"done", "error", "cancelled"})
 _STREAM_FLUSH_INTERVAL_SECONDS = 0.25
 _STREAM_FLUSH_CHARACTER_STEP = 256
+_logger = logging.getLogger(__name__)
 
 
 def _stream_kwargs(payload: Any) -> dict[str, Any]:
@@ -354,12 +357,34 @@ async def stream_companion_chat(
                     return
                 text = "".join(accumulated)
                 update_latest(text)
+                grounding_fallback = (
+                    str(getattr(grounding, "fallback_reason", "") or "")
+                    if grounding
+                    else ""
+                )
+                grounding_evidence = tuple(getattr(grounding, "evidence", ()) or ())
+                grounding_citations = tuple(getattr(grounding, "citations", ()) or ())
                 commit_terminal(
                     "complete",
                     content=text,
                     provider=service.provider_name,
                     model=service.model,
                 )
+                if payload.knowledge_enabled:
+                    try:
+                        save_message_grounding(
+                            store.storage_path,
+                            assistant_message_id,
+                            knowledge_enabled=True,
+                            knowledge_fallback_reason=grounding_fallback,
+                            evidence=list(grounding_evidence),
+                            citations=list(grounding_citations),
+                        )
+                    except Exception:  # noqa: BLE001 - live answer must survive metadata persistence failure
+                        _logger.exception(
+                            "Failed to persist knowledge grounding for message %s",
+                            assistant_message_id,
+                        )
                 emit(
                     {
                         "type": "done",
@@ -370,9 +395,13 @@ async def stream_companion_chat(
                         "provider": service.provider_name,
                         "model": service.model,
                         "knowledge_enabled": payload.knowledge_enabled,
-                        "knowledge_fallback_reason": getattr(grounding, "fallback_reason", "") if grounding else "",
-                        "evidence": [item.model_dump(mode="json") for item in getattr(grounding, "evidence", ())],
-                        "citations": [item.model_dump(mode="json") for item in getattr(grounding, "citations", ())],
+                        "knowledge_fallback_reason": grounding_fallback,
+                        "evidence": [
+                            item.model_dump(mode="json") for item in grounding_evidence
+                        ],
+                        "citations": [
+                            item.model_dump(mode="json") for item in grounding_citations
+                        ],
                     }
                 )
             except Exception as exc:

@@ -105,19 +105,33 @@ export function companionHistory(
     .map(({ role, content }) => ({ role, content }))
 }
 
+type PersistedGroundingMessage = ConversationMessage & {
+  knowledge_enabled?: boolean
+  knowledge_fallback_reason?: string
+  evidence?: AgentEvidenceItem[]
+  citations?: AgentCitationRef[]
+}
+
 export function restoreCompanionMessages(
   messages: ConversationMessage[],
 ): CompanionRuntimeMessage[] {
-  return messages.map((message) => ({
-    id: message.message_id,
-    role: message.role,
-    content: message.content,
-    status: message.status,
-    provider: message.provider,
-    model: message.model,
-    serverMessageId: message.message_id,
-    errorCode: message.error_code,
-  }))
+  return messages.map((message) => {
+    const grounded = message as PersistedGroundingMessage
+    return {
+      id: message.message_id,
+      role: message.role,
+      content: message.content,
+      status: message.status,
+      provider: message.provider,
+      model: message.model,
+      serverMessageId: message.message_id,
+      errorCode: message.error_code,
+      knowledgeEnabled: grounded.knowledge_enabled ?? false,
+      knowledgeFallbackReason: grounded.knowledge_fallback_reason ?? "",
+      evidence: grounded.evidence ?? [],
+      citations: grounded.citations ?? [],
+    }
+  })
 }
 
 export function previousCompanionUserMessage(

@@ -1,4 +1,5 @@
 import { ExternalLink } from "lucide-react"
+import { Link } from "react-router-dom"
 
 import { desktop } from "../../desktop"
 import { Badge } from "../../shared/ui/Badge"
@@ -53,9 +54,12 @@ export function EvidenceCard({
             Open document
           </Button>
           {navigation.knowledgeDocumentId && (
-            <a className={buttonClassName({ size: "xs", variant: "ghost", className: "mt-4 ml-2" })} href={`/knowledge?document=${encodeURIComponent(navigation.knowledgeDocumentId)}`}>
+            <Link
+              className={buttonClassName({ size: "xs", variant: "ghost", className: "mt-4 ml-2" })}
+              to={`/knowledge?document=${encodeURIComponent(navigation.knowledgeDocumentId)}`}
+            >
               Knowledge details
-            </a>
+            </Link>
           )}
           {!canOpen && (
             <p className="mt-2 text-[11px] leading-5 text-amber-700">

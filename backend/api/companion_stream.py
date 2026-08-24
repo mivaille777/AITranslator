@@ -318,6 +318,9 @@ async def stream_companion_chat(
                     grounding = prepare_knowledge(
                         payload.user_message,
                         tuple(payload.knowledge_document_ids),
+                        history=tuple(
+                            (item.role, item.content) for item in payload.history
+                        ),
                     )
                     stream_kwargs["tool_name"] = "search_knowledge_base"
                     stream_kwargs["tool_context"] = grounding.tool_context

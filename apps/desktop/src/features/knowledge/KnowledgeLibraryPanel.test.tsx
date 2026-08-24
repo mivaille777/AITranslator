@@ -104,6 +104,22 @@ describe("Knowledge Library", () => {
     expect(desktop.files.pickKnowledgeDocument).toHaveBeenCalledOnce()
   })
 
+  it("keeps the document action menu above the bottom-clipped library edge", async () => {
+    fetchMock.mockImplementation(async (input) => String(input).endsWith("/runtime")
+      ? jsonResponse(runtime())
+      : jsonResponse({ total: 1, documents: [document("ready")] }))
+
+    renderLibrary()
+
+    const trigger = await screen.findByLabelText("More actions for ready paper.pdf")
+    const menu = trigger.closest("details")?.querySelector<HTMLElement>("[data-placement='top-end']")
+
+    expect(menu).not.toBeNull()
+    expect(menu?.className).toContain("bottom-full")
+    expect(menu?.className).toContain("mb-1")
+    expect(menu?.className).not.toContain("mt-1")
+  })
+
   it("deletes an index entry without targeting the source file", async () => {
     fetchMock.mockImplementation(async (input, init) => {
       if (String(input).endsWith("/runtime")) return jsonResponse(runtime())

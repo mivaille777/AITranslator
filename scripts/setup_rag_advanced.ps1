@@ -55,8 +55,14 @@ try {
     Assert-LastExitCode "Docling import verification failed."
 
     Write-Host ""
+    Write-Host "Verifying local embedding stack after dependency resolution..." -ForegroundColor Yellow
+    & $CondaExe run -n $CondaEnvironment python -c "import importlib.metadata as m, torch, transformers, sentence_transformers; print('torch:', torch.__version__); print('transformers:', transformers.__version__); print('sentence-transformers:', m.version('sentence-transformers')); print('CUDA:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
+    Assert-LastExitCode "Docling installed, but the local embedding Python stack is no longer importable."
+
+    Write-Host ""
     Write-Host "Advanced PDF ingestion is ready." -ForegroundColor Green
     Write-Host "OCR and formula enrichment remain disabled by default; layout and table parsing are enabled."
+    Write-Host "Docling parsing runs on CPU by default; CUDA remains reserved for Qwen embedding/reranking."
 }
 finally {
     Pop-Location

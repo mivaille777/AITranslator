@@ -98,7 +98,10 @@ describe("Knowledge Library", () => {
     })
 
     renderLibrary()
-    await userEvent.click(await screen.findByRole("button", { name: "Add documents" }))
+    const heading = await screen.findByRole("heading", { name: "Knowledge Base" })
+    const header = heading.closest("header")
+    if (!header) throw new Error("Knowledge Base header was not rendered")
+    await userEvent.click(within(header).getByRole("button", { name: "Add documents" }))
     await userEvent.click(screen.getByRole("button", { name: "Browse files" }))
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(true))

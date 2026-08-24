@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from backend.rag.models import DocumentChunk, RetrievalCandidate, RetrievalResult
 from backend.rag.query_planner import (
+    MAX_RAG_RETRIEVAL_QUERIES,
     MAX_RAG_SUBQUERIES,
     RagQueryPlan,
     RagQueryPlanner,
@@ -78,23 +79,73 @@ def test_complex_query_returns_typed_bounded_plan() -> None:
         "M10 vs C8 results",
     ]
     assert len(plan.subqueries) == MAX_RAG_SUBQUERIES
+    assert plan.retrieval_queries == (
+        "M10 and C8 comparison",
+        "M10 mechanism",
+        "C8 mechanism",
+    )
+    assert len(plan.retrieval_queries) == MAX_RAG_RETRIEVAL_QUERIES
     assert len(client.calls) == 1
     prompt = json.loads(client.calls[0]["user_prompt"])
     assert prompt["policy"]["recursive_decomposition"] is False
+    assert prompt["policy"]["standalone_rewrite"] is True
 
 
-def test_simple_query_uses_original_without_calling_planner() -> None:
-    client = Client(failure=AssertionError("must not be called"))
+def test_simple_query_is_rewritten_before_retrieval() -> None:
+    client = Client(
+        json.dumps(
+            {
+                "original_query": "ignored",
+                "rewritten_query": "M10 definition and role",
+                "subqueries": [],
+            }
+        )
+    )
 
     plan = _planner(client).plan("What is M10?")
 
-    assert plan == RagQueryPlan(
-        original_query="What is M10?",
-        rewritten_query="What is M10?",
-        subqueries=[],
+    assert plan.original_query == "What is M10?"
+    assert plan.rewritten_query == "M10 definition and role"
+    assert plan.retrieval_queries == ("M10 definition and role",)
+    assert len(client.calls) == 1
+    prompt = json.loads(client.calls[0]["user_prompt"])
+    assert prompt["current_query"] == "What is M10?"
+    assert prompt["policy"]["decompose"] is False
+
+
+def test_follow_up_query_uses_bounded_history_to_resolve_document_reference() -> None:
+    client = Client(
+        json.dumps(
+            {
+                "original_query": "ignored",
+                "rewritten_query": (
+                    "An experiment of using a large language model to control a water "
+                    "tank system final conclusions findings limitations discussion future work"
+                ),
+                "subqueries": [
+                    "water tank LLM paper conclusion final findings",
+                    "water tank LLM paper limitations future work",
+                ],
+            }
+        )
     )
-    assert plan.retrieval_queries == ("What is M10?",)
-    assert client.calls == []
+    history = (
+        (
+            "user",
+            "Wen的论文《An experiment of using a large language model to control a water tank system》采用了什么仿真模型？",
+        ),
+        ("assistant", "该论文使用 MATLAB/Simulink 与 Python 协同仿真。"),
+    )
+
+    plan = _planner(client).plan("他最后的观点是什么？", history=history)
+
+    assert "final conclusions" in plan.rewritten_query
+    assert len(plan.retrieval_queries) == 3
+    prompt = json.loads(client.calls[0]["user_prompt"])
+    assert prompt["current_query"] == "他最后的观点是什么？"
+    assert prompt["conversation_history"][0]["role"] == "user"
+    assert "water tank system" in prompt["conversation_history"][0]["content"]
+    assert prompt["policy"]["resolve_follow_up_references"] is True
 
 
 def test_planner_failure_and_malformed_output_fall_back_to_original_query() -> None:
@@ -117,12 +168,14 @@ def test_multi_query_merge_dedupes_chunks_and_applies_result_limit() -> None:
             candidates=[_candidate("shared", 1), _candidate("m10", 2)],
             retrieval_strategy="hybrid",
             elapsed_ms=2.0,
+            metadata={"reranker_applied": True},
         ),
         RetrievalResult(
             query="C8",
             candidates=[_candidate("shared", 1), _candidate("c8", 2)],
             retrieval_strategy="hybrid",
             elapsed_ms=3.0,
+            metadata={"reranker_applied": True},
         ),
     ]
 
@@ -134,3 +187,4 @@ def test_multi_query_merge_dedupes_chunks_and_applies_result_limit() -> None:
     assert len({item.chunk.chunk_id for item in merged.candidates}) == 2
     assert merged.metadata["retrieval_queries"] == ["M10", "C8"]
     assert merged.metadata["multi_query_fusion"] is True
+    assert merged.metadata["reranker_applied"] is True

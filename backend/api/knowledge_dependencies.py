@@ -111,6 +111,10 @@ def _build_runtime() -> RagRuntime:
     state_directory = resolved_storage_path.parent
     sparse = BM25SparseRetriever(state_directory / "bm25_index.json")
     manifest = IndexManifest(state_directory / "index_manifest.json")
+    # Index operations are not backed by a durable worker queue. Any persisted
+    # parsing/chunking/embedding/indexing state loaded by a fresh backend is an
+    # interrupted operation and must not be exposed as permanently active.
+    manifest.recover_interrupted_operations()
     retrieval = RetrievalService(
         embedding_provider=embedding,
         vector_store=vector_store,

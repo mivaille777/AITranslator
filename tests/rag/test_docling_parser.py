@@ -65,7 +65,7 @@ def _basic_result(path: Path) -> NormalizedDocument:
     )
 
 
-def test_advanced_parsing_defaults_are_safe_and_ocr_is_disabled() -> None:
+def test_advanced_parsing_model_defaults_remain_safe_and_ocr_is_disabled() -> None:
     config = RagConfig()
 
     assert config.advanced_parsing.enabled is False
@@ -99,10 +99,39 @@ def test_docling_parser_preserves_reading_order_sections_and_feature_flags(
     assert result.text.index("Intro text.") < result.text.index("Results")
     assert "| 1 | 2 |" in result.text
     assert result.metadata["parser_name"] == "docling"
+    assert result.metadata["parser_version"].startswith("docling-v2;")
+    assert "table=1" in result.metadata["parser_version"]
+    assert "formula=1" in result.metadata["parser_version"]
+    assert result.metadata["section_count"] == 2
     assert result.metadata["table_enabled"] is True
     assert result.metadata["ocr_enabled"] is False
     assert result.metadata["formula_enabled"] is True
+    assert result.metadata["image_understanding_enabled"] is False
+    assert result.metadata["visual_content_mode"] == "textual_export_only"
+    assert result.document.metadata["layout_preserved"] is True
+    assert result.document.metadata["table_structure_enabled"] is True
     assert backend.calls == [(source.resolve(), config)]
+
+
+def test_docling_parser_version_changes_when_parsing_profile_changes(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "paper.pdf"
+    source.write_bytes(b"%PDF mock")
+    backend = FakeDoclingBackend()
+
+    basic_profile = DoclingDocumentParser(
+        RagAdvancedParsingConfig(enabled=True, table_enabled=False),
+        backend=backend,
+    ).parse(source)
+    table_profile = DoclingDocumentParser(
+        RagAdvancedParsingConfig(enabled=True, table_enabled=True),
+        backend=backend,
+    ).parse(source)
+
+    assert basic_profile.metadata["parser_version"] != table_profile.metadata["parser_version"]
+    assert "table=0" in basic_profile.metadata["parser_version"]
+    assert "table=1" in table_profile.metadata["parser_version"]
 
 
 def test_registry_keeps_basic_parser_by_default_and_wraps_opt_in_pdf() -> None:

@@ -12,7 +12,11 @@ from backend.rag.embeddings.runtime import (
     EmbeddingRuntimeStatus,
     resolve_embedding_device,
 )
-from backend.rag.exceptions import RagConfigurationError, RagEmbeddingError
+from backend.rag.exceptions import (
+    RagConfigurationError,
+    RagEmbeddingError,
+    RagModelManagerError,
+)
 from backend.rag.model_manager import EMBEDDING_MODEL_ID, ModelManager
 
 ModelFactory = Callable[..., Any]
@@ -63,6 +67,7 @@ class Qwen3EmbeddingProvider:
         self._last_error = ""
         self._allocated_vram_mb: float | None = None
         self._reserved_vram_mb: float | None = None
+        self._retry_when_managed_model_installed = False
 
     @property
     def dimension(self) -> int:
@@ -109,14 +114,29 @@ class Qwen3EmbeddingProvider:
         )
         return self._validate_vectors(vectors, expected_count=len(texts))
 
+    def _managed_model_became_available(self) -> bool:
+        if (
+            not self._retry_when_managed_model_installed
+            or self._model_manager is None
+        ):
+            return False
+        try:
+            return bool(self._model_manager.is_installed(EMBEDDING_MODEL_ID))
+        except Exception:  # noqa: BLE001 - status probing must not mask the original load failure
+            return False
+
     def _ensure_model(self) -> Any:
         with self._lock:
             if self._status is EmbeddingRuntimeStatus.READY and self._model is not None:
                 return self._model
             if self._status is EmbeddingRuntimeStatus.FAILED:
-                raise RagEmbeddingError(
-                    self._last_error or "Qwen3 embedding runtime previously failed"
-                )
+                if not self._managed_model_became_available():
+                    raise RagEmbeddingError(
+                        self._last_error or "Qwen3 embedding runtime previously failed"
+                    )
+                self._status = EmbeddingRuntimeStatus.UNINITIALIZED
+                self._last_error = ""
+                self._retry_when_managed_model_installed = False
 
             self._status = EmbeddingRuntimeStatus.LOADING
             started = perf_counter()
@@ -157,6 +177,7 @@ class Qwen3EmbeddingProvider:
                     local_files_only=local_files_only,
                     **({"model_kwargs": model_kwargs} if model_kwargs else {}),
                 )
+                self._apply_input_limit(model)
                 if self._config.warmup:
                     warmup_vectors = self._encode_query(model, "warmup")
                     self._validate_vectors(warmup_vectors, expected_count=1)
@@ -164,18 +185,41 @@ class Qwen3EmbeddingProvider:
                 self._load_time_ms = (perf_counter() - started) * 1000
                 self._capture_gpu_memory()
                 self._last_error = ""
+                self._retry_when_managed_model_installed = False
                 self._status = EmbeddingRuntimeStatus.READY
                 return model
             except Exception as exc:
                 self._model = None
                 self._load_time_ms = (perf_counter() - started) * 1000
                 self._last_error = str(exc) or exc.__class__.__name__
+                self._retry_when_managed_model_installed = isinstance(
+                    exc, RagModelManagerError
+                )
                 self._status = EmbeddingRuntimeStatus.FAILED
                 if isinstance(exc, (RagConfigurationError, RagEmbeddingError)):
                     raise
                 raise RagEmbeddingError(
                     f"failed to initialize Qwen3 embedding runtime: {self._last_error}"
                 ) from exc
+
+    def _apply_input_limit(self, model: Any) -> None:
+        configured_limit = self._config.max_input_tokens
+        current_limit = getattr(model, "max_seq_length", None)
+        try:
+            parsed_current = int(current_limit) if current_limit is not None else 0
+        except (TypeError, ValueError):
+            parsed_current = 0
+        effective_limit = (
+            min(parsed_current, configured_limit)
+            if parsed_current > 0
+            else configured_limit
+        )
+        try:
+            model.max_seq_length = effective_limit
+        except Exception as exc:
+            raise RagConfigurationError(
+                "Unable to apply max_input_tokens to Qwen3 embedding runtime"
+            ) from exc
 
     def _encode_query(self, model: Any, text: str) -> Any:
         return model.encode(

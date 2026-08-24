@@ -43,6 +43,13 @@ def test_pdf_parser_preserves_page_offsets(
     assert result.text[first_page.start_char : first_page.end_char] == "Page one."
     assert result.text[second_page.start_char : second_page.end_char] == "第二页。"
     assert result.metadata["page_count"] == 2
+    assert result.metadata["parser_name"] == "pdf"
+    assert result.metadata["parser_version"] == "pypdf-v1"
+    assert result.metadata["layout_enabled"] is False
+    assert result.metadata["table_enabled"] is False
+    assert result.metadata["ocr_enabled"] is False
+    assert result.metadata["image_understanding_enabled"] is False
+    assert result.metadata["visual_content_mode"] == "text_layer_only"
 
 
 def test_pdf_parser_reports_scanned_document_without_text(

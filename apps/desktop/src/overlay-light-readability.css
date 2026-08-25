@@ -13,11 +13,17 @@ html[data-ait-view="overlay"][data-ait-overlay-theme="light"] {
   --ait-overlay-readable-placeholder: rgba(71, 85, 105, 0.72);
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell {
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-action-toast {
   color: var(--ait-overlay-readable-primary) !important;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell :where(
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] :where(
+  .ait-overlay-shell,
+  .ait-overlay-context-menu,
+  .ait-overlay-action-toast
+) :where(
   p,
   span,
   label,
@@ -37,12 +43,15 @@ html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell
   color: var(--ait-overlay-readable-primary) !important;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-400 {
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-400,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu .text-slate-400 {
   color: var(--ait-overlay-readable-secondary) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-500,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-600 {
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-600,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu .text-slate-500,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu .text-slate-600 {
   color: var(--ait-overlay-readable-muted) !important;
 }
 
@@ -52,6 +61,7 @@ html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell
   opacity: 1;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell :disabled {
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell :disabled,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu :disabled {
   color: var(--ait-overlay-readable-muted) !important;
 }

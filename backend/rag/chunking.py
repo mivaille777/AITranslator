@@ -123,7 +123,7 @@ class StructureAwareChunker:
         for paragraph in paragraphs:
             paragraph_tokens = self._token_counter.count(paragraph.text)
             if paragraph_tokens > hard_limit:
-                if buffer and self._buffer_tokens(text, buffer) < self._config.minimum_tokens:
+                if buffer and self._buffer_tokens(text, buffer) <= self._config.minimum_tokens:
                     start = buffer[0].start_char
                     paragraph_start_index = buffer[0].paragraph_index
                     buffer = []
@@ -187,7 +187,7 @@ class StructureAwareChunker:
             return True
         # Keep a short heading/lead paragraph attached to its first substantive
         # paragraph even when the combined unit exceeds the preferred target.
-        return current_tokens < self._config.minimum_tokens and combined_tokens <= hard
+        return current_tokens <= self._config.minimum_tokens and combined_tokens <= hard
 
     def _split_oversized_range(
         self,

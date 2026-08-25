@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   emitTo: vi.fn(),
   listen: vi.fn(),
   startDragging: vi.fn(),
+  setDecorations: vi.fn(),
+  setResizable: vi.fn(),
   getCurrentWindow: vi.fn(),
 }))
 
@@ -27,11 +29,19 @@ describe("overlay native visual theme bridge", () => {
     mocks.emitTo.mockReset()
     mocks.listen.mockReset()
     mocks.startDragging.mockReset()
+    mocks.setDecorations.mockReset()
+    mocks.setResizable.mockReset()
     mocks.getCurrentWindow.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
     mocks.emitTo.mockResolvedValue(undefined)
     mocks.startDragging.mockResolvedValue(undefined)
-    mocks.getCurrentWindow.mockReturnValue({ startDragging: mocks.startDragging })
+    mocks.setDecorations.mockResolvedValue(undefined)
+    mocks.setResizable.mockResolvedValue(undefined)
+    mocks.getCurrentWindow.mockReturnValue({
+      startDragging: mocks.startDragging,
+      setDecorations: mocks.setDecorations,
+      setResizable: mocks.setResizable,
+    })
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
     delete document.documentElement.dataset.aitOverlayTheme
   })
@@ -41,11 +51,15 @@ describe("overlay native visual theme bridge", () => {
     expect(document.documentElement.dataset.aitOverlayTheme).toBe("light")
   })
 
-  it("uses the no-backdrop native branch while preserving the light DOM theme event", async () => {
+  it("reasserts borderless chrome around native light-theme updates", async () => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
 
     await applyOverlayNativeVisualTheme("light")
 
+    expect(mocks.setResizable).toHaveBeenCalledTimes(2)
+    expect(mocks.setResizable).toHaveBeenNthCalledWith(1, false)
+    expect(mocks.setDecorations).toHaveBeenCalledTimes(2)
+    expect(mocks.setDecorations).toHaveBeenNthCalledWith(1, false)
     expect(mocks.invoke).toHaveBeenCalledWith("set_overlay_visual_theme", { theme: "dark" })
     expect(mocks.emitTo).toHaveBeenCalledWith(
       "overlay",
@@ -67,13 +81,18 @@ describe("overlay native visual theme bridge", () => {
     )
   })
 
-  it("starts native dragging explicitly instead of depending on a deep drag region", async () => {
+  it("starts native dragging only after removing decorations", async () => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
 
     await startOverlayWindowDrag()
 
     expect(mocks.getCurrentWindow).toHaveBeenCalledTimes(1)
+    expect(mocks.setResizable).toHaveBeenCalledWith(false)
+    expect(mocks.setDecorations).toHaveBeenCalledWith(false)
     expect(mocks.startDragging).toHaveBeenCalledTimes(1)
+    expect(mocks.setDecorations.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.startDragging.mock.invocationCallOrder[0],
+    )
   })
 
   it("accepts only supported themes from cross-window events", async () => {

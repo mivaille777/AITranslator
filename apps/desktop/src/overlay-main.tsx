@@ -21,6 +21,7 @@ import "./overlay.css"
 import "./overlay-fix.css"
 import "./overlay-mode-navigation.css"
 import "./overlay-theme.css"
+import "./overlay-light-readability.css"
 
 document.documentElement.dataset.aitView = "overlay"
 

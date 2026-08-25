@@ -25,12 +25,15 @@ describe("overlay theme material contract", () => {
     expect(source).not.toContain("0 22px 62px")
   })
 
-  it("keeps the CSS shell translucent instead of painting an opaque light sheet", () => {
+  it("uses a readability-first translucent light shell instead of an ultra-clear sheet", () => {
     const source = read("./overlay-theme.css")
 
+    expect(source).toContain("readability-first")
+    expect(source).toContain("rgba(251, 253, 255, 0.68)")
+    expect(source).toContain("rgba(255, 255, 255, 0.78)")
     expect(source).toContain("--ait-overlay-shell-backdrop: none")
+    expect(source).not.toContain("rgba(244, 249, 255, 0.018)")
     expect(source).not.toContain("blur(34px)")
-    expect(source).not.toContain("rgba(255, 255, 255, 0.76)")
   })
 
   it("loads a final dark-ink readability layer for the light theme", () => {

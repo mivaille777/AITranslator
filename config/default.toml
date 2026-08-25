@@ -98,9 +98,14 @@ formula_enabled = false
 document_timeout_seconds = 120.0
 
 [rag.chunking]
-target_tokens = 512
+# Hierarchy-first scientific-document chunking. Section/subsection and paragraph
+# boundaries win over token length. The token values are soft/preferred/hard
+# bounds; overlap is used only when an oversized paragraph must be split.
+target_tokens = 420
+preferred_max_tokens = 550
+hard_max_tokens = 750
 overlap_tokens = 80
-minimum_tokens = 100
+minimum_tokens = 80
 
 [rag.embedding]
 provider = "qwen3"

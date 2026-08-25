@@ -1,45 +1,42 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
 
 from backend.rag.config import RagChunkingConfig
-from backend.rag.exceptions import RagInvariantError
-from backend.rag.models import (
-    DocumentChunk,
-    DocumentPage,
-    DocumentSection,
-    NormalizedDocument,
-    build_stable_chunk_id,
+from backend.rag.document_tree import (
+    DocumentParagraphNode,
+    DocumentSectionNode,
+    DocumentTreeBuilder,
 )
+from backend.rag.exceptions import RagInvariantError
+from backend.rag.models import DocumentChunk, DocumentPage, NormalizedDocument, build_stable_chunk_id
 from backend.rag.tokenization import HeuristicTokenCounter, TokenCounter
 
-CHUNKER_VERSION = "structure-aware-v1"
+CHUNKER_VERSION = "hierarchical-structure-v2"
 
-_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n+")
 _SENTENCE_BREAK = re.compile(r"(?:[.!?。！？；;]+[\"'”’）)】》]*)(?=\s|$)|\n+")
-
-
-@dataclass(frozen=True, slots=True)
-class _Region:
-    start: int
-    end: int
-    heading: str = ""
-    metadata: dict[str, object] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class _ChunkSpan:
     start: int
     end: int
-    heading: str
-    section_metadata: dict[str, object] | None
+    section: DocumentSectionNode
+    paragraph_start_index: int | None
+    paragraph_end_index: int | None
+    boundary_strategy: str
 
 
 class StructureAwareChunker:
-    """Split normalized documents while retaining structure and source offsets."""
+    """Hierarchy-first chunker for academic and structured documents.
+
+    The chunker traverses section regions and groups complete paragraphs first.
+    Token counts are soft/preferred/hard bounds rather than the primary source
+    boundary. Sentence/token overlap is only used when one semantic paragraph
+    exceeds the hard limit.
+    """
 
     def __init__(
         self,
@@ -66,32 +63,37 @@ class StructureAwareChunker:
                 "normalized document content_hash must not be empty"
             )
 
+        tree = DocumentTreeBuilder.build(document)
         spans: list[_ChunkSpan] = []
-        for region in self._build_regions(text, document.sections):
-            spans.extend(self._chunk_region(text, region))
+        for section in tree.sections:
+            spans.extend(self._chunk_section(text, section))
 
-        paragraph_spans = self._paragraph_spans(text, 0, len(text))
         chunks: list[DocumentChunk] = []
         for chunk_index, span in enumerate(spans):
             chunk_text = text[span.start : span.end]
             pages = self._intersecting_pages(span.start, span.end, document.pages)
-            metadata = self._build_metadata(document, span, pages)
             page_number = pages[0].page_number if pages else None
+            metadata = self._build_metadata(document, span, pages)
             chunks.append(
                 DocumentChunk(
                     chunk_id=build_stable_chunk_id(
                         document_hash=document.document.content_hash,
-                        section_heading=span.heading,
+                        section_heading=span.section.heading,
                         chunk_index=chunk_index,
                         text=chunk_text,
                     ),
                     document_id=document.document.document_id,
                     text=chunk_text,
                     title=document.document.title,
-                    section_heading=span.heading,
+                    section_heading=span.section.heading,
+                    section_path=list(span.section.section_path),
+                    hierarchy_level=span.section.level,
+                    parent_section_id=span.section.parent_section_id or "",
+                    chunk_type="paragraph_group",
                     page_number=page_number,
                     chunk_index=chunk_index,
-                    paragraph_index=self._paragraph_index(span.start, paragraph_spans),
+                    paragraph_index=span.paragraph_start_index,
+                    paragraph_end_index=span.paragraph_end_index,
                     start_char=span.start,
                     end_char=span.end,
                     token_count=self._token_counter.count(chunk_text),
@@ -105,114 +107,156 @@ class StructureAwareChunker:
             )
         return chunks
 
-    def _chunk_region(self, text: str, region: _Region) -> list[_ChunkSpan]:
-        region_start, region_end = self._trim_span(text, region.start, region.end)
-        if region_start >= region_end:
+    def _chunk_section(
+        self,
+        text: str,
+        section: DocumentSectionNode,
+    ) -> list[_ChunkSpan]:
+        paragraphs = list(section.paragraphs)
+        if not paragraphs:
             return []
 
         spans: list[_ChunkSpan] = []
-        start = region_start
-        while start < region_end:
-            protected_prefix_end: int | None = None
-            if (
-                start == region_start
-                and region.heading
-                and text.startswith(region.heading, start)
-            ):
-                heading_end = start + len(region.heading)
-                if (
-                    self._token_counter.count(text[start:heading_end])
-                    < self._config.target_tokens
-                ):
-                    body_start = heading_end
-                    while body_start < region_end and text[body_start].isspace():
-                        body_start += 1
-                    protected_prefix_end = (
-                        body_start if body_start < region_end else None
-                    )
-            end = self._choose_chunk_end(
-                text,
-                start,
-                region_end,
-                protected_prefix_end=protected_prefix_end,
-            )
-            start, end = self._trim_span(text, start, end)
-            if start >= end:
-                break
-            spans.append(_ChunkSpan(start, end, region.heading, region.metadata))
-            if end >= region_end:
-                break
-            next_start = self._choose_overlap_start(text, start, end)
-            next_start, _ = self._trim_span(text, next_start, region_end)
-            if next_start <= start:
-                next_start = end
-            start = next_start
+        buffer: list[DocumentParagraphNode] = []
+        hard_limit = self._config.effective_hard_max_tokens
 
-        if (
-            len(spans) >= 2
-            and self._token_counter.count(text[spans[-1].start : spans[-1].end])
-            < self._config.minimum_tokens
-        ):
-            previous = spans[-2]
-            final = spans[-1]
-            spans[-2:] = [
-                _ChunkSpan(
-                    previous.start,
-                    final.end,
-                    region.heading,
-                    region.metadata,
-                )
-            ]
+        for paragraph in paragraphs:
+            paragraph_tokens = self._token_counter.count(paragraph.text)
+            if paragraph_tokens > hard_limit:
+                if buffer and self._buffer_tokens(text, buffer) < self._config.minimum_tokens:
+                    start = buffer[0].start_char
+                    paragraph_start_index = buffer[0].paragraph_index
+                    buffer = []
+                    spans.extend(
+                        self._split_oversized_range(
+                            text,
+                            section,
+                            start=start,
+                            end=paragraph.end_char,
+                            paragraph_start_index=paragraph_start_index,
+                            paragraph_end_index=paragraph.paragraph_index,
+                        )
+                    )
+                else:
+                    self._flush_buffer(spans, section, buffer)
+                    buffer = []
+                    spans.extend(
+                        self._split_oversized_range(
+                            text,
+                            section,
+                            start=paragraph.start_char,
+                            end=paragraph.end_char,
+                            paragraph_start_index=paragraph.paragraph_index,
+                            paragraph_end_index=paragraph.paragraph_index,
+                        )
+                    )
+                continue
+
+            if not buffer:
+                buffer.append(paragraph)
+                continue
+
+            combined_tokens = self._token_counter.count(
+                text[buffer[0].start_char : paragraph.end_char]
+            )
+            current_tokens = self._buffer_tokens(text, buffer)
+            if self._should_keep_paragraph_group(
+                current_tokens=current_tokens,
+                combined_tokens=combined_tokens,
+            ):
+                buffer.append(paragraph)
+                continue
+
+            self._flush_buffer(spans, section, buffer)
+            buffer = [paragraph]
+
+        self._flush_buffer(spans, section, buffer)
         return spans
 
-    def _choose_chunk_end(
+    def _should_keep_paragraph_group(
+        self,
+        *,
+        current_tokens: int,
+        combined_tokens: int,
+    ) -> bool:
+        preferred = self._config.effective_preferred_max_tokens
+        hard = self._config.effective_hard_max_tokens
+        if combined_tokens > hard:
+            return False
+        if current_tokens < self._config.target_tokens and combined_tokens <= preferred:
+            return True
+        # Keep a short heading/lead paragraph attached to its first substantive
+        # paragraph even when the combined unit exceeds the preferred target.
+        return current_tokens < self._config.minimum_tokens and combined_tokens <= hard
+
+    def _split_oversized_range(
         self,
         text: str,
-        start: int,
-        limit: int,
+        section: DocumentSectionNode,
         *,
-        protected_prefix_end: int | None = None,
-    ) -> int:
-        if self._token_counter.count(text[start:limit]) <= self._config.target_tokens:
-            return limit
+        start: int,
+        end: int,
+        paragraph_start_index: int,
+        paragraph_end_index: int,
+    ) -> list[_ChunkSpan]:
+        start, end = self._trim_span(text, start, end)
+        spans: list[_ChunkSpan] = []
+        cursor = start
+        while cursor < end:
+            chunk_end = self._choose_fallback_end(text, cursor, end)
+            chunk_start, chunk_end = self._trim_span(text, cursor, chunk_end)
+            if chunk_start >= chunk_end:
+                break
+            spans.append(
+                _ChunkSpan(
+                    start=chunk_start,
+                    end=chunk_end,
+                    section=section,
+                    paragraph_start_index=paragraph_start_index,
+                    paragraph_end_index=paragraph_end_index,
+                    boundary_strategy="sentence_fallback",
+                )
+            )
+            if chunk_end >= end:
+                break
+            next_start = self._fallback_overlap_start(text, chunk_start, chunk_end)
+            next_start, _ = self._trim_span(text, next_start, end)
+            if next_start <= chunk_start:
+                next_start = chunk_end
+            cursor = next_start
+        return spans
 
-        hard_limit = self._largest_prefix_end(
+    def _choose_fallback_end(self, text: str, start: int, end: int) -> int:
+        hard = self._config.effective_hard_max_tokens
+        preferred = self._config.effective_preferred_max_tokens
+        if self._token_counter.count(text[start:end]) <= hard:
+            return end
+
+        hard_end = self._largest_prefix_end(text, start, end, hard)
+        preferred_end = self._largest_prefix_end(
             text,
             start,
-            limit,
-            self._config.target_tokens,
+            hard_end,
+            min(preferred, hard),
         )
-        minimum_end = self._largest_prefix_end(
-            text,
-            start,
-            hard_limit,
-            self._config.minimum_tokens,
-        )
+        sentence_boundaries = [
+            match.end()
+            for match in _SENTENCE_BREAK.finditer(text, start, hard_end)
+            if start < match.end() <= hard_end
+        ]
+        before_preferred = [
+            boundary for boundary in sentence_boundaries if boundary <= preferred_end
+        ]
+        if before_preferred:
+            return before_preferred[-1]
+        after_preferred = [
+            boundary for boundary in sentence_boundaries if boundary > preferred_end
+        ]
+        if after_preferred:
+            return after_preferred[0]
+        return self._prefer_word_boundary(text, start, hard_end)
 
-        structural_minimum = max(minimum_end, (protected_prefix_end or start) + 1)
-        paragraph_end = self._last_boundary(
-            (
-                match.start()
-                for match in _PARAGRAPH_BREAK.finditer(text, start, hard_limit)
-            ),
-            structural_minimum,
-        )
-        if paragraph_end is not None:
-            return paragraph_end
-
-        sentence_end = self._last_boundary(
-            (
-                match.end()
-                for match in _SENTENCE_BREAK.finditer(text, start, hard_limit)
-            ),
-            structural_minimum,
-        )
-        if sentence_end is not None:
-            return sentence_end
-
-        return self._prefer_word_boundary(text, start, hard_limit)
-
-    def _choose_overlap_start(self, text: str, chunk_start: int, chunk_end: int) -> int:
+    def _fallback_overlap_start(self, text: str, chunk_start: int, chunk_end: int) -> int:
         if self._config.overlap_tokens == 0:
             return chunk_end
 
@@ -234,16 +278,39 @@ class StructureAwareChunker:
             for match in _SENTENCE_BREAK.finditer(text, overlap_start, chunk_end)
             if match.end() < chunk_end
         ]
-        paragraph_starts = [
-            match.end()
-            for match in _PARAGRAPH_BREAK.finditer(text, overlap_start, chunk_end)
-            if match.end() < chunk_end
-        ]
-        if paragraph_starts:
-            return paragraph_starts[0]
         if sentence_starts:
             return sentence_starts[0]
         return self._advance_to_token_boundary(text, overlap_start, chunk_end)
+
+    def _buffer_tokens(
+        self,
+        text: str,
+        buffer: list[DocumentParagraphNode],
+    ) -> int:
+        if not buffer:
+            return 0
+        return self._token_counter.count(
+            text[buffer[0].start_char : buffer[-1].end_char]
+        )
+
+    @staticmethod
+    def _flush_buffer(
+        spans: list[_ChunkSpan],
+        section: DocumentSectionNode,
+        buffer: list[DocumentParagraphNode],
+    ) -> None:
+        if not buffer:
+            return
+        spans.append(
+            _ChunkSpan(
+                start=buffer[0].start_char,
+                end=buffer[-1].end_char,
+                section=section,
+                paragraph_start_index=buffer[0].paragraph_index,
+                paragraph_end_index=buffer[-1].paragraph_index,
+                boundary_strategy="paragraph_group",
+            )
+        )
 
     def _largest_prefix_end(
         self,
@@ -263,11 +330,6 @@ class StructureAwareChunker:
             else:
                 high = middle - 1
         return max(best, min(start + 1, limit))
-
-    @staticmethod
-    def _last_boundary(boundaries: Iterable[int], minimum: int) -> int | None:
-        candidates = [boundary for boundary in boundaries if boundary >= minimum]
-        return candidates[-1] if candidates else None
 
     @staticmethod
     def _prefer_word_boundary(text: str, start: int, end: int) -> int:
@@ -293,69 +355,6 @@ class StructureAwareChunker:
     def _is_latin_word_char(character: str) -> bool:
         return character.isascii() and (character.isalnum() or character in "_-'’")
 
-    @classmethod
-    def _build_regions(
-        cls,
-        text: str,
-        sections: list[DocumentSection],
-    ) -> list[_Region]:
-        valid_sections = sorted(
-            (
-                section
-                for section in sections
-                if section.start_char < section.end_char
-                and section.start_char < len(text)
-                and section.end_char > 0
-            ),
-            key=lambda section: (section.start_char, section.end_char),
-        )
-        if not valid_sections:
-            return [_Region(0, len(text))]
-
-        regions: list[_Region] = []
-        cursor = 0
-        for section in valid_sections:
-            start = max(cursor, section.start_char, 0)
-            end = min(max(start, section.end_char), len(text))
-            if cursor < start:
-                regions.append(_Region(cursor, start))
-            if start < end:
-                regions.append(
-                    _Region(
-                        start,
-                        end,
-                        section.heading,
-                        deepcopy(section.metadata),
-                    )
-                )
-                cursor = end
-        if cursor < len(text):
-            regions.append(_Region(cursor, len(text)))
-        return regions
-
-    @staticmethod
-    def _paragraph_spans(text: str, start: int, end: int) -> list[tuple[int, int]]:
-        spans: list[tuple[int, int]] = []
-        cursor = start
-        for match in _PARAGRAPH_BREAK.finditer(text, start, end):
-            left, right = StructureAwareChunker._trim_span(text, cursor, match.start())
-            if left < right:
-                spans.append((left, right))
-            cursor = match.end()
-        left, right = StructureAwareChunker._trim_span(text, cursor, end)
-        if left < right:
-            spans.append((left, right))
-        return spans
-
-    @staticmethod
-    def _paragraph_index(position: int, spans: list[tuple[int, int]]) -> int | None:
-        for index, (start, end) in enumerate(spans):
-            if start <= position < end:
-                return index
-            if position < start:
-                return index
-        return len(spans) - 1 if spans else None
-
     @staticmethod
     def _intersecting_pages(
         start: int,
@@ -376,14 +375,20 @@ class StructureAwareChunker:
         metadata: dict[str, object] = {
             "source_kind": document.document.source_kind,
             "mime_type": document.document.mime_type,
+            "boundary_strategy": span.boundary_strategy,
+            "section_path": list(span.section.section_path),
+            "hierarchy_level": span.section.level,
+            "parent_section_id": span.section.parent_section_id or "",
+            "paragraph_start": span.paragraph_start_index,
+            "paragraph_end": span.paragraph_end_index,
         }
         if document.document.metadata:
             metadata["document_metadata"] = deepcopy(document.document.metadata)
         if document.metadata:
             metadata["normalized_document_metadata"] = deepcopy(document.metadata)
-        if span.section_metadata:
-            metadata["section_metadata"] = deepcopy(span.section_metadata)
-        if len(pages) > 1:
+        if span.section.metadata:
+            metadata["section_metadata"] = deepcopy(span.section.metadata)
+        if pages:
             metadata["page_start"] = pages[0].page_number
             metadata["page_end"] = pages[-1].page_number
         return metadata

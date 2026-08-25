@@ -11,10 +11,26 @@ class RetrievalStub:
     def __init__(self) -> None:
         self.filters = None
         self.queries: list[str] = []
+        self.calls: list[dict] = []
 
-    def retrieve(self, query, *, filters=None):
+    def retrieve(
+        self,
+        query,
+        *,
+        filters=None,
+        section_hints=(),
+        final_top_k=None,
+    ):
         self.filters = filters
         self.queries.append(query)
+        self.calls.append(
+            {
+                "query": query,
+                "filters": filters,
+                "section_hints": section_hints,
+                "final_top_k": final_top_k,
+            }
+        )
         return RetrievalResult(
             query=query,
             retrieval_strategy="hybrid",
@@ -26,7 +42,7 @@ class RetrievalStub:
                         text="Bounded evidence for the answer.",
                         title="Local Paper",
                         source_uri="file:///C:/papers/local.pdf",
-                        section_heading="3.4",
+                        section_heading="Conclusion",
                         page_number=12,
                         chunk_index=0,
                         end_char=32,
@@ -77,7 +93,7 @@ class ChatStub:
         )
 
 
-def test_companion_rag_uses_planned_queries_history_and_document_scope() -> None:
+def test_companion_rag_uses_planned_queries_history_document_scope_and_structure() -> None:
     retrieval = RetrievalStub()
     planner = PlannerStub()
     chat = ChatStub()
@@ -102,14 +118,17 @@ def test_companion_rag_uses_planned_queries_history_and_document_scope() -> None
 
     assert retrieval.filters.document_ids == ["doc-1"]
     assert retrieval.queries == [
-        "water tank paper final conclusions findings",
+        "water tank paper final conclusions findings Conclusion Conclusions concluding remarks final findings",
+        "Conclusion Conclusions concluding remarks final findings",
         "water tank paper conclusion",
-        "water tank paper limitations",
     ]
     assert planner.calls == [("What did the authors conclude?", history)]
+    assert all("conclusion" in call["section_hints"] for call in retrieval.calls)
+    assert all(call["final_top_k"] == 10 for call in retrieval.calls)
     assert result.output_text == "Grounded answer [1]"
     assert result.knowledge_enabled is True
     assert result.evidence[0].title == "Local Paper"
+    assert result.evidence[0].location.section_heading == "Conclusion"
     assert result.citations[0].label == "[1]"
     assert result.knowledge_fallback_reason == ""
     assert chat.request.tool_name == "search_knowledge_base"

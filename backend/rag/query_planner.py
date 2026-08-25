@@ -18,16 +18,20 @@ MAX_RAG_HISTORY_MESSAGES = 8
 MAX_RAG_HISTORY_CHARS = 6_000
 RAG_QUERY_PLANNER_PROMPT = PromptSpec(
     name="rag.query_planner",
-    version="1.1.0",
+    version="1.2.0",
     system_prompt=(
         "Rewrite the current knowledge-retrieval request into a standalone search query. "
         "Use the bounded conversation history only to resolve pronouns, ellipsis, document "
         "references, and follow-up intent; never answer the question from history. Return one "
         "JSON object only with original_query, rewritten_query, and subqueries. The rewritten "
-        "query must preserve explicit document titles and technical terms. For requests about "
-        "a paper's final conclusion, findings, limitations, discussion, or future work, make those "
-        "retrieval concepts explicit. Add subqueries only when they improve recall, keep retrieval "
-        "non-recursive, and never answer the user's question."
+        "query must preserve explicit document titles and technical terms. Make academic document "
+        "structure explicit when the user targets a section or artifact: References/Bibliography/"
+        "Works Cited for cited literature, Conclusion/Conclusions for final findings, Discussion, "
+        "Limitations, Future Work, Table, or Figure as appropriate. For requests about a paper's "
+        "final conclusion, findings, limitations, discussion, future work, references, bibliography, "
+        "tables, or figures, include the corresponding English structural retrieval terms even when "
+        "the user asks in another language. Add subqueries only when they improve recall, keep "
+        "retrieval non-recursive, and never answer the user's question."
     ),
     temperature=0.0,
     max_tokens=512,
@@ -176,6 +180,7 @@ class RagQueryPlanner:
                 "policy": {
                     "standalone_rewrite": True,
                     "resolve_follow_up_references": True,
+                    "preserve_document_structure": True,
                     "decompose": _complex_query(query),
                     "recursive_decomposition": False,
                     "answer_generation": False,

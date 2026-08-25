@@ -128,7 +128,7 @@ def test_companion_rag_uses_planned_queries_history_document_scope_and_structure
     assert result.output_text == "Grounded answer [1]"
     assert result.knowledge_enabled is True
     assert result.evidence[0].title == "Local Paper"
-    assert result.evidence[0].location.section_heading == "Conclusion"
+    assert result.evidence[0].location == "Page 12 · Section Conclusion"
     assert result.citations[0].label == "[1]"
     assert result.knowledge_fallback_reason == ""
     assert chat.request.tool_name == "search_knowledge_base"

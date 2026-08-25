@@ -9,13 +9,25 @@ from backend.rag.retrieval_service import RetrievalService
 from backend.rag.stores.base import VectorSearchFilter
 
 
-def item(chunk_id: str, *, dense=False, sparse=False, rank=1, document_id="doc"):
+def item(
+    chunk_id: str,
+    *,
+    dense=False,
+    sparse=False,
+    rank=1,
+    document_id="doc",
+    section="",
+    page=None,
+    chunk_index=0,
+):
     return RetrievalCandidate(
         chunk=DocumentChunk(
             chunk_id=chunk_id,
             document_id=document_id,
             text=chunk_id,
-            chunk_index=0,
+            section_heading=section,
+            page_number=page,
+            chunk_index=chunk_index,
         ),
         dense_score=0.8 if dense else None,
         sparse_score=3.0 if sparse else None,
@@ -53,10 +65,12 @@ class VectorStore:
 
 
 class Sparse:
-    def __init__(self, results=None, fail=False):
+    def __init__(self, results=None, fail=False, section_results=None):
         self.results = results or []
         self.fail = fail
+        self.section_results = section_results or []
         self.filters = None
+        self.section_calls = []
 
     def search(self, _query, top_k, filters=None):
         self.filters = filters
@@ -64,10 +78,21 @@ class Sparse:
             raise RuntimeError("sparse failed")
         return self.results[:top_k]
 
+    def search_sections(self, headings, top_k, filters=None):
+        self.section_calls.append((headings, top_k, filters))
+        return self.section_results[:top_k]
 
-def service(*, dense=None, sparse=None, dense_fail=False, sparse_fail=False):
+
+def service(
+    *,
+    dense=None,
+    sparse=None,
+    structural=None,
+    dense_fail=False,
+    sparse_fail=False,
+):
     vector_store = VectorStore(dense, dense_fail)
-    sparse_store = Sparse(sparse, sparse_fail)
+    sparse_store = Sparse(sparse, sparse_fail, structural)
     return (
         RetrievalService(
             embedding_provider=Embedding(),
@@ -112,6 +137,46 @@ def test_filters_are_pushed_to_both_stores() -> None:
     assert sparse.filters is filters
 
 
+def test_structural_section_recall_is_fused_and_promoted_before_body_chunks() -> None:
+    references = item(
+        "ref-1",
+        sparse=True,
+        section="6. References",
+        page=11,
+        chunk_index=8,
+    )
+    body = item(
+        "body",
+        dense=True,
+        section="4. Results",
+        page=8,
+        chunk_index=5,
+    )
+    retrieval, _vector, sparse_store = service(
+        dense=[body],
+        sparse=[body],
+        structural=[references],
+    )
+
+    result = retrieval.retrieve(
+        "paper references",
+        section_hints=("references", "bibliography"),
+        final_top_k=12,
+    )
+
+    assert result.retrieval_strategy == "hybrid+structural"
+    assert [candidate.chunk.chunk_id for candidate in result.candidates] == [
+        "ref-1",
+        "body",
+    ]
+    assert result.metadata["structural_count"] == 1
+    assert result.metadata["structural_section_hints"] == [
+        "references",
+        "bibliography",
+    ]
+    assert sparse_store.section_calls[0][0] == ("references", "bibliography")
+
+
 def test_dense_failure_degrades_to_sparse_only() -> None:
     retrieval, *_ = service(
         sparse=[item("sparse", sparse=True)],
@@ -144,6 +209,23 @@ def test_both_fail_raise_explicit_retrieval_error() -> None:
         retrieval.retrieve("query")
 
 
+def test_structural_recall_can_survive_dense_and_sparse_failure() -> None:
+    references = item("ref", sparse=True, section="References", page=10)
+    retrieval, *_ = service(
+        structural=[references],
+        dense_fail=True,
+        sparse_fail=True,
+    )
+
+    result = retrieval.retrieve(
+        "references",
+        section_hints=("references",),
+    )
+
+    assert result.retrieval_strategy == "structural-only"
+    assert result.candidates[0].chunk.chunk_id == "ref"
+
+
 def test_latency_and_count_metadata_are_present() -> None:
     retrieval, *_ = service(
         dense=[item("dense", dense=True)],
@@ -155,8 +237,10 @@ def test_latency_and_count_metadata_are_present() -> None:
     assert result.elapsed_ms >= 0
     assert result.metadata["dense_count"] == 1
     assert result.metadata["sparse_count"] == 1
+    assert result.metadata["structural_count"] == 0
     assert result.metadata["dense_search_ms"] >= 0
     assert result.metadata["sparse_search_ms"] >= 0
+    assert result.metadata["structural_search_ms"] >= 0
     assert result.metadata["fusion_ms"] >= 0
     assert result.metadata["embedding_ms"] >= 0
     assert result.metadata["rerank_ms"] >= 0

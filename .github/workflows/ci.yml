@@ -100,7 +100,7 @@ jobs:
         run: npm run build
 
   tauri-shell:
-    name: Tauri shell check
+    name: Tauri shell build
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -111,6 +111,9 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Check Tauri shell
+      # `cargo check` does not run the final MSVC link step. Building the shell
+      # catches missing Windows SDK import libraries (for example advapi32.lib
+      # or dwmapi.lib) and validates the same stage used by local Tauri dev.
+      - name: Build and link Tauri shell
         shell: pwsh
-        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --no-default-features
+        run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --no-default-features

@@ -7,6 +7,7 @@ import { desktop } from "./desktop"
 import {
   applyOverlayNativeVisualTheme,
   applyOverlayThemeToDocument,
+  subscribeOverlayVisualThemeEvents,
 } from "./desktop/overlay-native-theme"
 import {
   readOverlayPreferences,
@@ -23,13 +24,23 @@ import "./overlay-theme.css"
 
 document.documentElement.dataset.aitView = "overlay"
 
+function applyOverlayVisualTheme(theme: "light" | "dark"): void {
+  applyOverlayThemeToDocument(theme)
+  void applyOverlayNativeVisualTheme(theme).catch(() => undefined)
+}
+
 const initialOverlayPreferences = readOverlayPreferences()
-applyOverlayThemeToDocument(initialOverlayPreferences.theme)
-void applyOverlayNativeVisualTheme(initialOverlayPreferences.theme).catch(() => undefined)
+applyOverlayVisualTheme(initialOverlayPreferences.theme)
 
 subscribeOverlayPreferences((preferences) => {
-  applyOverlayThemeToDocument(preferences.theme)
-  void applyOverlayNativeVisualTheme(preferences.theme).catch(() => undefined)
+  applyOverlayVisualTheme(preferences.theme)
+})
+
+// Tauri events provide immediate main-window -> overlay synchronization. The
+// persisted preference subscription above remains the recovery/source-of-truth
+// path after reloads and non-Tauri browser development.
+void subscribeOverlayVisualThemeEvents((theme) => {
+  applyOverlayThemeToDocument(theme)
 })
 
 const queryClient = createAppQueryClient()

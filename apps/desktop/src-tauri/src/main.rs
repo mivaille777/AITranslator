@@ -56,6 +56,41 @@ fn apply_overlay_window_region(_window: &tauri::WebviewWindow) -> Result<(), Str
 }
 
 #[cfg(windows)]
+fn apply_overlay_window_shape(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use std::{ffi::c_void, mem::size_of};
+    use windows_sys::Win32::Foundation::HWND as Win32Hwnd;
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = hwnd.0 as Win32Hwnd;
+    let corner_preference: i32 = DWMWCP_ROUND;
+    let result = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+            &corner_preference as *const i32 as *const c_void,
+            size_of::<i32>() as u32,
+        )
+    };
+
+    if result >= 0 {
+        return Ok(());
+    }
+
+    // Windows 10 and older Windows 11 builds may not support DWM corner
+    // preference. Preserve the existing rounded region as a compatibility
+    // fallback instead of making modern DWM and legacy clipping compete.
+    apply_overlay_window_region(window)
+}
+
+#[cfg(not(windows))]
+fn apply_overlay_window_shape(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
 fn apply_overlay_visual_theme(
     window: &tauri::WebviewWindow,
     theme: &str,
@@ -105,7 +140,8 @@ fn apply_overlay_visual_theme(
         )
     };
     if backdrop_result < 0 {
-        // CSS backdrop-filter remains the visual fallback on older Windows.
+        // CSS remains the presentation fallback on Windows versions without a
+        // system backdrop; it never becomes responsible for native window shape.
         eprintln!(
             "DWM system backdrop is unavailable for the overlay: HRESULT {backdrop_result:#x}"
         );
@@ -232,7 +268,7 @@ fn update_overlay_window_shape(app: tauri::AppHandle) -> Result<(), String> {
         .get_webview_window("overlay")
         .ok_or_else(|| "overlay window is unavailable".to_string())?;
 
-    apply_overlay_window_region(&overlay)
+    apply_overlay_window_shape(&overlay)
 }
 
 #[tauri::command]
@@ -312,8 +348,8 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             if let Some(overlay) = app.get_webview_window("overlay") {
-                if let Err(error) = apply_overlay_window_region(&overlay) {
-                    eprintln!("failed to initialize overlay window region: {error}");
+                if let Err(error) = apply_overlay_window_shape(&overlay) {
+                    eprintln!("failed to initialize overlay window shape: {error}");
                 }
                 if let Err(error) = apply_overlay_visual_theme(&overlay, "light") {
                     eprintln!("failed to initialize overlay visual theme: {error}");
@@ -326,8 +362,8 @@ fn main() {
                         tauri::WindowEvent::Resized(_)
                             | tauri::WindowEvent::ScaleFactorChanged { .. }
                     ) {
-                        if let Err(error) = apply_overlay_window_region(&overlay_for_resize) {
-                            eprintln!("failed to update overlay window region: {error}");
+                        if let Err(error) = apply_overlay_window_shape(&overlay_for_resize) {
+                            eprintln!("failed to update overlay window shape: {error}");
                         }
                     }
                 });

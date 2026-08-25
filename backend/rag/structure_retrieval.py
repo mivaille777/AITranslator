@@ -50,6 +50,7 @@ _INTENTS: tuple[tuple[StructuralRetrievalIntent, tuple[re.Pattern[str], ...]], .
         ),
         (
             re.compile(r"\bconclusions?\b", re.IGNORECASE),
+            re.compile(r"\bconclud(?:e|es|ed|ing)\b", re.IGNORECASE),
             re.compile(r"\bconcluding remarks?\b", re.IGNORECASE),
             re.compile(r"\bfinal (?:finding|findings|conclusion|conclusions)\b", re.IGNORECASE),
             re.compile(r"结论|最终结论|最后的观点|最后观点|最终观点|主要结论"),
@@ -117,7 +118,7 @@ _INTENTS: tuple[tuple[StructuralRetrievalIntent, tuple[re.Pattern[str], ...]], .
             final_top_k=10,
         ),
         (
-            re.compile(r"\bfig(?:ure)?\.?\s*\d+\b", re.IGNORECASE),
+            re.compile(r"\bfig(?:ure)?\.?\s*\d*\b", re.IGNORECASE),
             re.compile(r"图\s*\d+|图表"),
         ),
     ),
@@ -154,7 +155,11 @@ def build_structural_queries(
 ) -> tuple[str, ...]:
     if max_queries <= 0:
         return ()
-    normalized_base = [str(item or "").strip() for item in base_queries if str(item or "").strip()]
+    normalized_base = [
+        str(item or "").strip()
+        for item in base_queries
+        if str(item or "").strip()
+    ]
     if intent is None:
         return tuple(dict.fromkeys(normalized_base))[:max_queries]
 
@@ -163,8 +168,8 @@ def build_structural_queries(
     candidates = [
         f"{primary} {structural_terms}".strip(),
         structural_terms,
-        primary,
         *normalized_base[1:],
+        primary,
     ]
     unique: list[str] = []
     seen: set[str] = set()
@@ -189,7 +194,10 @@ def section_match_priority(
     if heading:
         if heading in aliases:
             return 3
-        if any(alias and (heading.startswith(alias) or alias in heading) for alias in aliases):
+        if any(
+            alias and (heading.startswith(alias) or alias in heading)
+            for alias in aliases
+        ):
             return 2
 
     prefix = normalize_section_heading(candidate.chunk.text[:180])
@@ -220,7 +228,9 @@ def promote_structural_candidates(
         key=lambda item: (
             -item[2],
             item[1].chunk.document_id,
-            item[1].chunk.page_number if item[1].chunk.page_number is not None else 10**9,
+            item[1].chunk.page_number
+            if item[1].chunk.page_number is not None
+            else 10**9,
             item[1].chunk.chunk_index,
             item[0],
         )

@@ -10,14 +10,32 @@ class RagConfigModel(BaseModel):
 
 
 class RagChunkingConfig(RagConfigModel):
+    # target_tokens is now a soft paragraph-group target. Structural boundaries
+    # take precedence and token limits are only used to bound grouping/fallback.
     target_tokens: int = Field(default=512, ge=1)
+    preferred_max_tokens: int | None = Field(default=None, ge=1)
+    hard_max_tokens: int | None = Field(default=None, ge=1)
     overlap_tokens: int = Field(default=80, ge=0)
     minimum_tokens: int = Field(default=100, ge=1)
 
+    @property
+    def effective_preferred_max_tokens(self) -> int:
+        return self.preferred_max_tokens or self.target_tokens
+
+    @property
+    def effective_hard_max_tokens(self) -> int:
+        return self.hard_max_tokens or self.effective_preferred_max_tokens
+
     @model_validator(mode="after")
     def validate_chunk_bounds(self) -> RagChunkingConfig:
+        preferred = self.effective_preferred_max_tokens
+        hard = self.effective_hard_max_tokens
         if self.minimum_tokens > self.target_tokens:
             raise ValueError("minimum_tokens must not exceed target_tokens")
+        if preferred < self.target_tokens:
+            raise ValueError("preferred_max_tokens must not be smaller than target_tokens")
+        if hard < preferred:
+            raise ValueError("hard_max_tokens must not be smaller than preferred_max_tokens")
         if self.overlap_tokens >= self.target_tokens:
             raise ValueError("overlap_tokens must be smaller than target_tokens")
         return self

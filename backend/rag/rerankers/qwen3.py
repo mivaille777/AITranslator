@@ -9,6 +9,7 @@ from backend.rag.config import RagRerankerConfig
 from backend.rag.embeddings.runtime import resolve_embedding_device
 from backend.rag.exceptions import RagRetrievalError
 from backend.rag.model_manager import RERANKER_MODEL_ID, ModelManager
+from backend.rag.models import RetrievalCandidate
 
 
 def _factory(*args: Any, **kwargs: Any) -> Any:
@@ -41,7 +42,7 @@ class Qwen3RerankerProvider:
         if not candidates:
             return []
         model = self._ensure_model()
-        pairs = [(query, candidate.chunk.text) for candidate in candidates]
+        pairs = [(query, self._candidate_text(candidate)) for candidate in candidates]
         scores = model.predict(
             pairs,
             batch_size=self._config.batch_size,
@@ -70,6 +71,19 @@ class Qwen3RerankerProvider:
             item.model_copy(update={"rank": rank})
             for rank, item in enumerate(ordered, 1)
         ]
+
+    @staticmethod
+    def _candidate_text(candidate: RetrievalCandidate) -> str:
+        chunk = candidate.chunk
+        parts: list[str] = []
+        if chunk.title.strip():
+            parts.append(f"Document: {chunk.title.strip()}")
+        if chunk.section_heading.strip():
+            parts.append(f"Section: {chunk.section_heading.strip()}")
+        if chunk.page_number is not None:
+            parts.append(f"Page: {chunk.page_number}")
+        parts.append(f"Content:\n{chunk.text}")
+        return "\n".join(parts)
 
     def _ensure_model(self):
         with self._lock:

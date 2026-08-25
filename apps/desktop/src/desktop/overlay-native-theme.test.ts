@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   emitTo: vi.fn(),
   listen: vi.fn(),
   startDragging: vi.fn(),
+  outerSize: vi.fn(),
+  setSize: vi.fn(),
   getCurrentWindow: vi.fn(),
 }))
 
@@ -27,11 +29,19 @@ describe("overlay native visual theme bridge", () => {
     mocks.emitTo.mockReset()
     mocks.listen.mockReset()
     mocks.startDragging.mockReset()
+    mocks.outerSize.mockReset()
+    mocks.setSize.mockReset()
     mocks.getCurrentWindow.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
     mocks.emitTo.mockResolvedValue(undefined)
     mocks.startDragging.mockResolvedValue(undefined)
-    mocks.getCurrentWindow.mockReturnValue({ startDragging: mocks.startDragging })
+    mocks.outerSize.mockResolvedValue({ width: 420, height: 190 })
+    mocks.setSize.mockResolvedValue(undefined)
+    mocks.getCurrentWindow.mockReturnValue({
+      startDragging: mocks.startDragging,
+      outerSize: mocks.outerSize,
+      setSize: mocks.setSize,
+    })
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
     delete document.documentElement.dataset.aitOverlayTheme
   })
@@ -41,7 +51,7 @@ describe("overlay native visual theme bridge", () => {
     expect(document.documentElement.dataset.aitOverlayTheme).toBe("light")
   })
 
-  it("reasserts the direct HWND borderless contract around light native updates", async () => {
+  it("refreshes the transparent WebView composition around light native updates", async () => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
 
     await applyOverlayNativeVisualTheme("light")
@@ -49,6 +59,9 @@ describe("overlay native visual theme bridge", () => {
     expect(mocks.invoke).toHaveBeenNthCalledWith(1, "enforce_overlay_borderless")
     expect(mocks.invoke).toHaveBeenNthCalledWith(2, "set_overlay_visual_theme", { theme: "dark" })
     expect(mocks.invoke).toHaveBeenNthCalledWith(3, "enforce_overlay_borderless")
+    expect(mocks.invoke).toHaveBeenNthCalledWith(4, "enforce_overlay_borderless")
+    expect(mocks.outerSize).toHaveBeenCalledTimes(1)
+    expect(mocks.setSize).toHaveBeenCalledTimes(2)
     expect(mocks.emitTo).toHaveBeenCalledWith(
       "overlay",
       "aitrans-overlay-visual-theme-changed",
@@ -62,6 +75,7 @@ describe("overlay native visual theme bridge", () => {
     await applyOverlayNativeVisualTheme("dark")
 
     expect(mocks.invoke).toHaveBeenCalledWith("set_overlay_visual_theme", { theme: "dark" })
+    expect(mocks.setSize).toHaveBeenCalledTimes(2)
     expect(mocks.emitTo).toHaveBeenCalledWith(
       "overlay",
       "aitrans-overlay-visual-theme-changed",
@@ -69,15 +83,17 @@ describe("overlay native visual theme bridge", () => {
     )
   })
 
-  it("enforces the native borderless frame before and after dragging", async () => {
+  it("refreshes the transparent surface after dragging", async () => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
 
     await startOverlayWindowDrag()
 
-    expect(mocks.getCurrentWindow).toHaveBeenCalledTimes(1)
     expect(mocks.startDragging).toHaveBeenCalledTimes(1)
+    expect(mocks.outerSize).toHaveBeenCalledTimes(1)
+    expect(mocks.setSize).toHaveBeenCalledTimes(2)
     expect(mocks.invoke).toHaveBeenNthCalledWith(1, "enforce_overlay_borderless")
     expect(mocks.invoke).toHaveBeenNthCalledWith(2, "enforce_overlay_borderless")
+    expect(mocks.invoke).toHaveBeenNthCalledWith(3, "enforce_overlay_borderless")
   })
 
   it("accepts only supported themes from cross-window events", async () => {

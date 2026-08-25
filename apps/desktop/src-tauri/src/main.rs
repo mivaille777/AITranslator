@@ -13,6 +13,67 @@ static OVERLAY_MOVE_GENERATION: AtomicU64 = AtomicU64::new(0);
 const OVERLAY_CORNER_RADIUS_CSS_PX: f64 = 24.0;
 
 #[cfg(windows)]
+fn enforce_overlay_borderless_frame(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::HWND as Win32Hwnd;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, GWL_STYLE,
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+        WS_CAPTION, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE, WS_EX_WINDOWEDGE,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = hwnd.0 as Win32Hwnd;
+
+    // Tauri/tao currently has an upstream Windows issue where a transparent,
+    // undecorated window can expose a ghost Win32 caption after focus or drag
+    // transitions. `set_decorations(false)` alone does not reliably remove that
+    // compositor layer. Strip the caption/frame style bits directly from the
+    // HWND and force Windows to recalculate the non-client frame.
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+    let borderless_style = (style
+        & !(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU))
+        | WS_POPUP;
+    if borderless_style != style {
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, borderless_style as isize);
+        }
+    }
+
+    let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    let borderless_ex_style = ex_style
+        & !(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
+    if borderless_ex_style != ex_style {
+        unsafe {
+            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, borderless_ex_style as isize);
+        }
+    }
+
+    let result = unsafe {
+        SetWindowPos(
+            hwnd,
+            null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+    };
+    if result == 0 {
+        return Err("SetWindowPos(SWP_FRAMECHANGED) failed".to_string());
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn enforce_overlay_borderless_frame(_window: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(windows)]
 fn apply_overlay_window_region(window: &tauri::WebviewWindow) -> Result<(), String> {
     use windows_sys::Win32::Foundation::HWND as Win32Hwnd;
     use windows_sys::Win32::Graphics::Gdi::{
@@ -63,6 +124,8 @@ fn apply_overlay_window_shape(window: &tauri::WebviewWindow) -> Result<(), Strin
         DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
         DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
+
+    enforce_overlay_borderless_frame(window)?;
 
     let hwnd = window.hwnd().map_err(|error| error.to_string())?;
     let hwnd = hwnd.0 as Win32Hwnd;
@@ -115,6 +178,8 @@ fn apply_overlay_visual_theme(
         DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
     };
 
+    enforce_overlay_borderless_frame(window)?;
+
     let hwnd = window.hwnd().map_err(|error| error.to_string())?;
     let hwnd = hwnd.0 as Win32Hwnd;
     let dark_mode: i32 = if theme.eq_ignore_ascii_case("dark") { 1 } else { 0 };
@@ -136,9 +201,6 @@ fn apply_overlay_visual_theme(
         );
     }
 
-    // Windows 11 transient-window backdrop provides the native desktop blur.
-    // The WebView itself is made fully transparent by overlay-main.tsx so this
-    // DWM material can actually remain visible through the DOM layers.
     let backdrop_type: i32 = if theme.eq_ignore_ascii_case("light") {
         DWMSBT_TRANSIENTWINDOW
     } else {
@@ -158,7 +220,9 @@ fn apply_overlay_visual_theme(
         );
     }
 
-    Ok(())
+    // DWM attribute updates can trigger another non-client frame calculation.
+    // Reapply the HWND style contract after the theme mutation as well.
+    enforce_overlay_borderless_frame(window)
 }
 
 #[cfg(not(windows))]
@@ -283,6 +347,15 @@ fn update_overlay_window_shape(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn enforce_overlay_borderless(app: tauri::AppHandle) -> Result<(), String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window is unavailable".to_string())?;
+
+    apply_overlay_window_shape(&overlay)
+}
+
+#[tauri::command]
 fn set_overlay_visual_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
     if theme != "light" && theme != "dark" {
         return Err(format!("unsupported overlay visual theme '{theme}'"));
@@ -366,15 +439,16 @@ fn main() {
                     eprintln!("failed to initialize overlay visual theme: {error}");
                 }
 
-                let overlay_for_resize = overlay.clone();
+                let overlay_for_window_event = overlay.clone();
                 overlay.on_window_event(move |event| {
                     if matches!(
                         event,
                         tauri::WindowEvent::Resized(_)
                             | tauri::WindowEvent::ScaleFactorChanged { .. }
+                            | tauri::WindowEvent::Focused(_)
                     ) {
-                        if let Err(error) = apply_overlay_window_shape(&overlay_for_resize) {
-                            eprintln!("failed to update overlay window shape: {error}");
+                        if let Err(error) = apply_overlay_window_shape(&overlay_for_window_event) {
+                            eprintln!("failed to restore overlay window frame: {error}");
                         }
                     }
                 });
@@ -392,6 +466,7 @@ fn main() {
             pick_knowledge_document,
             open_evidence_source,
             update_overlay_window_shape,
+            enforce_overlay_borderless,
             set_overlay_visual_theme
         ])
         .run(tauri::generate_context!())

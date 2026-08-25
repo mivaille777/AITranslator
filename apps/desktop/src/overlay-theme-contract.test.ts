@@ -46,9 +46,17 @@ describe("overlay theme material contract", () => {
     expect(readability).toContain("--ait-overlay-readable-muted")
   })
 
-  it("uses one DPI-aware native clip and suppresses the Windows 11 frame border", () => {
+  it("strips Win32 caption styles directly and keeps one DPI-aware native clip", () => {
     const source = read("../src-tauri/src/main.rs")
 
+    expect(source).toContain("GetWindowLongPtrW")
+    expect(source).toContain("SetWindowLongPtrW")
+    expect(source).toContain("WS_CAPTION")
+    expect(source).toContain("WS_THICKFRAME")
+    expect(source).toContain("WS_SYSMENU")
+    expect(source).toContain("WS_POPUP")
+    expect(source).toContain("SWP_FRAMECHANGED")
+    expect(source).toContain("WindowEvent::Focused(_)")
     expect(source).toContain("DWMWCP_DONOTROUND")
     expect(source).toContain("DWMWA_BORDER_COLOR")
     expect(source).toContain("DWMWA_COLOR_NONE")

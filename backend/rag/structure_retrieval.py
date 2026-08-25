@@ -206,6 +206,39 @@ def section_match_priority(
     return 0
 
 
+def order_structural_candidates(
+    candidates: list[RetrievalCandidate],
+    section_aliases: tuple[str, ...],
+) -> tuple[list[RetrievalCandidate], int]:
+    scored = [
+        (index, candidate, section_match_priority(candidate, section_aliases))
+        for index, candidate in enumerate(candidates)
+    ]
+    matching = [item for item in scored if item[2] > 0]
+    matching_documents = {item[1].chunk.document_id for item in matching}
+    single_matching_document = len(matching_documents) == 1
+
+    if single_matching_document:
+        matching.sort(
+            key=lambda item: (
+                -item[2],
+                item[1].chunk.page_number
+                if item[1].chunk.page_number is not None
+                else 10**9,
+                item[1].chunk.chunk_index,
+                item[0],
+            )
+        )
+    else:
+        # Across documents, the incoming order already carries RRF/reranker
+        # relevance. Do not replace that signal with arbitrary document-id order.
+        matching.sort(key=lambda item: (-item[2], item[0]))
+
+    non_matching = [item for item in scored if item[2] == 0]
+    ordered = [candidate for _index, candidate, _priority in (*matching, *non_matching)]
+    return ordered, len(matching)
+
+
 def promote_structural_candidates(
     result: RetrievalResult,
     *,
@@ -217,29 +250,13 @@ def promote_structural_candidates(
     if intent is None or not result.candidates:
         return result.model_copy(update={"candidates": result.candidates[:limit]})
 
-    indexed = list(enumerate(result.candidates))
-    matching = [
-        (index, candidate, section_match_priority(candidate, intent.section_aliases))
-        for index, candidate in indexed
-    ]
-    matching_count = sum(priority > 0 for _, _, priority in matching)
-    ordered = sorted(
-        matching,
-        key=lambda item: (
-            -item[2],
-            item[1].chunk.document_id,
-            item[1].chunk.page_number
-            if item[1].chunk.page_number is not None
-            else 10**9,
-            item[1].chunk.chunk_index,
-            item[0],
-        )
-        if item[2] > 0
-        else (1, "", 10**9, 10**9, item[0]),
+    ordered, matching_count = order_structural_candidates(
+        result.candidates,
+        intent.section_aliases,
     )
     candidates = [
         candidate.model_copy(update={"rank": rank})
-        for rank, (_index, candidate, _priority) in enumerate(ordered[:limit], start=1)
+        for rank, candidate in enumerate(ordered[:limit], start=1)
     ]
     metadata = dict(result.metadata)
     metadata.update(
@@ -257,6 +274,7 @@ __all__ = [
     "build_structural_queries",
     "detect_structural_intent",
     "normalize_section_heading",
+    "order_structural_candidates",
     "promote_structural_candidates",
     "section_match_priority",
 ]

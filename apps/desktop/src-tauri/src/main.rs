@@ -60,13 +60,20 @@ fn apply_overlay_window_shape(window: &tauri::WebviewWindow) -> Result<(), Strin
     use std::{ffi::c_void, mem::size_of};
     use windows_sys::Win32::Foundation::HWND as Win32Hwnd;
     use windows_sys::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND,
     };
 
     let hwnd = window.hwnd().map_err(|error| error.to_string())?;
     let hwnd = hwnd.0 as Win32Hwnd;
-    let corner_preference: i32 = DWMWCP_ROUND;
-    let result = unsafe {
+
+    // The overlay has a 24 CSS-pixel radius, which is intentionally larger
+    // than Windows 11's standard DWM corner radius. Letting DWM round the HWND
+    // while CSS rounds the WebView produces the doubled / clipped corner halos
+    // visible on high-DPI displays. Disable DWM rounding and use one exact
+    // SetWindowRgn clip whose radius is derived from the current scale factor.
+    let corner_preference: i32 = DWMWCP_DONOTROUND;
+    let _ = unsafe {
         DwmSetWindowAttribute(
             hwnd,
             DWMWA_WINDOW_CORNER_PREFERENCE as u32,
@@ -75,13 +82,19 @@ fn apply_overlay_window_shape(window: &tauri::WebviewWindow) -> Result<(), Strin
         )
     };
 
-    if result >= 0 {
-        return Ok(());
-    }
+    // Windows 11 can draw a one-pixel frame around an undecorated HWND. That
+    // frame is especially visible at transparent corners, so explicitly
+    // suppress it and let the CSS shell draw the only visible glass outline.
+    let border_color: u32 = DWMWA_COLOR_NONE;
+    let _ = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR as u32,
+            &border_color as *const u32 as *const c_void,
+            size_of::<u32>() as u32,
+        )
+    };
 
-    // Windows 10 and older Windows 11 builds may not support DWM corner
-    // preference. Preserve the existing rounded region as a compatibility
-    // fallback instead of making modern DWM and legacy clipping compete.
     apply_overlay_window_region(window)
 }
 
@@ -123,9 +136,9 @@ fn apply_overlay_visual_theme(
         );
     }
 
-    // Windows 11's transient-window backdrop is the closest system-native
-    // material to the light Liquid Glass treatment. The dark theme deliberately
-    // disables it so the existing opaque WebReBuild appearance is preserved.
+    // Windows 11 transient-window backdrop provides the native desktop blur.
+    // The WebView itself is made fully transparent by overlay-main.tsx so this
+    // DWM material can actually remain visible through the DOM layers.
     let backdrop_type: i32 = if theme.eq_ignore_ascii_case("light") {
         DWMSBT_TRANSIENTWINDOW
     } else {
@@ -140,8 +153,6 @@ fn apply_overlay_visual_theme(
         )
     };
     if backdrop_result < 0 {
-        // CSS remains the presentation fallback on Windows versions without a
-        // system backdrop; it never becomes responsible for native window shape.
         eprintln!(
             "DWM system backdrop is unavailable for the overlay: HRESULT {backdrop_result:#x}"
         );

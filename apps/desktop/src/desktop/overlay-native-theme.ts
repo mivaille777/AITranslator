@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { emitTo, listen } from "@tauri-apps/api/event"
+import { getCurrentWebview } from "@tauri-apps/api/webview"
 
 import type { OverlayVisualTheme } from "./overlay-preferences"
 
@@ -12,6 +13,20 @@ function hasTauriRuntime(): boolean {
 export function applyOverlayThemeToDocument(theme: OverlayVisualTheme): void {
   if (typeof document === "undefined") return
   document.documentElement.dataset.aitOverlayTheme = theme
+}
+
+export async function applyOverlayWebviewMaterial(
+  theme: OverlayVisualTheme,
+): Promise<void> {
+  if (!hasTauriRuntime()) return
+
+  // WebView2 only honors fully transparent (alpha 0) or fully opaque colors on
+  // Windows. Explicitly clear the overlay WebView for Liquid Glass so the DWM
+  // system backdrop can be seen through the DOM. Restore the classic dark host
+  // as an opaque surface when switching back to the legacy theme.
+  await getCurrentWebview().setBackgroundColor(
+    theme === "light" ? [0, 0, 0, 0] : [23, 23, 26, 255],
+  )
 }
 
 export async function applyOverlayNativeVisualTheme(

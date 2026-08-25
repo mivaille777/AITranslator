@@ -25,10 +25,21 @@ describe("overlay theme material contract", () => {
     expect(source).not.toContain("0 22px 62px")
   })
 
-  it("treats DWM as the primary desktop blur and keeps CSS blur bounded", () => {
+  it("treats DWM as the primary desktop blur instead of painting an opaque CSS sheet", () => {
     const source = read("./overlay-theme.css")
 
     expect(source).toContain("DWM owns the desktop blur")
+    expect(source).toContain("--ait-overlay-shell-backdrop: none")
     expect(source).not.toContain("blur(34px)")
+    expect(source).not.toContain("rgba(255, 255, 255, 0.76)")
+  })
+
+  it("uses one DPI-aware native clip and suppresses the Windows 11 frame border", () => {
+    const source = read("../src-tauri/src/main.rs")
+
+    expect(source).toContain("DWMWCP_DONOTROUND")
+    expect(source).toContain("DWMWA_BORDER_COLOR")
+    expect(source).toContain("DWMWA_COLOR_NONE")
+    expect(source).toContain("SetWindowRgn")
   })
 })

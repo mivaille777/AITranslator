@@ -7,6 +7,7 @@ import { desktop } from "./desktop"
 import {
   applyOverlayNativeVisualTheme,
   applyOverlayThemeToDocument,
+  applyOverlayWebviewMaterial,
   subscribeOverlayVisualThemeEvents,
 } from "./desktop/overlay-native-theme"
 import {
@@ -26,6 +27,7 @@ document.documentElement.dataset.aitView = "overlay"
 
 function applyOverlayVisualTheme(theme: "light" | "dark"): void {
   applyOverlayThemeToDocument(theme)
+  void applyOverlayWebviewMaterial(theme).catch(() => undefined)
   void applyOverlayNativeVisualTheme(theme).catch(() => undefined)
 }
 
@@ -38,9 +40,12 @@ subscribeOverlayPreferences((preferences) => {
 
 // Tauri events provide immediate main-window -> overlay synchronization. The
 // persisted preference subscription above remains the recovery/source-of-truth
-// path after reloads and non-Tauri browser development.
+// path after reloads and non-Tauri browser development. Native DWM state is
+// already changed by the sender; this listener only updates the overlay DOM and
+// its WebView2 background so the transparent material becomes visible at once.
 void subscribeOverlayVisualThemeEvents((theme) => {
   applyOverlayThemeToDocument(theme)
+  void applyOverlayWebviewMaterial(theme).catch(() => undefined)
 })
 
 const queryClient = createAppQueryClient()

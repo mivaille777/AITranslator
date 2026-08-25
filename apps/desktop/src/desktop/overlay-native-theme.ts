@@ -1,3 +1,4 @@
+import { PhysicalSize } from "@tauri-apps/api/dpi"
 import { invoke } from "@tauri-apps/api/core"
 import { emitTo, listen } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
@@ -19,16 +20,38 @@ async function enforceOverlayBorderlessNativeFrame(): Promise<void> {
   await invoke("enforce_overlay_borderless")
 }
 
+async function refreshOverlayTransparentComposition(): Promise<void> {
+  const currentWindow = getCurrentWindow()
+  const size = await currentWindow.outerSize()
+  if (size.width < 1 || size.height < 1) return
+
+  /*
+   * Tauri/tao issue #14764 leaves a cached Win32/WebView2 caption surface under
+   * transparent undecorated windows. The upstream report also notes that a real
+   * resize clears that ghost layer. Pulse the physical height by one pixel and
+   * immediately restore it; this emits WM_SIZE without leaving the overlay at a
+   * different user-visible size and forces WebView2 to recompute the full client
+   * surface after the HWND caption styles have been stripped.
+   */
+  await currentWindow.setSize(new PhysicalSize(size.width, size.height + 1))
+  await currentWindow.setSize(new PhysicalSize(size.width, size.height))
+}
+
+async function recoverOverlayTransparentSurface(): Promise<void> {
+  await enforceOverlayBorderlessNativeFrame()
+  await refreshOverlayTransparentComposition()
+  await enforceOverlayBorderlessNativeFrame()
+}
+
 export async function startOverlayWindowDrag(): Promise<void> {
   if (!hasTauriRuntime()) return
 
-  // Transparent Tauri/WebView2 windows on Windows can expose an upstream ghost
-  // caption during drag/focus transitions. Rust strips the Win32 caption/frame
-  // style bits directly before and after the drag instead of relying on
-  // setDecorations(false), which does not fix the upstream compositor issue.
   await enforceOverlayBorderlessNativeFrame()
   await getCurrentWindow().startDragging()
-  await enforceOverlayBorderlessNativeFrame()
+
+  // Drag/focus transitions are the main trigger for the transparent-window
+  // ghost caption. Refresh the WebView2 composition after the native drag ends.
+  await recoverOverlayTransparentSurface()
 }
 
 export async function applyOverlayNativeVisualTheme(
@@ -39,18 +62,18 @@ export async function applyOverlayNativeVisualTheme(
   await enforceOverlayBorderlessNativeFrame()
 
   /*
-   * The Windows transient system backdrop is visually much denser than the
-   * intended Liquid Glass shell and turns the whole overlay into a grey sheet.
-   * The Rust command's dark branch is currently the explicit "no system
-   * backdrop" branch (DWMSBT_NONE). Use that native state for both DOM themes;
-   * the DOM theme remains independent and still receives the original value.
+   * Keep the native system backdrop disabled for both DOM themes. The light
+   * Liquid Glass appearance is owned by the translucent DOM material; enabling
+   * the Windows transient backdrop here can rebuild the non-client caption
+   * surface that is visible only through the light transparent host.
    */
   const nativeTheme = "dark"
   await invoke("set_overlay_visual_theme", { theme: nativeTheme })
 
-  // DWM updates can recalculate the non-client frame. Reassert the direct HWND
-  // borderless contract after the native material change as well.
-  await enforceOverlayBorderlessNativeFrame()
+  // DWM updates can rebuild the cached non-client surface. A one-pixel resize
+  // pulse is the upstream-observed operation that actually clears that ghost
+  // composition, whereas setDecorations(false) alone does not.
+  await recoverOverlayTransparentSurface()
 
   // localStorage remains the persisted source of truth, but a Tauri event makes
   // cross-window theme changes deterministic instead of relying on WebView2's

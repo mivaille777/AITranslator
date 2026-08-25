@@ -12,6 +12,12 @@ from backend.rag.config import (
     RagVectorStoreConfig,
 )
 from backend.rag.context_builder import GroundedContext, GroundedContextBuilder
+from backend.rag.document_tree import (
+    DocumentParagraphNode,
+    DocumentSectionNode,
+    DocumentTree,
+    DocumentTreeBuilder,
+)
 from backend.rag.embeddings import (
     EmbeddingProvider,
     EmbeddingRuntimeSnapshot,
@@ -93,7 +99,11 @@ __all__ = [
     "DoclingDocumentParser",
     "DocumentChunk",
     "DocumentPage",
+    "DocumentParagraphNode",
     "DocumentSection",
+    "DocumentSectionNode",
+    "DocumentTree",
+    "DocumentTreeBuilder",
     "EmbeddingProvider",
     "EmbeddingRuntimeSnapshot",
     "EmbeddingRuntimeStatus",

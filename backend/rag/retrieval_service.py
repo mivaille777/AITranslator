@@ -10,7 +10,7 @@ from backend.rag.models import RetrievalCandidate, RetrievalResult
 from backend.rag.rerankers.base import RerankerProvider
 from backend.rag.sparse.store import SparseRetriever
 from backend.rag.stores.base import VectorSearchFilter, VectorStore
-from backend.rag.structure_retrieval import section_match_priority
+from backend.rag.structure_retrieval import order_structural_candidates
 
 
 class RetrievalService:
@@ -184,30 +184,15 @@ class RetrievalService:
         section_hints: tuple[str, ...],
         limit: int,
     ) -> list[RetrievalCandidate]:
-        if not section_hints:
-            selected = candidates[:limit]
-        else:
-            indexed = list(enumerate(candidates))
-            selected = [
-                candidate
-                for _index, candidate in sorted(
-                    indexed,
-                    key=lambda item: (
-                        -section_match_priority(item[1], section_hints),
-                        item[1].chunk.document_id,
-                        item[1].chunk.page_number
-                        if item[1].chunk.page_number is not None
-                        else 10**9,
-                        item[1].chunk.chunk_index,
-                        item[0],
-                    )
-                    if section_match_priority(item[1], section_hints) > 0
-                    else (1, "", 10**9, 10**9, item[0]),
-                )[:limit]
-            ]
+        selected = candidates
+        if section_hints:
+            selected, _matching_count = order_structural_candidates(
+                candidates,
+                section_hints,
+            )
         return [
             candidate.model_copy(update={"rank": rank})
-            for rank, candidate in enumerate(selected, start=1)
+            for rank, candidate in enumerate(selected[:limit], start=1)
         ]
 
 

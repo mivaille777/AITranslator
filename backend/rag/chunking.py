@@ -11,7 +11,12 @@ from backend.rag.document_tree import (
     DocumentTreeBuilder,
 )
 from backend.rag.exceptions import RagInvariantError
-from backend.rag.models import DocumentChunk, DocumentPage, NormalizedDocument, build_stable_chunk_id
+from backend.rag.models import (
+    DocumentChunk,
+    DocumentPage,
+    NormalizedDocument,
+    build_stable_chunk_id,
+)
 from backend.rag.tokenization import HeuristicTokenCounter, TokenCounter
 
 CHUNKER_VERSION = "hierarchical-structure-v2"
@@ -243,6 +248,8 @@ class StructureAwareChunker:
             match.end()
             for match in _SENTENCE_BREAK.finditer(text, start, hard_end)
             if start < match.end() <= hard_end
+            and self._token_counter.count(text[start : match.end()])
+            > self._config.minimum_tokens
         ]
         before_preferred = [
             boundary for boundary in sentence_boundaries if boundary <= preferred_end

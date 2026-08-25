@@ -21,6 +21,8 @@ def test_rag_config_defaults_match_v1_contract() -> None:
     assert config.enabled is True
     assert config.advanced_parsing.device == "cpu"
     assert config.chunking.target_tokens == 512
+    assert config.chunking.preferred_max_tokens is None
+    assert config.chunking.hard_max_tokens is None
     assert config.chunking.overlap_tokens == 80
     assert config.embedding.model == "Qwen/Qwen3-Embedding-0.6B"
     assert config.embedding.dimension == 1024
@@ -54,6 +56,25 @@ def test_chunk_minimum_must_not_exceed_target() -> None:
         RagChunkingConfig(target_tokens=128, overlap_tokens=16, minimum_tokens=129)
 
 
+def test_hierarchical_chunk_bounds_must_be_monotonic() -> None:
+    with pytest.raises(ValidationError):
+        RagChunkingConfig(
+            target_tokens=420,
+            preferred_max_tokens=400,
+            hard_max_tokens=750,
+            overlap_tokens=80,
+            minimum_tokens=80,
+        )
+    with pytest.raises(ValidationError):
+        RagChunkingConfig(
+            target_tokens=420,
+            preferred_max_tokens=550,
+            hard_max_tokens=500,
+            overlap_tokens=80,
+            minimum_tokens=80,
+        )
+
+
 def test_final_top_k_must_not_exceed_fusion_top_k() -> None:
     with pytest.raises(ValidationError):
         RagRetrievalConfig(fusion_top_k=4, final_top_k=8)
@@ -73,5 +94,9 @@ def test_default_toml_rag_section_validates_against_contract() -> None:
     assert config.advanced_parsing.table_enabled is True
     assert config.advanced_parsing.ocr_enabled is False
     assert config.advanced_parsing.formula_enabled is False
+    assert config.chunking.target_tokens == 420
+    assert config.chunking.preferred_max_tokens == 550
+    assert config.chunking.hard_max_tokens == 750
+    assert config.chunking.minimum_tokens == 80
     assert config.embedding.dimension == 1024
     assert config.retrieval.dense_top_k == 30

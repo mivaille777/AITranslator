@@ -21,6 +21,11 @@ from backend.rag.context_builder import GroundedContextBuilder
 from backend.rag.evidence_builder import build_agent_evidence
 from backend.rag.query_planner import RagQueryPlan, merge_query_results
 from backend.rag.stores.base import VectorSearchFilter
+from backend.rag.structure_retrieval import (
+    build_structural_queries,
+    detect_structural_intent,
+    promote_structural_candidates,
+)
 from backend.services.reading_context_adapter import to_reading_context
 
 
@@ -96,14 +101,28 @@ class CompanionChatService:
                 subqueries=[],
             )
         )
+        structural_intent = detect_structural_intent(query)
+        retrieval_queries = build_structural_queries(
+            plan.retrieval_queries,
+            original_query=query,
+            intent=structural_intent,
+        )
         retrievals = []
         retrieval_errors: list[str] = []
-        for retrieval_query in plan.retrieval_queries:
+        for retrieval_query in retrieval_queries:
             try:
+                retrieve_kwargs: dict[str, Any] = {"filters": filters}
+                if structural_intent is not None:
+                    retrieve_kwargs.update(
+                        {
+                            "section_hints": structural_intent.section_aliases,
+                            "final_top_k": structural_intent.final_top_k,
+                        }
+                    )
                 retrievals.append(
                     self._retrieval_service.retrieve(
                         retrieval_query,
-                        filters=filters,
+                        **retrieve_kwargs,
                     )
                 )
             except Exception as exc:  # noqa: BLE001 - degrade per retrieval query
@@ -119,10 +138,20 @@ class CompanionChatService:
             (len(item.candidates) for item in retrievals),
             default=1,
         )
+        merge_limit = (
+            structural_intent.final_top_k
+            if structural_intent is not None
+            else default_limit
+        )
         result = merge_query_results(
             query,
             retrievals,
-            limit=default_limit,
+            limit=merge_limit,
+        )
+        result = promote_structural_candidates(
+            result,
+            intent=structural_intent,
+            limit=merge_limit,
         )
         evidence = build_agent_evidence(result)
         citations = build_evidence_citations(evidence)

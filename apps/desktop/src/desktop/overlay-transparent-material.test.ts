@@ -21,4 +21,11 @@ describe("overlay clear material contract", () => {
     expect(source).toContain('{ theme: nativeTheme }')
     expect(source).toContain('{ theme }')
   })
+
+  it("grants only the native window permissions required to reassert borderless chrome", () => {
+    const capability = read("../../src-tauri/capabilities/default.json")
+
+    expect(capability).toContain('"core:window:allow-set-decorations"')
+    expect(capability).toContain('"core:window:allow-set-resizable"')
+  })
 })

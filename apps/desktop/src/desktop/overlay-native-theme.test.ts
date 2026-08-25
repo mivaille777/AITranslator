@@ -6,18 +6,18 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   emitTo: vi.fn(),
   listen: vi.fn(),
-  setBackgroundColor: vi.fn(),
-  getCurrentWebview: vi.fn(),
+  startDragging: vi.fn(),
+  getCurrentWindow: vi.fn(),
 }))
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }))
 vi.mock("@tauri-apps/api/event", () => ({ emitTo: mocks.emitTo, listen: mocks.listen }))
-vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: mocks.getCurrentWebview }))
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: mocks.getCurrentWindow }))
 
 import {
   applyOverlayNativeVisualTheme,
   applyOverlayThemeToDocument,
-  applyOverlayWebviewMaterial,
+  startOverlayWindowDrag,
   subscribeOverlayVisualThemeEvents,
 } from "./overlay-native-theme"
 
@@ -26,12 +26,12 @@ describe("overlay native visual theme bridge", () => {
     mocks.invoke.mockReset()
     mocks.emitTo.mockReset()
     mocks.listen.mockReset()
-    mocks.setBackgroundColor.mockReset()
-    mocks.getCurrentWebview.mockReset()
+    mocks.startDragging.mockReset()
+    mocks.getCurrentWindow.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
     mocks.emitTo.mockResolvedValue(undefined)
-    mocks.setBackgroundColor.mockResolvedValue(undefined)
-    mocks.getCurrentWebview.mockReturnValue({ setBackgroundColor: mocks.setBackgroundColor })
+    mocks.startDragging.mockResolvedValue(undefined)
+    mocks.getCurrentWindow.mockReturnValue({ startDragging: mocks.startDragging })
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__
     delete document.documentElement.dataset.aitOverlayTheme
   })
@@ -41,24 +41,20 @@ describe("overlay native visual theme bridge", () => {
     expect(document.documentElement.dataset.aitOverlayTheme).toBe("light")
   })
 
-  it("makes the overlay WebView fully transparent for Liquid Glass", async () => {
+  it("uses the no-backdrop native branch while preserving the light DOM theme event", async () => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
 
-    await applyOverlayWebviewMaterial("light")
+    await applyOverlayNativeVisualTheme("light")
 
-    expect(mocks.getCurrentWebview).toHaveBeenCalledTimes(1)
-    expect(mocks.setBackgroundColor).toHaveBeenCalledWith([0, 0, 0, 0])
+    expect(mocks.invoke).toHaveBeenCalledWith("set_overlay_visual_theme", { theme: "dark" })
+    expect(mocks.emitTo).toHaveBeenCalledWith(
+      "overlay",
+      "aitrans-overlay-visual-theme-changed",
+      { theme: "light" },
+    )
   })
 
-  it("restores an opaque WebView background for the classic dark theme", async () => {
-    ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
-
-    await applyOverlayWebviewMaterial("dark")
-
-    expect(mocks.setBackgroundColor).toHaveBeenCalledWith([23, 23, 26, 255])
-  })
-
-  it("updates the native window and emits an explicit overlay event in Tauri", async () => {
+  it("keeps the dark theme on the no-backdrop native branch", async () => {
     ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
 
     await applyOverlayNativeVisualTheme("dark")
@@ -69,6 +65,15 @@ describe("overlay native visual theme bridge", () => {
       "aitrans-overlay-visual-theme-changed",
       { theme: "dark" },
     )
+  })
+
+  it("starts native dragging explicitly instead of depending on a deep drag region", async () => {
+    ;(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {}
+
+    await startOverlayWindowDrag()
+
+    expect(mocks.getCurrentWindow).toHaveBeenCalledTimes(1)
+    expect(mocks.startDragging).toHaveBeenCalledTimes(1)
   })
 
   it("accepts only supported themes from cross-window events", async () => {

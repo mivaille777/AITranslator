@@ -1,78 +1,289 @@
 /*
- * Overlay appearance themes.
+ * Overlay material system.
  *
- * Dark intentionally falls through to the existing overlay.css rules so the
- * shipped WebReBuild appearance remains unchanged. Light is the new default
- * Liquid Glass treatment and relies on the transparent Tauri window plus the
- * Windows DWM transient backdrop configured by Rust.
+ * Layout, interaction and motion continue to live in overlay.css /
+ * overlay-mode-navigation.css. This file is the final material layer: both
+ * themes resolve through semantic tokens instead of light-theme overrides
+ * fighting the classic dark rules.
+ *
+ * On Windows 11 DWM owns the desktop blur. CSS backdrop-filter is deliberately
+ * bounded here and is used only to blend WebView layers / provide a graceful
+ * browser fallback; it is not the primary desktop-glass implementation.
  */
 
+html[data-ait-view="overlay"] {
+  --ait-overlay-host-background: #17171a;
+  --ait-overlay-scrollbar: rgba(229, 229, 236, 0.42);
+  --ait-overlay-scrollbar-hover: rgba(245, 245, 250, 0.62);
+
+  --ait-overlay-shell-border: rgba(255, 255, 255, 0.09);
+  --ait-overlay-shell-background: linear-gradient(155deg, #252528, #17171a 56%, #111113);
+  --ait-overlay-shell-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.055),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+  --ait-overlay-shell-backdrop: none;
+  --ait-overlay-shell-highlight: none;
+  --ait-overlay-shell-highlight-shadow: none;
+
+  --ait-overlay-divider: rgba(255, 255, 255, 0.07);
+  --ait-overlay-surface-background: rgba(255, 255, 255, 0.035);
+  --ait-overlay-surface-strong: rgba(255, 255, 255, 0.055);
+  --ait-overlay-surface-hover: rgba(255, 255, 255, 0.09);
+  --ait-overlay-surface-border: rgba(255, 255, 255, 0.08);
+  --ait-overlay-surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+
+  --ait-overlay-control-background: rgba(255, 255, 255, 0.045);
+  --ait-overlay-control-hover: rgba(255, 255, 255, 0.085);
+  --ait-overlay-control-border: rgba(255, 255, 255, 0.075);
+  --ait-overlay-control-border-hover: rgba(255, 255, 255, 0.135);
+  --ait-overlay-control-text: rgba(242, 242, 247, 0.76);
+  --ait-overlay-control-text-hover: rgba(255, 255, 255, 0.96);
+  --ait-overlay-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+
+  --ait-overlay-text-primary: rgba(245, 245, 247, 0.94);
+  --ait-overlay-text-secondary: rgba(203, 213, 225, 0.78);
+  --ait-overlay-text-muted: rgba(148, 163, 184, 0.58);
+  --ait-overlay-accent: rgba(160, 211, 255, 0.94);
+
+  --ait-overlay-field-background: rgba(255, 255, 255, 0.045);
+  --ait-overlay-field-border: rgba(255, 255, 255, 0.08);
+  --ait-overlay-field-focus-border: rgba(255, 255, 255, 0.16);
+  --ait-overlay-field-shadow: none;
+  --ait-overlay-field-backdrop: none;
+
+  --ait-overlay-popover-background: rgba(38, 38, 41, 0.94);
+  --ait-overlay-popover-border: rgba(255, 255, 255, 0.09);
+  --ait-overlay-popover-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --ait-overlay-popover-backdrop: blur(18px) saturate(110%);
+
+  color-scheme: dark;
+  scrollbar-color: var(--ait-overlay-scrollbar) transparent;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="dark"] {
+  color-scheme: dark;
+}
+
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] {
+  --ait-overlay-host-background: transparent;
+  --ait-overlay-scrollbar: rgba(75, 96, 128, 0.28);
+  --ait-overlay-scrollbar-hover: rgba(70, 91, 124, 0.42);
+
+  --ait-overlay-shell-border: rgba(255, 255, 255, 0.72);
+  --ait-overlay-shell-background:
+    radial-gradient(circle at 12% -8%, rgba(255, 255, 255, 0.76), transparent 42%),
+    radial-gradient(circle at 96% 7%, rgba(188, 217, 255, 0.24), transparent 36%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.45), rgba(244, 248, 255, 0.29) 48%, rgba(226, 237, 252, 0.2));
+  --ait-overlay-shell-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(116, 145, 188, 0.12),
+    inset 12px 0 28px rgba(255, 255, 255, 0.025);
+  --ait-overlay-shell-backdrop: blur(12px) saturate(128%);
+  --ait-overlay-shell-highlight:
+    linear-gradient(118deg, rgba(255, 255, 255, 0.34), transparent 20%, transparent 72%, rgba(177, 207, 248, 0.11)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.15), transparent 18%, transparent 82%, rgba(160, 187, 225, 0.07));
+  --ait-overlay-shell-highlight-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.26),
+    inset 0 14px 22px rgba(255, 255, 255, 0.045);
+
+  --ait-overlay-divider: rgba(82, 105, 141, 0.1);
+  --ait-overlay-surface-background: rgba(255, 255, 255, 0.11);
+  --ait-overlay-surface-strong: rgba(255, 255, 255, 0.3);
+  --ait-overlay-surface-hover: rgba(255, 255, 255, 0.45);
+  --ait-overlay-surface-border: rgba(91, 117, 157, 0.15);
+  --ait-overlay-surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+
+  --ait-overlay-control-background: linear-gradient(145deg, rgba(255, 255, 255, 0.5), rgba(224, 236, 255, 0.27));
+  --ait-overlay-control-hover: linear-gradient(145deg, rgba(255, 255, 255, 0.64), rgba(217, 233, 255, 0.38));
+  --ait-overlay-control-border: rgba(86, 119, 170, 0.18);
+  --ait-overlay-control-border-hover: rgba(74, 116, 184, 0.28);
+  --ait-overlay-control-text: rgba(53, 105, 194, 0.9);
+  --ait-overlay-control-text-hover: rgba(41, 91, 177, 0.98);
+  --ait-overlay-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84);
+
+  --ait-overlay-text-primary: rgba(28, 43, 66, 0.94);
+  --ait-overlay-text-secondary: rgba(55, 75, 105, 0.76);
+  --ait-overlay-text-muted: rgba(72, 94, 128, 0.6);
+  --ait-overlay-accent: rgba(55, 103, 184, 0.92);
+
+  --ait-overlay-field-background: linear-gradient(145deg, rgba(255, 255, 255, 0.42), rgba(240, 246, 255, 0.2));
+  --ait-overlay-field-border: rgba(91, 117, 157, 0.16);
+  --ait-overlay-field-focus-border: rgba(76, 127, 215, 0.38);
+  --ait-overlay-field-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 5px 14px rgba(74, 97, 132, 0.045);
+  --ait-overlay-field-backdrop: blur(10px) saturate(118%);
+
+  --ait-overlay-popover-background: linear-gradient(145deg, rgba(255, 255, 255, 0.66), rgba(235, 243, 255, 0.46));
+  --ait-overlay-popover-border: rgba(255, 255, 255, 0.7);
+  --ait-overlay-popover-shadow:
+    0 18px 46px rgba(64, 83, 116, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88);
+  --ait-overlay-popover-backdrop: blur(16px) saturate(130%);
+
   color-scheme: light;
-  scrollbar-color: rgba(75, 96, 128, 0.28) transparent;
+  scrollbar-color: var(--ait-overlay-scrollbar) transparent;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"],
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] body,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] #root,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-root {
-  background: transparent !important;
+html[data-ait-view="overlay"],
+html[data-ait-view="overlay"] body,
+html[data-ait-view="overlay"] #root,
+html[data-ait-view="overlay"] .ait-overlay-root {
+  background: var(--ait-overlay-host-background) !important;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] *::-webkit-scrollbar-thumb {
-  background: rgba(75, 96, 128, 0.28);
-  background-clip: padding-box;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] *::-webkit-scrollbar-thumb:hover {
-  background: rgba(70, 91, 124, 0.42);
+html[data-ait-view="overlay"] *::-webkit-scrollbar-thumb {
+  background: var(--ait-overlay-scrollbar);
   background-clip: padding-box;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell {
+html[data-ait-view="overlay"] *::-webkit-scrollbar-thumb:hover {
+  background: var(--ait-overlay-scrollbar-hover);
+  background-clip: padding-box;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-shell {
   position: relative;
   isolation: isolate;
-  border-color: rgba(255, 255, 255, 0.74) !important;
-  background:
-    radial-gradient(circle at 12% -8%, rgba(255, 255, 255, 0.82), transparent 42%),
-    radial-gradient(circle at 96% 7%, rgba(188, 217, 255, 0.28), transparent 36%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.52), rgba(244, 248, 255, 0.34) 48%, rgba(226, 237, 252, 0.25)) !important;
-  box-shadow:
-    0 22px 62px rgba(64, 83, 116, 0.18),
-    0 7px 20px rgba(80, 101, 138, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    inset 0 -1px 0 rgba(116, 145, 188, 0.12) !important;
-  backdrop-filter: blur(34px) saturate(145%) contrast(102%);
-  -webkit-backdrop-filter: blur(34px) saturate(145%) contrast(102%);
+  border-color: var(--ait-overlay-shell-border) !important;
+  background: var(--ait-overlay-shell-background) !important;
+  box-shadow: var(--ait-overlay-shell-shadow) !important;
+  backdrop-filter: var(--ait-overlay-shell-backdrop);
+  -webkit-backdrop-filter: var(--ait-overlay-shell-backdrop);
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell::before {
+html[data-ait-view="overlay"] .ait-overlay-shell::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
   border-radius: inherit;
-  background:
-    linear-gradient(118deg, rgba(255, 255, 255, 0.38), transparent 20%, transparent 72%, rgba(177, 207, 248, 0.12)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 18%, transparent 82%, rgba(160, 187, 225, 0.08));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
-    inset 0 16px 24px rgba(255, 255, 255, 0.05);
+  background: var(--ait-overlay-shell-highlight);
+  box-shadow: var(--ait-overlay-shell-highlight-shadow);
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell > * {
+html[data-ait-view="overlay"] .ait-overlay-shell > * {
   position: relative;
   z-index: 1;
 }
 
+html[data-ait-view="overlay"] .ait-overlay-shell > header {
+  border-color: var(--ait-overlay-divider) !important;
+}
+
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell > header {
-  border-color: rgba(82, 105, 141, 0.12) !important;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08));
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.32);
-  backdrop-filter: blur(24px) saturate(132%);
-  -webkit-backdrop-filter: blur(24px) saturate(132%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.23), rgba(255, 255, 255, 0.07));
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.3);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-source-context,
+html[data-ait-view="overlay"] .ait-overlay-translation-workspace,
+html[data-ait-view="overlay"] .ait-overlay-conversation-divider,
+html[data-ait-view="overlay"] .ait-overlay-conversation-composer {
+  border-color: var(--ait-overlay-divider) !important;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-source-context,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-divider,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-composer {
+  background: var(--ait-overlay-surface-background) !important;
+  box-shadow: var(--ait-overlay-surface-highlight);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-select,
+html[data-ait-view="overlay"] .ait-overlay-translation-editor,
+html[data-ait-view="overlay"] .ait-overlay-translation-workspace section:has(.ait-overlay-translation-output),
+html[data-ait-view="overlay"] .ait-overlay-conversation-composer textarea {
+  border-color: var(--ait-overlay-field-border) !important;
+  background: var(--ait-overlay-field-background) !important;
+  box-shadow: var(--ait-overlay-field-shadow);
+  backdrop-filter: var(--ait-overlay-field-backdrop);
+  -webkit-backdrop-filter: var(--ait-overlay-field-backdrop);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-translation-select:focus,
+html[data-ait-view="overlay"] .ait-overlay-translation-editor:focus,
+html[data-ait-view="overlay"] .ait-overlay-conversation-composer textarea:focus {
+  border-color: var(--ait-overlay-field-focus-border) !important;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-select,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-editor,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-output,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-composer textarea {
+  color: var(--ait-overlay-text-primary) !important;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-select option {
+  background: #f7faff;
+  color: #1f2f49;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation {
+  background: rgba(245, 249, 255, 0.045) !important;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-messages .rounded-\[15px\] {
+  border-color: var(--ait-overlay-surface-border) !important;
+  background: var(--ait-overlay-surface-strong) !important;
+  color: var(--ait-overlay-text-primary) !important;
+  box-shadow: var(--ait-overlay-surface-highlight);
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button {
+  border-color: var(--ait-overlay-control-border) !important;
+  background: var(--ait-overlay-control-background) !important;
+  color: var(--ait-overlay-control-text) !important;
+  box-shadow: var(--ait-overlay-control-shadow) !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-button:hover:not(:disabled) {
+  border-color: var(--ait-overlay-control-border-hover) !important;
+  background: var(--ait-overlay-control-hover) !important;
+  color: var(--ait-overlay-control-text-hover) !important;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-quiet-button,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-copy-button {
+  border-color: var(--ait-overlay-surface-border) !important;
+  background: var(--ait-overlay-surface-strong) !important;
+  color: var(--ait-overlay-text-secondary) !important;
+  box-shadow: var(--ait-overlay-surface-highlight);
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-quiet-button:hover,
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-copy-button:hover {
+  background: var(--ait-overlay-surface-hover) !important;
+  color: var(--ait-overlay-text-primary) !important;
+}
+
+html[data-ait-view="overlay"] .ait-overlay-action-toast,
+html[data-ait-view="overlay"] .ait-overlay-context-menu {
+  border-color: var(--ait-overlay-popover-border) !important;
+  background: var(--ait-overlay-popover-background) !important;
+  box-shadow: var(--ait-overlay-popover-shadow) !important;
+  backdrop-filter: var(--ait-overlay-popover-backdrop);
+  -webkit-backdrop-filter: var(--ait-overlay-popover-backdrop);
+}
+
+/* Keep the existing compact-chat DOM stable for now; light hides the arrow
+ * while the next component cleanup can move the icon into an explicit span. */
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-scroll > button {
+  border-color: var(--ait-overlay-surface-border) !important;
+  background: rgba(255, 255, 255, 0.48) !important;
+  color: transparent !important;
+  font-size: 0 !important;
+  box-shadow: var(--ait-overlay-surface-highlight) !important;
+}
+
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-scroll > button::after {
+  content: "Latest";
+  color: var(--ait-overlay-accent);
+  font-size: 9px;
+  font-weight: 600;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-drag-handle {
@@ -83,148 +294,8 @@ html[data-ait-view="overlay"][data-ait-overlay-theme="light"] header:hover .ait-
   color: rgba(53, 79, 121, 0.66) !important;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-source-context {
-  border-color: rgba(82, 105, 141, 0.11) !important;
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.28);
-  backdrop-filter: blur(20px) saturate(125%);
-  -webkit-backdrop-filter: blur(20px) saturate(125%);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-workspace {
-  border-color: rgba(82, 105, 141, 0.1) !important;
-  background: rgba(245, 249, 255, 0.08) !important;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-select,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-editor,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-workspace section:has(.ait-overlay-translation-output) {
-  border-color: rgba(91, 117, 157, 0.16) !important;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.44), rgba(240, 246, 255, 0.22)) !important;
-  color: rgba(28, 43, 66, 0.94) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.64),
-    0 7px 20px rgba(74, 97, 132, 0.055);
-  backdrop-filter: blur(18px) saturate(125%);
-  -webkit-backdrop-filter: blur(18px) saturate(125%);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-select:focus,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-editor:focus {
-  border-color: rgba(76, 127, 215, 0.38) !important;
-  box-shadow:
-    0 0 0 3px rgba(88, 145, 236, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-translation-select option {
-  background: #f7faff;
-  color: #1f2f49;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation {
-  background: rgba(245, 249, 255, 0.055) !important;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-divider,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-composer {
-  border-color: rgba(82, 105, 141, 0.1) !important;
-  background: rgba(255, 255, 255, 0.1) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
-  backdrop-filter: blur(22px) saturate(128%);
-  -webkit-backdrop-filter: blur(22px) saturate(128%);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-messages .rounded-\[15px\] {
-  border-color: rgba(87, 111, 149, 0.12) !important;
-  background: rgba(255, 255, 255, 0.28) !important;
-  color: rgba(35, 50, 73, 0.92) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-composer textarea {
-  border-color: rgba(88, 113, 151, 0.16) !important;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.5), rgba(240, 246, 255, 0.24)) !important;
-  color: rgba(27, 42, 65, 0.94) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.76),
-    0 8px 24px rgba(76, 101, 139, 0.06);
-  backdrop-filter: blur(20px) saturate(130%);
-  -webkit-backdrop-filter: blur(20px) saturate(130%);
-}
-
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-composer textarea::placeholder {
   color: rgba(76, 98, 132, 0.5) !important;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-scroll > button {
-  border-color: rgba(92, 116, 154, 0.16) !important;
-  background: rgba(255, 255, 255, 0.5) !important;
-  color: transparent !important;
-  font-size: 0 !important;
-  box-shadow:
-    0 8px 24px rgba(76, 101, 139, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
-  backdrop-filter: blur(22px) saturate(132%);
-  -webkit-backdrop-filter: blur(22px) saturate(132%);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-scroll > button::after {
-  content: "Latest";
-  color: rgba(55, 103, 184, 0.88);
-  font-size: 9px;
-  font-weight: 600;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-action-button {
-  border-color: rgba(86, 119, 170, 0.18) !important;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.54), rgba(224, 236, 255, 0.3)) !important;
-  color: rgba(53, 105, 194, 0.9) !important;
-  box-shadow:
-    0 8px 20px rgba(67, 106, 170, 0.09),
-    inset 0 1px 0 rgba(255, 255, 255, 0.86) !important;
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-action-button:hover:not(:disabled) {
-  border-color: rgba(74, 116, 184, 0.28) !important;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(217, 233, 255, 0.4)) !important;
-  color: rgba(41, 91, 177, 0.98) !important;
-  box-shadow:
-    0 10px 24px rgba(67, 106, 170, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-quiet-button,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-copy-button {
-  border-color: rgba(91, 116, 154, 0.14) !important;
-  background: rgba(255, 255, 255, 0.32) !important;
-  color: rgba(65, 86, 119, 0.72) !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.74);
-  backdrop-filter: blur(18px) saturate(128%);
-  -webkit-backdrop-filter: blur(18px) saturate(128%);
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-quiet-button:hover,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-copy-button:hover {
-  border-color: rgba(77, 105, 149, 0.22) !important;
-  background: rgba(255, 255, 255, 0.46) !important;
-  color: rgba(40, 67, 108, 0.92) !important;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-action-toast,
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu {
-  border-color: rgba(255, 255, 255, 0.72) !important;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(235, 243, 255, 0.48)) !important;
-  color: rgba(37, 52, 75, 0.92) !important;
-  box-shadow:
-    0 20px 54px rgba(64, 83, 116, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(32px) saturate(145%);
-  -webkit-backdrop-filter: blur(32px) saturate(145%);
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu button:not(.text-rose-300) {
@@ -242,33 +313,30 @@ html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conte
   color: rgba(69, 90, 123, 0.66) !important;
 }
 
-/* Re-map Tailwind's dark-surface text utilities inside the light glass shell. */
+/* Tailwind utility remap for legacy component markup inside the light shell. */
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-100,
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-200,
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-300 {
-  color: rgba(31, 46, 68, 0.92) !important;
+  color: var(--ait-overlay-text-primary) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-400 {
-  color: rgba(60, 81, 113, 0.72) !important;
+  color: var(--ait-overlay-text-secondary) !important;
 }
 
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-500 {
-  color: rgba(72, 94, 128, 0.62) !important;
-}
-
+html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-500,
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell .text-slate-600 {
-  color: rgba(79, 99, 128, 0.5) !important;
+  color: var(--ait-overlay-text-muted) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu .text-slate-300,
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu .text-slate-400,
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu .text-slate-500 {
-  color: rgba(61, 82, 114, 0.68) !important;
+  color: var(--ait-overlay-text-secondary) !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell::before {
+  html[data-ait-view="overlay"] .ait-overlay-shell::before {
     transition: none;
   }
 }

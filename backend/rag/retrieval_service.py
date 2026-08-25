@@ -6,10 +6,11 @@ from backend.rag.config import RagRetrievalConfig
 from backend.rag.embeddings.base import EmbeddingProvider
 from backend.rag.exceptions import RagRetrievalError
 from backend.rag.fusion import rrf_fuse
-from backend.rag.models import RetrievalResult
+from backend.rag.models import RetrievalCandidate, RetrievalResult
 from backend.rag.rerankers.base import RerankerProvider
 from backend.rag.sparse.store import SparseRetriever
 from backend.rag.stores.base import VectorSearchFilter, VectorStore
+from backend.rag.structure_retrieval import section_match_priority
 
 
 class RetrievalService:
@@ -33,14 +34,22 @@ class RetrievalService:
         query: str,
         *,
         filters: VectorSearchFilter | None = None,
+        section_hints: tuple[str, ...] = (),
+        final_top_k: int | None = None,
     ) -> RetrievalResult:
         if not query or not query.strip():
             raise RagRetrievalError("retrieval query must not be empty")
+        desired_top_k = final_top_k or self._config.final_top_k
+        if desired_top_k <= 0:
+            raise ValueError("final_top_k must be positive")
+
         started = perf_counter()
-        dense = []
-        sparse = []
+        dense: list[RetrievalCandidate] = []
+        sparse: list[RetrievalCandidate] = []
+        structural: list[RetrievalCandidate] = []
         dense_error = ""
         sparse_error = ""
+        structural_error = ""
         embedding_ms = 0.0
         dense_ms = 0.0
         try:
@@ -68,37 +77,65 @@ class RetrievalService:
             sparse_error = str(exc) or exc.__class__.__name__
         sparse_ms = (perf_counter() - sparse_started) * 1000
 
-        if dense_error and sparse_error:
+        structural_ms = 0.0
+        search_sections = getattr(self._sparse, "search_sections", None)
+        if section_hints and callable(search_sections):
+            structural_started = perf_counter()
+            try:
+                structural = search_sections(
+                    section_hints,
+                    max(self._config.fusion_top_k, desired_top_k),
+                    filters,
+                )
+            except Exception as exc:  # noqa: BLE001 - structural recall is additive
+                structural_error = str(exc) or exc.__class__.__name__
+            structural_ms = (perf_counter() - structural_started) * 1000
+
+        if dense_error and sparse_error and not structural:
             raise RagRetrievalError(
                 f"dense and sparse retrieval failed: dense={dense_error}; sparse={sparse_error}"
             )
         fusion_started = perf_counter()
         candidates = rrf_fuse(
-            [ranked for ranked in (dense, sparse) if ranked],
-            limit=self._config.fusion_top_k,
+            [ranked for ranked in (dense, sparse, structural) if ranked],
+            limit=max(self._config.fusion_top_k, desired_top_k),
         )
         fusion_ms = (perf_counter() - fusion_started) * 1000
         fusion_count = len(candidates)
-        strategy = (
-            "sparse-only" if dense_error else "dense-only" if sparse_error else "hybrid"
+        strategy = self._strategy(
+            dense_error=dense_error,
+            sparse_error=sparse_error,
+            structural=structural,
         )
-        fallback_reason = dense_error or sparse_error
+        fallback_reason = "; ".join(
+            item for item in (dense_error, sparse_error, structural_error) if item
+        )
         reranker_applied = False
         reranker_fallback_reason = ""
         rerank_ms = 0.0
         if self._reranker is not None:
             rerank_started = perf_counter()
             try:
+                rerank_limit = (
+                    len(candidates)
+                    if section_hints
+                    else min(desired_top_k, len(candidates))
+                )
                 candidates = self._reranker.rerank(
-                    query, candidates, top_k=self._config.final_top_k
+                    query,
+                    candidates,
+                    top_k=max(1, rerank_limit),
                 )
                 reranker_applied = True
             except Exception as exc:  # noqa: BLE001 - RRF fallback is intentional
                 reranker_fallback_reason = str(exc) or exc.__class__.__name__
-                candidates = candidates[: self._config.final_top_k]
             rerank_ms = (perf_counter() - rerank_started) * 1000
-        else:
-            candidates = candidates[: self._config.final_top_k]
+
+        candidates = self._finalize_candidates(
+            candidates,
+            section_hints=section_hints,
+            limit=desired_top_k,
+        )
         return RetrievalResult(
             query=query,
             candidates=candidates,
@@ -107,18 +144,71 @@ class RetrievalService:
             metadata={
                 "dense_count": len(dense),
                 "sparse_count": len(sparse),
+                "structural_count": len(structural),
                 "fusion_count": fusion_count,
                 "final_count": len(candidates),
                 "embedding_ms": embedding_ms,
                 "dense_search_ms": dense_ms,
                 "sparse_search_ms": sparse_ms,
+                "structural_search_ms": structural_ms,
                 "fusion_ms": fusion_ms,
                 "rerank_ms": rerank_ms,
                 "fallback_reason": fallback_reason,
                 "reranker_applied": reranker_applied,
                 "reranker_fallback_reason": reranker_fallback_reason,
+                "structural_section_hints": list(section_hints),
             },
         )
+
+    @staticmethod
+    def _strategy(
+        *,
+        dense_error: str,
+        sparse_error: str,
+        structural: list[RetrievalCandidate],
+    ) -> str:
+        if structural:
+            if dense_error and sparse_error:
+                return "structural-only"
+            return "hybrid+structural"
+        if dense_error:
+            return "sparse-only"
+        if sparse_error:
+            return "dense-only"
+        return "hybrid"
+
+    @staticmethod
+    def _finalize_candidates(
+        candidates: list[RetrievalCandidate],
+        *,
+        section_hints: tuple[str, ...],
+        limit: int,
+    ) -> list[RetrievalCandidate]:
+        if not section_hints:
+            selected = candidates[:limit]
+        else:
+            indexed = list(enumerate(candidates))
+            selected = [
+                candidate
+                for _index, candidate in sorted(
+                    indexed,
+                    key=lambda item: (
+                        -section_match_priority(item[1], section_hints),
+                        item[1].chunk.document_id,
+                        item[1].chunk.page_number
+                        if item[1].chunk.page_number is not None
+                        else 10**9,
+                        item[1].chunk.chunk_index,
+                        item[0],
+                    )
+                    if section_match_priority(item[1], section_hints) > 0
+                    else (1, "", 10**9, 10**9, item[0]),
+                )[:limit]
+            ]
+        return [
+            candidate.model_copy(update={"rank": rank})
+            for rank, candidate in enumerate(selected, start=1)
+        ]
 
 
 __all__ = ["RetrievalService"]

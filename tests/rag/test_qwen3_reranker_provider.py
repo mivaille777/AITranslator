@@ -63,11 +63,40 @@ def test_pair_construction_score_mapping_sort_and_top_k() -> None:
     assert [item.chunk.chunk_id for item in results] == ["chunk_1", "chunk_2"]
     assert [item.rerank_score for item in results] == [0.9, 0.5]
     assert model.calls[0][0] == [
-        ("query", "first"),
-        ("query", "second"),
-        ("query", "third"),
+        ("query", "Content:\nfirst"),
+        ("query", "Content:\nsecond"),
+        ("query", "Content:\nthird"),
     ]
     assert model.calls[0][1]["batch_size"] == 4
+
+
+def test_pair_includes_document_section_and_page_metadata() -> None:
+    model = Model([0.8])
+    reranker = provider(model, [])
+    candidate = RetrievalCandidate(
+        chunk=DocumentChunk(
+            chunk_id="references-1",
+            document_id="wen-paper",
+            title="Water Tank Paper",
+            section_heading="References",
+            page_number=11,
+            text="[1] A. Author, Example reference.",
+            chunk_index=0,
+        ),
+        rank=1,
+    )
+
+    reranker.rerank("Which references were cited?", [candidate], top_k=1)
+
+    assert model.calls[0][0] == [
+        (
+            "Which references were cited?",
+            "Document: Water Tank Paper\n"
+            "Section: References\n"
+            "Page: 11\n"
+            "Content:\n[1] A. Author, Example reference.",
+        )
+    ]
 
 
 def test_model_loads_once_and_ties_are_stable() -> None:

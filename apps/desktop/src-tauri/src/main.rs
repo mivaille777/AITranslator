@@ -55,6 +55,73 @@ fn apply_overlay_window_region(_window: &tauri::WebviewWindow) -> Result<(), Str
     Ok(())
 }
 
+#[cfg(windows)]
+fn apply_overlay_visual_theme(
+    window: &tauri::WebviewWindow,
+    theme: &str,
+) -> Result<(), String> {
+    use std::{ffi::c_void, mem::size_of};
+    use windows_sys::Win32::Foundation::HWND as Win32Hwnd;
+    use windows_sys::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMSBT_NONE, DWMSBT_TRANSIENTWINDOW,
+        DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+    };
+
+    let hwnd = window.hwnd().map_err(|error| error.to_string())?;
+    let hwnd = hwnd.0 as Win32Hwnd;
+    let dark_mode: i32 = if theme.eq_ignore_ascii_case("dark") { 1 } else { 0 };
+
+    // Keep the native non-client color mode aligned with the React theme. This
+    // is best-effort because older Windows releases may not expose the DWM
+    // attributes used by Windows 11.
+    let dark_mode_result = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+            &dark_mode as *const i32 as *const c_void,
+            size_of::<i32>() as u32,
+        )
+    };
+    if dark_mode_result < 0 {
+        eprintln!(
+            "DWM immersive dark mode is unavailable for the overlay: HRESULT {dark_mode_result:#x}"
+        );
+    }
+
+    // Windows 11's transient-window backdrop is the closest system-native
+    // material to the light Liquid Glass treatment. The dark theme deliberately
+    // disables it so the existing opaque WebReBuild appearance is preserved.
+    let backdrop_type: i32 = if theme.eq_ignore_ascii_case("light") {
+        DWMSBT_TRANSIENTWINDOW
+    } else {
+        DWMSBT_NONE
+    };
+    let backdrop_result = unsafe {
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE as u32,
+            &backdrop_type as *const i32 as *const c_void,
+            size_of::<i32>() as u32,
+        )
+    };
+    if backdrop_result < 0 {
+        // CSS backdrop-filter remains the visual fallback on older Windows.
+        eprintln!(
+            "DWM system backdrop is unavailable for the overlay: HRESULT {backdrop_result:#x}"
+        );
+    }
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn apply_overlay_visual_theme(
+    _window: &tauri::WebviewWindow,
+    _theme: &str,
+) -> Result<(), String> {
+    Ok(())
+}
+
 fn next_overlay_move_generation() -> u64 {
     OVERLAY_MOVE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1
 }
@@ -169,6 +236,19 @@ fn update_overlay_window_shape(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn set_overlay_visual_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
+    if theme != "light" && theme != "dark" {
+        return Err(format!("unsupported overlay visual theme '{theme}'"));
+    }
+
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window is unavailable".to_string())?;
+
+    apply_overlay_visual_theme(&overlay, &theme)
+}
+
+#[tauri::command]
 fn animate_overlay_position(
     app: tauri::AppHandle,
     x: i32,
@@ -235,6 +315,9 @@ fn main() {
                 if let Err(error) = apply_overlay_window_region(&overlay) {
                     eprintln!("failed to initialize overlay window region: {error}");
                 }
+                if let Err(error) = apply_overlay_visual_theme(&overlay, "light") {
+                    eprintln!("failed to initialize overlay visual theme: {error}");
+                }
 
                 let overlay_for_resize = overlay.clone();
                 overlay.on_window_event(move |event| {
@@ -261,7 +344,8 @@ fn main() {
             window_close,
             pick_knowledge_document,
             open_evidence_source,
-            update_overlay_window_shape
+            update_overlay_window_shape,
+            set_overlay_visual_theme
         ])
         .run(tauri::generate_context!())
         .expect("error while running AITranslator desktop shell");

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core"
 import { emitTo, listen } from "@tauri-apps/api/event"
-import { getCurrentWebview } from "@tauri-apps/api/webview"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 
 import type { OverlayVisualTheme } from "./overlay-preferences"
 
@@ -15,18 +15,9 @@ export function applyOverlayThemeToDocument(theme: OverlayVisualTheme): void {
   document.documentElement.dataset.aitOverlayTheme = theme
 }
 
-export async function applyOverlayWebviewMaterial(
-  theme: OverlayVisualTheme,
-): Promise<void> {
+export async function startOverlayWindowDrag(): Promise<void> {
   if (!hasTauriRuntime()) return
-
-  // WebView2 only honors fully transparent (alpha 0) or fully opaque colors on
-  // Windows. Explicitly clear the overlay WebView for Liquid Glass so the DWM
-  // system backdrop can be seen through the DOM. Restore the classic dark host
-  // as an opaque surface when switching back to the legacy theme.
-  await getCurrentWebview().setBackgroundColor(
-    theme === "light" ? [0, 0, 0, 0] : [23, 23, 26, 255],
-  )
+  await getCurrentWindow().startDragging()
 }
 
 export async function applyOverlayNativeVisualTheme(
@@ -34,7 +25,20 @@ export async function applyOverlayNativeVisualTheme(
 ): Promise<void> {
   if (!hasTauriRuntime()) return
 
-  await invoke("set_overlay_visual_theme", { theme })
+  /*
+   * The Windows transient system backdrop is visually much denser than the
+   * intended Liquid Glass shell and turns the whole overlay into a grey sheet.
+   * The Rust command's dark branch is currently the explicit "no system
+   * backdrop" branch (DWMSBT_NONE). Use that native state for both DOM themes;
+   * the DOM theme remains independent and still receives the original value.
+   *
+   * Do not call WebView2 setBackgroundColor at runtime here. On a transparent,
+   * frameless WebView2 window that mutation can expose a stale/native caption
+   * surface during focus or drag transitions. Tauri's transparent window
+   * configuration owns WebView transparency instead.
+   */
+  const nativeTheme = "dark"
+  await invoke("set_overlay_visual_theme", { theme: nativeTheme })
 
   // localStorage remains the persisted source of truth, but a Tauri event makes
   // cross-window theme changes deterministic instead of relying on WebView2's

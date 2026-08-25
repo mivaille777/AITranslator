@@ -1,12 +1,4 @@
 /* Overlay stability fixes: isolate draggable header and scrolling layers. */
-html[data-ait-view="overlay"] {
-  --ait-overlay-host-background: #17171a;
-}
-
-html[data-ait-view="overlay"][data-ait-overlay-theme="light"] {
-  --ait-overlay-host-background: transparent;
-}
-
 html[data-ait-view="overlay"] .ait-overlay-root {
   position: relative;
   isolation: isolate;
@@ -36,13 +28,12 @@ html[data-ait-view="overlay"] .ait-overlay-shell > div::-webkit-scrollbar {
 
 html[data-ait-view="overlay"] .ait-overlay-shell > div::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: rgba(255,255,255,.28);
 }
 
 /*
- * The native Tauri window is transparent in both themes. Keep the host layer
- * opaque only for the classic dark theme; light Liquid Glass lets DWM own the
- * desktop backdrop and therefore keeps the WebView host transparent.
+ * The native Tauri window is transparent in both themes. The material layer
+ * in overlay-theme.css decides whether the WebView host is opaque (classic
+ * dark) or transparent so DWM can supply the light desktop backdrop.
  */
 html[data-ait-view="overlay"],
 html[data-ait-view="overlay"] body,

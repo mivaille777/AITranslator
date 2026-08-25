@@ -15,24 +15,20 @@ export function applyOverlayThemeToDocument(theme: OverlayVisualTheme): void {
   document.documentElement.dataset.aitOverlayTheme = theme
 }
 
-async function enforceOverlayBorderlessWindow() {
-  const currentWindow = getCurrentWindow()
-
-  // Reassert the borderless contract at runtime. On Windows, transparent
-  // WebView windows can occasionally reacquire non-client chrome after native
-  // material/focus transitions even when decorations=false is present in the
-  // static Tauri config. Keep the overlay explicitly non-resizable and strip
-  // decorations before theme changes and native drag operations.
-  await currentWindow.setResizable(false)
-  await currentWindow.setDecorations(false)
-
-  return currentWindow
+async function enforceOverlayBorderlessNativeFrame(): Promise<void> {
+  await invoke("enforce_overlay_borderless")
 }
 
 export async function startOverlayWindowDrag(): Promise<void> {
   if (!hasTauriRuntime()) return
-  const currentWindow = await enforceOverlayBorderlessWindow()
-  await currentWindow.startDragging()
+
+  // Transparent Tauri/WebView2 windows on Windows can expose an upstream ghost
+  // caption during drag/focus transitions. Rust strips the Win32 caption/frame
+  // style bits directly before and after the drag instead of relying on
+  // setDecorations(false), which does not fix the upstream compositor issue.
+  await enforceOverlayBorderlessNativeFrame()
+  await getCurrentWindow().startDragging()
+  await enforceOverlayBorderlessNativeFrame()
 }
 
 export async function applyOverlayNativeVisualTheme(
@@ -40,7 +36,7 @@ export async function applyOverlayNativeVisualTheme(
 ): Promise<void> {
   if (!hasTauriRuntime()) return
 
-  await enforceOverlayBorderlessWindow()
+  await enforceOverlayBorderlessNativeFrame()
 
   /*
    * The Windows transient system backdrop is visually much denser than the
@@ -48,17 +44,13 @@ export async function applyOverlayNativeVisualTheme(
    * The Rust command's dark branch is currently the explicit "no system
    * backdrop" branch (DWMSBT_NONE). Use that native state for both DOM themes;
    * the DOM theme remains independent and still receives the original value.
-   *
-   * Do not mutate the WebView background at runtime here. Tauri's transparent
-   * window configuration owns WebView transparency instead.
    */
   const nativeTheme = "dark"
   await invoke("set_overlay_visual_theme", { theme: nativeTheme })
 
-  // Native calls can force Windows to recalculate the non-client frame. Strip
-  // decorations once more after the DWM attribute update so a caption bar can
-  // never become the steady-state overlay chrome.
-  await enforceOverlayBorderlessWindow()
+  // DWM updates can recalculate the non-client frame. Reassert the direct HWND
+  // borderless contract after the native material change as well.
+  await enforceOverlayBorderlessNativeFrame()
 
   // localStorage remains the persisted source of truth, but a Tauri event makes
   // cross-window theme changes deterministic instead of relying on WebView2's

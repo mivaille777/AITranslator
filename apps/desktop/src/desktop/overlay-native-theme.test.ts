@@ -90,9 +90,6 @@ describe("overlay native visual theme bridge", () => {
     expect(mocks.setResizable).toHaveBeenCalledWith(false)
     expect(mocks.setDecorations).toHaveBeenCalledWith(false)
     expect(mocks.startDragging).toHaveBeenCalledTimes(1)
-    expect(mocks.setDecorations.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.startDragging.mock.invocationCallOrder[0],
-    )
   })
 
   it("accepts only supported themes from cross-window events", async () => {

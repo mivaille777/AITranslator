@@ -85,10 +85,15 @@ def test_complex_query_returns_typed_bounded_plan() -> None:
         "C8 mechanism",
     )
     assert len(plan.retrieval_queries) == MAX_RAG_RETRIEVAL_QUERIES
+    assert planner.prompt_id.endswith("@1.2.0")
     assert len(client.calls) == 1
     prompt = json.loads(client.calls[0]["user_prompt"])
     assert prompt["policy"]["recursive_decomposition"] is False
     assert prompt["policy"]["standalone_rewrite"] is True
+    assert prompt["policy"]["preserve_document_structure"] is True
+    assert "References/Bibliography" in client.calls[0]["system_prompt"]
+    assert "Table" in client.calls[0]["system_prompt"]
+    assert "Figure" in client.calls[0]["system_prompt"]
 
 
 def test_simple_query_is_rewritten_before_retrieval() -> None:
@@ -146,6 +151,7 @@ def test_follow_up_query_uses_bounded_history_to_resolve_document_reference() ->
     assert prompt["conversation_history"][0]["role"] == "user"
     assert "water tank system" in prompt["conversation_history"][0]["content"]
     assert prompt["policy"]["resolve_follow_up_references"] is True
+    assert prompt["policy"]["preserve_document_structure"] is True
 
 
 def test_planner_failure_and_malformed_output_fall_back_to_original_query() -> None:

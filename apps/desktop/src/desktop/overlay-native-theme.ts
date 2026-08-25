@@ -15,15 +15,32 @@ export function applyOverlayThemeToDocument(theme: OverlayVisualTheme): void {
   document.documentElement.dataset.aitOverlayTheme = theme
 }
 
+async function enforceOverlayBorderlessWindow() {
+  const currentWindow = getCurrentWindow()
+
+  // Reassert the borderless contract at runtime. On Windows, transparent
+  // WebView windows can occasionally reacquire non-client chrome after native
+  // material/focus transitions even when decorations=false is present in the
+  // static Tauri config. Keep the overlay explicitly non-resizable and strip
+  // decorations before theme changes and native drag operations.
+  await currentWindow.setResizable(false)
+  await currentWindow.setDecorations(false)
+
+  return currentWindow
+}
+
 export async function startOverlayWindowDrag(): Promise<void> {
   if (!hasTauriRuntime()) return
-  await getCurrentWindow().startDragging()
+  const currentWindow = await enforceOverlayBorderlessWindow()
+  await currentWindow.startDragging()
 }
 
 export async function applyOverlayNativeVisualTheme(
   theme: OverlayVisualTheme,
 ): Promise<void> {
   if (!hasTauriRuntime()) return
+
+  await enforceOverlayBorderlessWindow()
 
   /*
    * The Windows transient system backdrop is visually much denser than the
@@ -32,13 +49,16 @@ export async function applyOverlayNativeVisualTheme(
    * backdrop" branch (DWMSBT_NONE). Use that native state for both DOM themes;
    * the DOM theme remains independent and still receives the original value.
    *
-   * Do not call WebView2 setBackgroundColor at runtime here. On a transparent,
-   * frameless WebView2 window that mutation can expose a stale/native caption
-   * surface during focus or drag transitions. Tauri's transparent window
-   * configuration owns WebView transparency instead.
+   * Do not mutate the WebView background at runtime here. Tauri's transparent
+   * window configuration owns WebView transparency instead.
    */
   const nativeTheme = "dark"
   await invoke("set_overlay_visual_theme", { theme: nativeTheme })
+
+  // Native calls can force Windows to recalculate the non-client frame. Strip
+  // decorations once more after the DWM attribute update so a caption bar can
+  // never become the steady-state overlay chrome.
+  await enforceOverlayBorderlessWindow()
 
   // localStorage remains the persisted source of truth, but a Tauri event makes
   // cross-window theme changes deterministic instead of relying on WebView2's

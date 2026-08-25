@@ -6,9 +6,9 @@
  * themes resolve through semantic tokens instead of light-theme overrides
  * fighting the classic dark rules.
  *
- * On Windows 11 DWM owns the desktop blur. The light theme therefore keeps
- * the WebView and shell genuinely translucent; CSS only provides tint, edge
- * highlights and readable local surfaces on top of the native backdrop.
+ * The light theme keeps a transparent native host, but the CSS glass itself is
+ * intentionally readability-first: the shell and local surfaces carry a
+ * stronger milky tint so dark text stays legible over busy documents and apps.
  */
 
 html[data-ait-view="overlay"] {
@@ -68,62 +68,63 @@ html[data-ait-view="overlay"][data-ait-overlay-theme="dark"] {
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] {
   --ait-overlay-host-background: transparent;
-  --ait-overlay-scrollbar: rgba(68, 90, 124, 0.3);
-  --ait-overlay-scrollbar-hover: rgba(58, 81, 118, 0.46);
+  --ait-overlay-scrollbar: rgba(57, 75, 102, 0.42);
+  --ait-overlay-scrollbar-hover: rgba(46, 64, 92, 0.58);
 
-  /* Keep the main panel genuinely translucent. The previous 0.45-0.76 white
-   * layers compounded into an almost opaque grey sheet and masked DWM blur. */
-  --ait-overlay-shell-border: rgba(255, 255, 255, 0.46);
+  /* Readability-first Liquid Glass: keep the native host transparent, but let
+   * the main shell carry enough milky opacity to separate text from whatever
+   * application happens to be behind the overlay. */
+  --ait-overlay-shell-border: rgba(255, 255, 255, 0.78);
   --ait-overlay-shell-background:
-    radial-gradient(circle at 14% -8%, rgba(255, 255, 255, 0.28), transparent 42%),
-    radial-gradient(circle at 96% 8%, rgba(174, 208, 255, 0.12), transparent 38%),
-    linear-gradient(145deg, rgba(251, 253, 255, 0.16), rgba(240, 247, 255, 0.11) 48%, rgba(218, 232, 250, 0.08));
+    radial-gradient(circle at 14% -8%, rgba(255, 255, 255, 0.72), transparent 46%),
+    radial-gradient(circle at 96% 8%, rgba(200, 222, 250, 0.34), transparent 42%),
+    linear-gradient(145deg, rgba(251, 253, 255, 0.68), rgba(240, 247, 255, 0.62) 48%, rgba(222, 234, 249, 0.56));
   --ait-overlay-shell-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.62),
-    inset 0 -1px 0 rgba(95, 127, 172, 0.08),
-    inset 10px 0 24px rgba(255, 255, 255, 0.018);
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(82, 108, 145, 0.14),
+    inset 10px 0 26px rgba(255, 255, 255, 0.08);
   --ait-overlay-shell-backdrop: none;
   --ait-overlay-shell-highlight:
-    linear-gradient(118deg, rgba(255, 255, 255, 0.2), transparent 18%, transparent 74%, rgba(150, 191, 245, 0.06)),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 18%, transparent 84%, rgba(133, 168, 215, 0.035));
+    linear-gradient(118deg, rgba(255, 255, 255, 0.42), transparent 22%, transparent 72%, rgba(150, 191, 245, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), transparent 20%, transparent 82%, rgba(133, 168, 215, 0.08));
   --ait-overlay-shell-highlight-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
-    inset 0 12px 20px rgba(255, 255, 255, 0.024);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+    inset 0 12px 24px rgba(255, 255, 255, 0.08);
 
-  --ait-overlay-divider: rgba(71, 96, 135, 0.12);
-  --ait-overlay-surface-background: rgba(255, 255, 255, 0.055);
-  --ait-overlay-surface-strong: rgba(255, 255, 255, 0.16);
-  --ait-overlay-surface-hover: rgba(255, 255, 255, 0.24);
-  --ait-overlay-surface-border: rgba(82, 108, 148, 0.16);
-  --ait-overlay-surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.38);
+  --ait-overlay-divider: rgba(62, 84, 116, 0.22);
+  --ait-overlay-surface-background: rgba(255, 255, 255, 0.3);
+  --ait-overlay-surface-strong: rgba(255, 255, 255, 0.56);
+  --ait-overlay-surface-hover: rgba(255, 255, 255, 0.68);
+  --ait-overlay-surface-border: rgba(73, 96, 130, 0.24);
+  --ait-overlay-surface-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 
-  --ait-overlay-control-background: linear-gradient(145deg, rgba(255, 255, 255, 0.24), rgba(218, 233, 253, 0.11));
-  --ait-overlay-control-hover: linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(210, 229, 253, 0.17));
-  --ait-overlay-control-border: rgba(78, 113, 167, 0.18);
-  --ait-overlay-control-border-hover: rgba(65, 104, 167, 0.3);
-  --ait-overlay-control-text: rgba(45, 94, 176, 0.88);
-  --ait-overlay-control-text-hover: rgba(32, 81, 168, 0.98);
-  --ait-overlay-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.52);
+  --ait-overlay-control-background: linear-gradient(145deg, rgba(255, 255, 255, 0.68), rgba(221, 234, 251, 0.52));
+  --ait-overlay-control-hover: linear-gradient(145deg, rgba(255, 255, 255, 0.8), rgba(215, 231, 251, 0.62));
+  --ait-overlay-control-border: rgba(66, 93, 133, 0.28);
+  --ait-overlay-control-border-hover: rgba(52, 84, 137, 0.4);
+  --ait-overlay-control-text: rgba(27, 51, 86, 0.94);
+  --ait-overlay-control-text-hover: rgba(18, 42, 81, 1);
+  --ait-overlay-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
 
-  --ait-overlay-text-primary: rgba(24, 39, 61, 0.94);
-  --ait-overlay-text-secondary: rgba(48, 69, 99, 0.78);
-  --ait-overlay-text-muted: rgba(68, 91, 127, 0.62);
-  --ait-overlay-accent: rgba(47, 95, 177, 0.92);
+  --ait-overlay-text-primary: rgba(18, 29, 45, 0.98);
+  --ait-overlay-text-secondary: rgba(37, 52, 73, 0.9);
+  --ait-overlay-text-muted: rgba(54, 72, 98, 0.78);
+  --ait-overlay-accent: rgba(35, 78, 151, 0.96);
 
-  --ait-overlay-field-background: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(232, 242, 255, 0.08));
-  --ait-overlay-field-border: rgba(81, 108, 151, 0.17);
-  --ait-overlay-field-focus-border: rgba(66, 119, 207, 0.42);
+  --ait-overlay-field-background: linear-gradient(145deg, rgba(255, 255, 255, 0.78), rgba(232, 241, 253, 0.58));
+  --ait-overlay-field-border: rgba(65, 90, 127, 0.28);
+  --ait-overlay-field-focus-border: rgba(55, 104, 186, 0.52);
   --ait-overlay-field-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.42),
-    0 4px 12px rgba(60, 89, 131, 0.035);
-  --ait-overlay-field-backdrop: blur(6px) saturate(112%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 5px 14px rgba(53, 76, 110, 0.08);
+  --ait-overlay-field-backdrop: blur(8px) saturate(108%);
 
-  --ait-overlay-popover-background: linear-gradient(145deg, rgba(255, 255, 255, 0.58), rgba(230, 241, 255, 0.39));
-  --ait-overlay-popover-border: rgba(255, 255, 255, 0.62);
+  --ait-overlay-popover-background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(230, 240, 253, 0.82));
+  --ait-overlay-popover-border: rgba(255, 255, 255, 0.9);
   --ait-overlay-popover-shadow:
-    0 18px 46px rgba(55, 75, 105, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --ait-overlay-popover-backdrop: blur(14px) saturate(124%);
+    0 18px 46px rgba(55, 75, 105, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  --ait-overlay-popover-backdrop: blur(12px) saturate(112%);
 
   color-scheme: light;
   scrollbar-color: var(--ait-overlay-scrollbar) transparent;
@@ -177,8 +178,8 @@ html[data-ait-view="overlay"] .ait-overlay-shell > header {
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-shell > header {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.025));
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.17);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(245, 249, 255, 0.38));
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.54);
 }
 
 html[data-ait-view="overlay"] .ait-overlay-source-context,
@@ -225,7 +226,7 @@ html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-trans
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation {
-  background: rgba(244, 249, 255, 0.018) !important;
+  background: rgba(244, 249, 255, 0.22) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-messages .rounded-\[15px\] {
@@ -273,35 +274,35 @@ html[data-ait-view="overlay"] .ait-overlay-context-menu {
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-scroll > button {
   border-color: var(--ait-overlay-surface-border) !important;
-  background: rgba(255, 255, 255, 0.24) !important;
+  background: rgba(255, 255, 255, 0.7) !important;
   box-shadow: var(--ait-overlay-surface-highlight) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-drag-handle {
-  color: rgba(62, 88, 129, 0.5) !important;
+  color: rgba(52, 70, 96, 0.72) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] header:hover .ait-overlay-drag-handle {
-  color: rgba(45, 71, 114, 0.7) !important;
+  color: rgba(32, 51, 80, 0.9) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-conversation-composer textarea::placeholder {
-  color: rgba(67, 91, 128, 0.52) !important;
+  color: rgba(62, 77, 99, 0.72) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu button:not(.text-rose-300) {
-  color: rgba(41, 59, 85, 0.84) !important;
+  color: rgba(28, 40, 58, 0.94) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu button:not(.text-rose-300):hover {
-  background: rgba(255, 255, 255, 0.3) !important;
-  color: rgba(24, 43, 74, 0.98) !important;
+  background: rgba(255, 255, 255, 0.72) !important;
+  color: rgba(15, 29, 52, 1) !important;
 }
 
 html[data-ait-view="overlay"][data-ait-overlay-theme="light"] .ait-overlay-context-menu kbd {
-  border-color: rgba(79, 104, 143, 0.14) !important;
-  background: rgba(255, 255, 255, 0.22) !important;
-  color: rgba(60, 82, 116, 0.7) !important;
+  border-color: rgba(66, 88, 121, 0.2) !important;
+  background: rgba(255, 255, 255, 0.62) !important;
+  color: rgba(45, 61, 85, 0.82) !important;
 }
 
 /* Tailwind utility remap for legacy component markup inside the light shell. */

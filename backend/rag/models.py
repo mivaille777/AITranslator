@@ -69,9 +69,14 @@ class DocumentChunk(RagContractModel):
     text: str = Field(min_length=1)
     title: str = ""
     section_heading: str = ""
+    section_path: list[str] = Field(default_factory=list)
+    hierarchy_level: int = Field(default=0, ge=0, le=6)
+    parent_section_id: str = ""
+    chunk_type: str = "paragraph_group"
     page_number: int | None = Field(default=None, ge=1)
     chunk_index: int = Field(ge=0)
     paragraph_index: int | None = Field(default=None, ge=0)
+    paragraph_end_index: int | None = Field(default=None, ge=0)
     start_char: int = Field(default=0, ge=0)
     end_char: int = Field(default=0, ge=0)
     token_count: int = Field(default=0, ge=0)
@@ -87,6 +92,14 @@ class DocumentChunk(RagContractModel):
     def validate_character_range(self) -> "DocumentChunk":
         if self.end_char < self.start_char:
             raise ValueError("end_char must be greater than or equal to start_char")
+        if (
+            self.paragraph_index is not None
+            and self.paragraph_end_index is not None
+            and self.paragraph_end_index < self.paragraph_index
+        ):
+            raise ValueError(
+                "paragraph_end_index must be greater than or equal to paragraph_index"
+            )
         return self
 
 

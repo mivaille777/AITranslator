@@ -15,11 +15,12 @@ def _candidate(
     section: str,
     page: int,
     chunk_index: int,
+    document_id: str = "wen-paper",
 ) -> RetrievalCandidate:
     return RetrievalCandidate(
         chunk=DocumentChunk(
             chunk_id=chunk_id,
-            document_id="wen-paper",
+            document_id=document_id,
             title="An experiment of using a large language model to control a water tank system",
             text=f"{section}\nEvidence {chunk_id}",
             section_heading=section,
@@ -84,6 +85,36 @@ def test_structural_promotion_keeps_reference_chunks_first_and_in_document_order
     ]
     assert promoted.metadata["structural_intent"] == "bibliography"
     assert promoted.metadata["structural_match_count"] == 2
+
+
+def test_structural_promotion_preserves_cross_document_relevance_order() -> None:
+    result = RetrievalResult(
+        query="references",
+        candidates=[
+            _candidate(
+                "more-relevant",
+                section="References",
+                page=12,
+                chunk_index=9,
+                document_id="z-document",
+            ),
+            _candidate(
+                "less-relevant",
+                section="References",
+                page=2,
+                chunk_index=1,
+                document_id="a-document",
+            ),
+        ],
+    )
+    intent = detect_structural_intent("参考文献有哪些")
+
+    promoted = promote_structural_candidates(result, intent=intent, limit=2)
+
+    assert [item.chunk.chunk_id for item in promoted.candidates] == [
+        "more-relevant",
+        "less-relevant",
+    ]
 
 
 def test_section_heading_normalization_removes_number_prefixes() -> None:

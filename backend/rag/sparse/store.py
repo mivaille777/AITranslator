@@ -12,6 +12,7 @@ from backend.rag.models import DocumentChunk, RetrievalCandidate
 from backend.rag.sparse.bm25 import BM25Index
 from backend.rag.sparse.tokenizer import SparseTokenizer
 from backend.rag.stores.base import VectorSearchFilter
+from backend.rag.structure_retrieval import normalize_section_heading
 
 
 @runtime_checkable
@@ -21,6 +22,13 @@ class SparseRetriever(Protocol):
     def search(
         self,
         query: str,
+        top_k: int,
+        filters: VectorSearchFilter | None = None,
+    ) -> list[RetrievalCandidate]: ...
+
+    def search_sections(
+        self,
+        headings: tuple[str, ...],
         top_k: int,
         filters: VectorSearchFilter | None = None,
     ) -> list[RetrievalCandidate]: ...
@@ -85,6 +93,59 @@ class BM25SparseRetriever:
             for rank, (chunk_id, score) in enumerate(ranked, start=1)
         ]
 
+    def search_sections(
+        self,
+        headings: tuple[str, ...],
+        top_k: int,
+        filters: VectorSearchFilter | None = None,
+    ) -> list[RetrievalCandidate]:
+        if top_k <= 0:
+            raise ValueError("top_k must be positive")
+        aliases = tuple(
+            normalized
+            for normalized in (normalize_section_heading(item) for item in headings)
+            if normalized
+        )
+        if not aliases:
+            return []
+
+        matches: list[tuple[int, DocumentChunk]] = []
+        for chunk in self._data.chunks.values():
+            if not self._matches_filter(chunk, filters):
+                continue
+            heading = normalize_section_heading(chunk.section_heading)
+            prefix = normalize_section_heading(chunk.text[:180])
+            priority = 0
+            if heading in aliases:
+                priority = 3
+            elif heading and any(
+                heading.startswith(alias) or alias in heading for alias in aliases
+            ):
+                priority = 2
+            elif any(prefix.startswith(alias) for alias in aliases):
+                priority = 1
+            if priority:
+                matches.append((priority, chunk))
+
+        matches.sort(
+            key=lambda item: (
+                -item[0],
+                item[1].document_id,
+                item[1].page_number if item[1].page_number is not None else 10**9,
+                item[1].chunk_index,
+                item[1].chunk_id,
+            )
+        )
+        return [
+            RetrievalCandidate(
+                chunk=chunk.model_copy(deep=True),
+                sparse_score=float(priority),
+                rank=rank,
+                metadata={"structural_section_match": True},
+            )
+            for rank, (priority, chunk) in enumerate(matches[:top_k], start=1)
+        ]
+
     def delete_document(self, document_id: str) -> None:
         self._data.chunks = {
             chunk_id: chunk
@@ -104,10 +165,19 @@ class BM25SparseRetriever:
     def _rebuild_index(self) -> None:
         self._index.rebuild(
             {
-                chunk_id: self._tokenizer.tokenize(chunk.text)
+                chunk_id: self._tokenizer.tokenize(self._search_text(chunk))
                 for chunk_id, chunk in self._data.chunks.items()
             }
         )
+
+    @staticmethod
+    def _search_text(chunk: DocumentChunk) -> str:
+        parts = [
+            chunk.title.strip(),
+            chunk.section_heading.strip(),
+            chunk.text,
+        ]
+        return "\n".join(part for part in parts if part)
 
     @staticmethod
     def _matches_filter(

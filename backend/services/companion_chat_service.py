@@ -101,7 +101,10 @@ class CompanionChatService:
                 subqueries=[],
             )
         )
-        structural_intent = detect_structural_intent(query)
+        structural_intent = (
+            detect_structural_intent(query)
+            or detect_structural_intent(plan.rewritten_query)
+        )
         retrieval_queries = build_structural_queries(
             plan.retrieval_queries,
             original_query=query,

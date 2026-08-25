@@ -184,10 +184,25 @@ elseif (-not (Test-Path $NodeModules)) {
     throw "Frontend node_modules is missing. Run '.\start.ps1 -InstallDependencies' once, or run 'npm ci' from apps\desktop."
 }
 
-# Do not import/load the actual Qwen models here. Startup must stay lightweight.
-# These checks only report whether the optional scientific-PDF and embedding
-# Python packages are visible in the active environment.
-python -c "import importlib.util as u; print('Docling           :', 'available' if u.find_spec('docling') else 'not installed (pypdf fallback)'); print('sentence-transformers:', 'available' if u.find_spec('sentence_transformers') else 'missing')"
+# Do not load the actual Qwen models here. Import-level probes are sufficient
+# to surface the most common local RAG environment mistakes before startup.
+$RagRuntimeProbe = @'
+import importlib.metadata as metadata
+import importlib.util as util
+
+print("Docling           :", metadata.version("docling") if util.find_spec("docling") else "not installed (pypdf fallback)")
+print("sentence-transformers:", metadata.version("sentence-transformers") if util.find_spec("sentence_transformers") else "missing")
+if util.find_spec("torch"):
+    import torch
+    print("Torch             :", torch.__version__)
+    print("Torch CUDA        :", torch.version.cuda)
+    print("CUDA available    :", torch.cuda.is_available())
+    print("GPU               :", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "none")
+else:
+    print("Torch             : missing")
+    print("CUDA available    : False")
+'@
+python -c $RagRuntimeProbe
 Assert-LastExitCode "Unable to inspect local RAG Python dependencies."
 
 Write-Host ""

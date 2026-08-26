@@ -29,6 +29,9 @@ def rrf_fuse(
                     "sparse_score": existing.sparse_score
                     if existing.sparse_score is not None
                     else candidate.sparse_score,
+                    "context_window": existing.context_window
+                    if existing.context_window is not None
+                    else candidate.context_window,
                 }
                 merged[chunk_id] = existing.model_copy(update=updates)
 

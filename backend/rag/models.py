@@ -103,6 +103,29 @@ class DocumentChunk(RagContractModel):
         return self
 
 
+class RetrievalContextWindow(RagContractModel):
+    """Supplemental same-section context anchored to one true retrieval hit."""
+
+    anchor_chunk_id: str = Field(min_length=1)
+    chunks: list[DocumentChunk] = Field(default_factory=list)
+    text: str = ""
+    token_count: int = Field(default=0, ge=0)
+    page_start: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
+    strategy: str = "small-to-big"
+
+    @model_validator(mode="after")
+    def validate_window(self) -> "RetrievalContextWindow":
+        if self.page_start is not None and self.page_end is not None:
+            if self.page_end < self.page_start:
+                raise ValueError("page_end must not be smaller than page_start")
+        if self.chunks and self.anchor_chunk_id not in {
+            chunk.chunk_id for chunk in self.chunks
+        }:
+            raise ValueError("context window must contain its anchor chunk")
+        return self
+
+
 class RetrievalCandidate(RagContractModel):
     chunk: DocumentChunk
     dense_score: float | None = None
@@ -110,6 +133,7 @@ class RetrievalCandidate(RagContractModel):
     fusion_score: float | None = None
     rerank_score: float | None = None
     rank: int | None = Field(default=None, ge=1)
+    context_window: RetrievalContextWindow | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -156,6 +180,7 @@ __all__ = [
     "NormalizedDocument",
     "RagContractModel",
     "RetrievalCandidate",
+    "RetrievalContextWindow",
     "RetrievalResult",
     "build_stable_chunk_id",
 ]

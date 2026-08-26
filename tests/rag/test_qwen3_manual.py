@@ -1,20 +1,16 @@
 import time
 
-import numpy as np
-import torch
-from sentence_transformers import SentenceTransformer
-
 
 MODEL_NAME = "Qwen/Qwen3-Embedding-0.6B"
 
 
-def print_gpu_memory(prefix: str) -> None:
-    if not torch.cuda.is_available():
+def print_gpu_memory(prefix: str, torch_module) -> None:
+    if not torch_module.cuda.is_available():
         return
 
-    allocated = torch.cuda.memory_allocated() / 1024**3
-    reserved = torch.cuda.memory_reserved() / 1024**3
-    free, total = torch.cuda.mem_get_info()
+    allocated = torch_module.cuda.memory_allocated() / 1024**3
+    reserved = torch_module.cuda.memory_reserved() / 1024**3
+    free, total = torch_module.cuda.mem_get_info()
 
     print(f"{prefix}")
     print(f"  allocated : {allocated:.2f} GB")
@@ -24,6 +20,17 @@ def print_gpu_memory(prefix: str) -> None:
 
 
 def main() -> None:
+    try:
+        import numpy as np
+        import torch
+        from sentence_transformers import SentenceTransformer
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "This manual Qwen3 embedding test requires numpy, torch, and "
+            "sentence-transformers. Install the local embedding dependencies "
+            "before running it directly."
+        ) from exc
+
     print("=" * 70)
     print("AITrans - Qwen3-Embedding-0.6B GPU Test")
     print("=" * 70)
@@ -37,7 +44,7 @@ def main() -> None:
 
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print_gpu_memory("Before model loading")
+        print_gpu_memory("Before model loading", torch)
 
     print()
     print(f"Loading model: {MODEL_NAME}")
@@ -53,7 +60,7 @@ def main() -> None:
 
     print(f"Model loaded in {load_time:.2f} s")
 
-    print_gpu_memory("After model loading")
+    print_gpu_memory("After model loading", torch)
 
     queries = [
         "How can Gaussian process optimization improve PID tuning?",
@@ -128,7 +135,7 @@ def main() -> None:
     print()
     print(f"Embedding time: {inference_time:.4f} s")
 
-    print_gpu_memory("After inference")
+    print_gpu_memory("After inference", torch)
 
     print()
     print("Best matching document for each query:")

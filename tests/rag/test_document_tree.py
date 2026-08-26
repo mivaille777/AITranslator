@@ -3,7 +3,12 @@ from __future__ import annotations
 from hashlib import sha256
 
 from backend.rag.document_tree import DocumentTreeBuilder
-from backend.rag.models import DocumentPage, DocumentSection, KnowledgeDocument, NormalizedDocument
+from backend.rag.models import (
+    DocumentPage,
+    DocumentSection,
+    KnowledgeDocument,
+    NormalizedDocument,
+)
 
 
 def _document(
@@ -86,8 +91,61 @@ def test_retains_paragraphs_as_atomic_source_spans() -> None:
         "First paragraph.",
         "Second paragraph.",
     ]
+    assert [paragraph.block_type for paragraph in paragraphs] == [
+        "heading",
+        "paragraph",
+        "paragraph",
+    ]
     assert all(text[p.start_char : p.end_char] == p.text for p in paragraphs)
     assert [p.paragraph_index for p in paragraphs] == [0, 1, 2]
+
+
+def test_classifies_table_figure_and_equation_blocks() -> None:
+    text = (
+        "4 Results\n\n"
+        "Table 2. Method comparison.\n\n"
+        "| Method | J |\n|---|---|\n| M10 | 0.40 |\n\n"
+        "Fig. 3. Closed-loop response.\n\n"
+        "The response settles quickly.\n\n"
+        "$$\nJ = IAE + 0.1 U\n$$"
+    )
+    sections = [_section(text, "4 Results", 1, 0, len(text))]
+
+    blocks = DocumentTreeBuilder.build(_document(text, sections=sections)).sections[0].paragraphs
+
+    assert [block.block_type for block in blocks] == [
+        "heading",
+        "table_caption",
+        "table",
+        "figure_caption",
+        "paragraph",
+        "equation",
+    ]
+    assert blocks[1].label.lower().startswith("table 2")
+    assert blocks[3].label.lower().startswith("fig. 3")
+    assert blocks[5].label == "equation"
+
+
+def test_reference_section_is_split_into_reference_entries() -> None:
+    text = (
+        "6. References\n\n"
+        "[1] A. Author, First paper.\n"
+        "[2] B. Author, Second paper.\n"
+        "[3] C. Author, Third paper."
+    )
+    sections = [_section(text, "6. References", 1, 0, len(text))]
+
+    section = DocumentTreeBuilder.build(_document(text, sections=sections)).sections[0]
+    entries = [block for block in section.paragraphs if block.block_type == "reference_entry"]
+
+    assert section.metadata["reference_section"] is True
+    assert [entry.label for entry in entries] == ["[1]", "[2]", "[3]"]
+    assert [entry.text for entry in entries] == [
+        "[1] A. Author, First paper.",
+        "[2] B. Author, Second paper.",
+        "[3] C. Author, Third paper.",
+    ]
+    assert all(text[item.start_char : item.end_char] == item.text for item in entries)
 
 
 def test_paragraph_nodes_retain_page_ranges() -> None:

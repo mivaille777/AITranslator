@@ -9,6 +9,7 @@ from backend.rag.models import (
     DocumentChunk,
     KnowledgeDocument,
     RetrievalCandidate,
+    RetrievalContextWindow,
     RetrievalResult,
     build_stable_chunk_id,
 )
@@ -101,3 +102,44 @@ def test_retrieval_result_round_trip_preserves_scores() -> None:
     assert restored.query == result.query
     assert restored.candidates[0].chunk.document_id == "doc_001"
     assert restored.candidates[0].rerank_score == pytest.approx(0.92)
+
+
+def test_retrieval_result_round_trip_preserves_small_to_big_window() -> None:
+    anchor = make_chunk(
+        chunk_id="anchor",
+        section_path=["3 Methodology", "3.2 GP"],
+        chunk_index=1,
+    )
+    neighbor = make_chunk(
+        chunk_id="neighbor",
+        text="The following paragraph explains the mechanism.",
+        section_path=["3 Methodology", "3.2 GP"],
+        chunk_index=2,
+        start_char=41,
+        end_char=88,
+    )
+    result = RetrievalResult(
+        query="What is the role of GP?",
+        candidates=[
+            RetrievalCandidate(
+                chunk=anchor,
+                rank=1,
+                context_window=RetrievalContextWindow(
+                    anchor_chunk_id="anchor",
+                    chunks=[anchor, neighbor],
+                    text=f"{anchor.text}\n\n{neighbor.text}",
+                    token_count=16,
+                    page_start=2,
+                    page_end=2,
+                ),
+            )
+        ],
+    )
+
+    restored = RetrievalResult.model_validate_json(result.model_dump_json())
+
+    window = restored.candidates[0].context_window
+    assert window is not None
+    assert window.anchor_chunk_id == "anchor"
+    assert [chunk.chunk_id for chunk in window.chunks] == ["anchor", "neighbor"]
+    assert "following paragraph" in window.text

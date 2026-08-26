@@ -9,9 +9,11 @@ from langgraph.runtime import Runtime
 from backend.agent_core.events import AgentEventType
 from backend.agent_core.exceptions import AgentRuntimeError
 from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
-from backend.agent_core.reliability import AgentRunControl
+from backend.agent_core.reliability import AgentRunControl, run_react_decision_with_timeout
 from backend.agent_core.state import AgentState
-from backend.models.agent_runtime import AgentRouteDecision
+from backend.models.agent_react import AgentObservation, AgentReActDecision
+from backend.models.agent_runtime import AgentPlanStep, AgentRouteDecision
+from backend.services.agent_react_decision_service import AgentReActDecisionService
 
 
 GraphEventSink = Callable[[AgentEventType, dict[str, Any]], None]
@@ -91,23 +93,32 @@ def _merge_emitted(existing: object, new_items: set[AgentEventType]) -> list[str
 class ReadingAgentGraph:
     """Bounded LangGraph workflow for the AITrans Reading Agent.
 
-    Stage 10.6 keeps deterministic/single-step requests on the established fast
-    path and expands only ``complex`` routes into a bounded multi-step plan.
-    Retrieval, citations, and web research remain later stages.
+    Deterministic and single-tool requests stay on the established direct path.
+    Only ``complex`` routes enter a bounded ReAct loop where the model chooses
+    one registered Tool or Final per iteration and every Tool result is converted
+    into a compact observation before the next decision. Tool execution, safe
+    retries, RAG grounding, and write confirmation remain owned by the existing
+    ProductAgentService boundary.
     """
 
     node_names = (
         "prepare_conversation",
         "route_request",
         "execute_direct",
-        "plan_multi_step",
-        "execute_plan_step",
-        "synthesize_multi_step",
+        "start_react",
+        "decide_react",
+        "execute_react_tool",
+        "finalize_react",
         "finalize_conversation",
     )
 
-    def __init__(self, adapter: ProductAgentRuntimeAdapter) -> None:
+    def __init__(
+        self,
+        adapter: ProductAgentRuntimeAdapter,
+        react_decision_service: AgentReActDecisionService | Any | None = None,
+    ) -> None:
         self._adapter = adapter
+        self._react_decision_service = react_decision_service or AgentReActDecisionService()
         builder = StateGraph(
             ReadingAgentGraphState,
             context_schema=ReadingAgentRuntimeContext,
@@ -115,9 +126,10 @@ class ReadingAgentGraph:
         builder.add_node("prepare_conversation", self._prepare_conversation)
         builder.add_node("route_request", self._route_request)
         builder.add_node("execute_direct", self._execute_direct)
-        builder.add_node("plan_multi_step", self._plan_multi_step)
-        builder.add_node("execute_plan_step", self._execute_plan_step)
-        builder.add_node("synthesize_multi_step", self._synthesize_multi_step)
+        builder.add_node("start_react", self._start_react)
+        builder.add_node("decide_react", self._decide_react)
+        builder.add_node("execute_react_tool", self._execute_react_tool)
+        builder.add_node("finalize_react", self._finalize_react)
         builder.add_node("finalize_conversation", self._finalize_conversation)
 
         builder.add_edge(START, "prepare_conversation")
@@ -126,22 +138,31 @@ class ReadingAgentGraph:
             "route_request",
             self._route_branch,
             {
-                "complex": "plan_multi_step",
+                "complex": "start_react",
                 "direct": "execute_direct",
             },
         )
         builder.add_edge("execute_direct", "finalize_conversation")
-        builder.add_edge("plan_multi_step", "execute_plan_step")
+        builder.add_edge("start_react", "decide_react")
         builder.add_conditional_edges(
-            "execute_plan_step",
-            self._plan_step_branch,
+            "decide_react",
+            self._decision_branch,
             {
-                "continue": "execute_plan_step",
-                "synthesize": "synthesize_multi_step",
-                "finalize": "finalize_conversation",
+                "tool": "execute_react_tool",
+                "final": "finalize_react",
+                "limit": "finalize_react",
             },
         )
-        builder.add_edge("synthesize_multi_step", "finalize_conversation")
+        builder.add_conditional_edges(
+            "execute_react_tool",
+            self._observation_branch,
+            {
+                "continue": "decide_react",
+                "finalize": "finalize_react",
+                "confirmation": "finalize_conversation",
+            },
+        )
+        builder.add_edge("finalize_react", "finalize_conversation")
         builder.add_edge("finalize_conversation", END)
         self._compiled = builder.compile()
 
@@ -161,6 +182,37 @@ class ReadingAgentGraph:
             _load_conversation_run(graph_state.get("conversation_run")),
             exc,
         )
+
+    def _registered_tools(self) -> tuple[Any, ...]:
+        service = getattr(self._adapter, "_service", None)
+        list_tools = getattr(service, "list_tools", None)
+        if callable(list_tools):
+            return tuple(list_tools())
+        registry = getattr(service, "_registry", None)
+        list_tools = getattr(registry, "list_tools", None)
+        if callable(list_tools):
+            return tuple(list_tools())
+        return ()
+
+    def _emit_react_limit(
+        self,
+        state: AgentState,
+        emit: GraphEventSink | None,
+        *,
+        reason: str,
+    ) -> set[AgentEventType]:
+        state.mark_react_status("limit_reached")
+        if emit is None:
+            return set()
+        emit(
+            AgentEventType.REACT_LIMIT_REACHED,
+            {
+                "iteration": state.react.iteration,
+                "tool_call_count": len(state.tool_calls),
+                "reason": reason,
+            },
+        )
+        return {AgentEventType.REACT_LIMIT_REACHED}
 
     def _prepare_conversation(
         self,
@@ -223,33 +275,36 @@ class ReadingAgentGraph:
             ),
         }
 
-    def _plan_multi_step(
+    def _start_react(
         self,
         graph_state: ReadingAgentGraphState,
         runtime: Runtime[ReadingAgentRuntimeContext],
     ) -> dict[str, Any]:
         state = _coerce_agent_state(graph_state["agent_state"])
-        emit, control = self._runtime(runtime)
-        try:
-            plan, metadata = self._adapter.plan_multi_step(state, control=control)
-        except Exception as exc:
-            self._abort(graph_state, exc)
-            raise
-
+        emit, _control = self._runtime(runtime)
+        state.start_react()
+        emitted: set[AgentEventType] = set()
         if emit is not None:
+            route_metadata = dict(graph_state.get("route_metadata", {}) or {})
             emit(
                 AgentEventType.PLAN_READY,
                 {
-                    "mode": "multi_step",
-                    "goal": plan.goal,
-                    "steps": [step.model_dump(mode="json") for step in plan.steps],
+                    "mode": "react",
                     "route_kind": state.route.kind,
                     "route_source": state.route.source,
                     "request_id": state.execution.request_id,
-                    **metadata,
+                    **route_metadata,
                 },
             )
-        emitted = {AgentEventType.PLAN_READY} if emit is not None else set()
+            emit(
+                AgentEventType.REACT_STARTED,
+                {
+                    "max_iterations": _control.policy.max_react_iterations,
+                    "max_tool_calls": _control.policy.max_tool_calls,
+                    "request_id": state.execution.request_id,
+                },
+            )
+            emitted.update({AgentEventType.PLAN_READY, AgentEventType.REACT_STARTED})
         return {
             "agent_state": _dump_agent_state(state),
             "emitted_event_types": _merge_emitted(
@@ -258,103 +313,281 @@ class ReadingAgentGraph:
             ),
         }
 
-    def _execute_plan_step(
+    def _decide_react(
         self,
         graph_state: ReadingAgentGraphState,
         runtime: Runtime[ReadingAgentRuntimeContext],
     ) -> dict[str, Any]:
         state = _coerce_agent_state(graph_state["agent_state"])
         emit, control = self._runtime(runtime)
-        pending = next(
-            (
-                step
-                for step in state.plan.steps
-                if step.step_id == state.plan.current_step_id
-            ),
-            None,
-        )
-        if pending is None:
-            pending = next((step for step in state.plan.steps if step.status == "pending"), None)
-        if pending is None:
-            return {"agent_state": _dump_agent_state(state)}
-
-        if len(state.tool_calls) >= control.policy.max_tool_calls:
-            exc = AgentRuntimeError(
-                "Multi-step Agent tool-call budget exhausted.",
-                stage="planner",
-                fallback_reason="tool_call_budget_exhausted",
-            )
-            self._abort(graph_state, exc)
-            raise exc
-
-        completed_ids = {
-            step.step_id for step in state.plan.steps if step.status == "completed"
-        }
-        if any(dependency not in completed_ids for dependency in pending.depends_on):
-            exc = AgentRuntimeError(
-                f"Plan step {pending.step_id} has unsatisfied dependencies.",
-                stage="planner",
-                fallback_reason="invalid_plan_dependency",
-            )
-            self._abort(graph_state, exc)
-            raise exc
-
-        state.mark_plan_step(pending.step_id, "running")
-        try:
-            state, emitted = self._adapter.execute_plan_step(
+        if state.react.iteration >= control.policy.max_react_iterations:
+            emitted = self._emit_react_limit(
                 state,
-                pending,
                 emit,
+                reason="iteration_budget_exhausted",
+            )
+            return {
+                "agent_state": _dump_agent_state(state),
+                "emitted_event_types": _merge_emitted(
+                    graph_state.get("emitted_event_types", ()), emitted
+                ),
+            }
+
+        tools = self._registered_tools()
+        if not tools:
+            exc = AgentRuntimeError(
+                "Complex ReAct route has no registered tools.",
+                stage="react_decision",
+                fallback_reason="missing_tool_registry",
+            )
+            self._abort(graph_state, exc)
+            raise exc
+
+        iteration = state.react.iteration + 1
+        payload = self._adapter.build_payload(state)
+        try:
+            decision = run_react_decision_with_timeout(
+                lambda: self._react_decision_service.decide(
+                    iteration=iteration,
+                    tools=tools,
+                    observations=tuple(state.react.observations),
+                    max_observation_chars=control.policy.max_observation_chars,
+                    **payload,
+                ),
                 control=control,
             )
+            state.record_react_decision(decision)
         except Exception as exc:
-            state.mark_plan_step(pending.step_id, "failed")
+            state.mark_react_status("failed")
             self._abort(graph_state, exc)
             raise
 
-        if state.response_state.status == "confirmation_required":
-            state.mark_plan_step(pending.step_id, "pending")
-        else:
-            state.mark_plan_step(pending.step_id, "completed")
-
+        emitted: set[AgentEventType] = set()
+        if emit is not None:
+            emit(
+                AgentEventType.DECISION_READY,
+                {
+                    "iteration": decision.iteration,
+                    "kind": decision.kind,
+                    "tool_name": decision.tool_name,
+                    "argument_keys": sorted(decision.arguments),
+                    "action_summary": decision.action_summary,
+                    "provider": str(
+                        getattr(self._react_decision_service, "provider_name", "") or ""
+                    ),
+                    "model": str(
+                        getattr(self._react_decision_service, "model", "") or ""
+                    ),
+                    "prompt_id": str(
+                        getattr(self._react_decision_service, "prompt_id", "") or ""
+                    ),
+                },
+            )
+            emitted.add(AgentEventType.DECISION_READY)
         return {
             "agent_state": _dump_agent_state(state),
             "emitted_event_types": _merge_emitted(
-                graph_state.get("emitted_event_types", ()),
-                emitted,
+                graph_state.get("emitted_event_types", ()), emitted
             ),
         }
 
     @staticmethod
-    def _plan_step_branch(graph_state: ReadingAgentGraphState) -> str:
+    def _decision_branch(graph_state: ReadingAgentGraphState) -> str:
         state = _coerce_agent_state(graph_state["agent_state"])
-        if state.response_state.status == "confirmation_required":
-            return "finalize"
-        if any(step.status == "pending" for step in state.plan.steps):
-            return "continue"
-        return "synthesize"
+        if state.react.status == "limit_reached":
+            return "limit"
+        decision = state.react.last_decision
+        if decision is None:
+            raise AgentRuntimeError(
+                "ReAct decision node completed without a decision.",
+                stage="react_decision",
+                fallback_reason="missing_react_decision",
+            )
+        return "tool" if decision.kind == "tool" else "final"
 
-    def _synthesize_multi_step(
+    def _execute_react_tool(
         self,
         graph_state: ReadingAgentGraphState,
         runtime: Runtime[ReadingAgentRuntimeContext],
     ) -> dict[str, Any]:
         state = _coerce_agent_state(graph_state["agent_state"])
         emit, control = self._runtime(runtime)
-        try:
-            state, emitted = self._adapter.synthesize_multi_step(
+        decision = state.react.last_decision
+        if decision is None or decision.kind != "tool":
+            exc = AgentRuntimeError(
+                "ReAct action node requires a tool decision.",
+                stage="react_action",
+                fallback_reason="invalid_react_action",
+            )
+            self._abort(graph_state, exc)
+            raise exc
+
+        if len(state.tool_calls) >= control.policy.max_tool_calls:
+            emitted = self._emit_react_limit(
                 state,
+                emit,
+                reason="tool_call_budget_exhausted",
+            )
+            return {
+                "agent_state": _dump_agent_state(state),
+                "emitted_event_types": _merge_emitted(
+                    graph_state.get("emitted_event_types", ()), emitted
+                ),
+            }
+
+        step = AgentPlanStep(
+            step_id=f"react-{decision.iteration}",
+            tool_name=decision.tool_name,
+            arguments=dict(decision.arguments),
+        )
+        try:
+            state, emitted = self._adapter.execute_plan_step(
+                state,
+                step,
                 emit,
                 control=control,
             )
         except Exception as exc:
+            state.mark_react_status("failed")
             self._abort(graph_state, exc)
             raise
+
+        if state.response_state.status == "confirmation_required":
+            state.mark_react_status("confirmation_required")
+            return {
+                "agent_state": _dump_agent_state(state),
+                "emitted_event_types": _merge_emitted(
+                    graph_state.get("emitted_event_types", ()), emitted
+                ),
+            }
+
+        result = state.tool_results[-1] if state.tool_results else {}
+        summary = str(result.get("output_text", "") or "").strip()
+        if not summary:
+            summary = f"{decision.tool_name} completed."
+        summary = summary[: control.policy.max_observation_chars]
+        observation = AgentObservation(
+            iteration=decision.iteration,
+            tool_name=decision.tool_name,
+            success=True,
+            summary=summary,
+            evidence_ids=[item.evidence_id for item in state.evidence],
+            citation_ids=[item.citation_id for item in state.citations],
+        )
+        state.record_react_observation(observation)
+
+        if emit is not None:
+            emit(
+                AgentEventType.OBSERVATION_READY,
+                {
+                    "observation_id": observation.observation_id,
+                    "iteration": observation.iteration,
+                    "tool_name": observation.tool_name,
+                    "success": observation.success,
+                    "summary_chars": len(observation.summary),
+                    "evidence_count": len(observation.evidence_ids),
+                    "citation_count": len(observation.citation_ids),
+                },
+            )
+            emitted.add(AgentEventType.OBSERVATION_READY)
+
+        if len(state.tool_calls) >= control.policy.max_tool_calls:
+            emitted.update(
+                self._emit_react_limit(
+                    state,
+                    emit,
+                    reason="tool_call_budget_exhausted",
+                )
+            )
+        elif state.react.iteration >= control.policy.max_react_iterations:
+            emitted.update(
+                self._emit_react_limit(
+                    state,
+                    emit,
+                    reason="iteration_budget_exhausted",
+                )
+            )
+
         return {
             "agent_state": _dump_agent_state(state),
             "emitted_event_types": _merge_emitted(
-                graph_state.get("emitted_event_types", ()),
-                emitted,
+                graph_state.get("emitted_event_types", ()), emitted
+            ),
+        }
+
+    @staticmethod
+    def _observation_branch(graph_state: ReadingAgentGraphState) -> str:
+        state = _coerce_agent_state(graph_state["agent_state"])
+        if state.response_state.status == "confirmation_required":
+            return "confirmation"
+        if state.react.status == "limit_reached":
+            return "finalize"
+        return "continue"
+
+    def _finalize_react(
+        self,
+        graph_state: ReadingAgentGraphState,
+        runtime: Runtime[ReadingAgentRuntimeContext],
+    ) -> dict[str, Any]:
+        state = _coerce_agent_state(graph_state["agent_state"])
+        emit, control = self._runtime(runtime)
+        emitted: set[AgentEventType] = set()
+
+        try:
+            if state.tool_results:
+                state, emitted = self._adapter.synthesize_multi_step(
+                    state,
+                    emit,
+                    control=control,
+                )
+            else:
+                decision: AgentReActDecision | None = state.react.last_decision
+                if decision is None or decision.kind != "final" or not decision.final_answer:
+                    raise AgentRuntimeError(
+                        "ReAct reached its execution limit before producing an answer or observation.",
+                        stage="react_finalize",
+                        fallback_reason="react_limit_without_observation",
+                    )
+                state.ui_mode = "assistant"
+                state.apply_response(
+                    {
+                        "status": "completed",
+                        "output_text": decision.final_answer,
+                        "provider": str(
+                            getattr(self._react_decision_service, "provider_name", "") or ""
+                        ),
+                        "model": str(
+                            getattr(self._react_decision_service, "model", "") or ""
+                        ),
+                        "request_id": state.execution.request_id,
+                    }
+                )
+                if emit is not None:
+                    emit(
+                        AgentEventType.SYNTHESIS_READY,
+                        {
+                            "source": "react_decision",
+                            "provider": state.response_state.provider,
+                            "model": state.response_state.model,
+                            "request_id": state.execution.request_id,
+                            "prompt_id": str(
+                                getattr(self._react_decision_service, "prompt_id", "") or ""
+                            ),
+                            "grounded": False,
+                        },
+                    )
+                    emitted.add(AgentEventType.SYNTHESIS_READY)
+        except Exception as exc:
+            state.mark_react_status("failed")
+            self._abort(graph_state, exc)
+            raise
+
+        if state.react.status != "limit_reached":
+            state.mark_react_status("completed")
+        return {
+            "agent_state": _dump_agent_state(state),
+            "emitted_event_types": _merge_emitted(
+                graph_state.get("emitted_event_types", ()), emitted
             ),
         }
 
@@ -414,6 +647,9 @@ class ReadingAgentGraph:
 
     def close(self) -> None:
         self._adapter.close()
+        close = getattr(self._react_decision_service, "close", None)
+        if callable(close):
+            close()
 
 
 __all__ = [

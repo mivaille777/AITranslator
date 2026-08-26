@@ -46,19 +46,31 @@ class AgentPlannerService:
         security_service: AgentSecurityService | None = None,
         context_budget: ContextBudgetManager | None = None,
     ) -> None:
-        self._text_service = text_service or AITextService()
+        # Keep provider construction lazy. ProductAgentService may be used with a
+        # deterministic/forced route in tests and should not require a real API
+        # key merely because the semantic planner object exists.
+        self._text_service = text_service
         self._prompt_registry = prompt_registry or PromptRegistry((AGENT_PLANNER_PROMPT,))
         self._security = security_service or AgentSecurityService()
         self._context_budget = context_budget or ContextBudgetManager(
             max_chars=AGENT_PLANNER_CONTEXT_MAX_CHARS
         )
 
+    def _get_text_service(self) -> AITextService | Any:
+        if self._text_service is None:
+            self._text_service = AITextService()
+        return self._text_service
+
     @property
     def provider_name(self) -> str:
+        if self._text_service is None:
+            return "unknown"
         return str(getattr(self._text_service, "provider_name", "")).strip() or "unknown"
 
     @property
     def model(self) -> str:
+        if self._text_service is None:
+            return "unknown"
         return str(getattr(self._text_service, "model", "")).strip() or "unknown"
 
     @property
@@ -66,7 +78,8 @@ class AgentPlannerService:
         return self._prompt_registry.get("agent.planner").prompt_id
 
     def _client(self) -> Any:
-        provider = getattr(self._text_service, "provider", None)
+        text_service = self._get_text_service()
+        provider = getattr(text_service, "provider", None)
         client = getattr(provider, "client", None)
         complete = getattr(client, "complete", None)
         if not callable(complete):
@@ -211,6 +224,8 @@ class AgentPlannerService:
         return self._security.validate_plan(plan, tools=tools)
 
     def close(self) -> None:
+        if self._text_service is None:
+            return
         close = getattr(self._text_service, "close", None)
         if callable(close):
             close()

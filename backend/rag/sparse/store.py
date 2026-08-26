@@ -33,6 +33,12 @@ class SparseRetriever(Protocol):
         filters: VectorSearchFilter | None = None,
     ) -> list[RetrievalCandidate]: ...
 
+    def section_neighbors(
+        self,
+        anchor: DocumentChunk,
+        radius: int,
+    ) -> list[DocumentChunk]: ...
+
     def delete_document(self, document_id: str) -> None: ...
 
     def rebuild(self, chunks: list[DocumentChunk]) -> None: ...
@@ -133,6 +139,41 @@ class BM25SparseRetriever:
             )
             for rank, (priority, chunk) in enumerate(matches[:top_k], start=1)
         ]
+
+    def section_neighbors(
+        self,
+        anchor: DocumentChunk,
+        radius: int,
+    ) -> list[DocumentChunk]:
+        """Return a bounded document-order neighborhood inside one leaf section."""
+
+        if radius < 0:
+            raise ValueError("section neighbor radius must not be negative")
+        stored_anchor = self._data.chunks.get(anchor.chunk_id, anchor)
+        section_path = tuple(item.strip() for item in stored_anchor.section_path if item.strip())
+        if not section_path:
+            return [stored_anchor.model_copy(deep=True)]
+
+        section_chunks = [
+            chunk
+            for chunk in self._data.chunks.values()
+            if chunk.document_id == stored_anchor.document_id
+            and tuple(item.strip() for item in chunk.section_path if item.strip()) == section_path
+        ]
+        section_chunks.sort(key=lambda chunk: (chunk.chunk_index, chunk.chunk_id))
+        anchor_position = next(
+            (
+                index
+                for index, chunk in enumerate(section_chunks)
+                if chunk.chunk_id == stored_anchor.chunk_id
+            ),
+            None,
+        )
+        if anchor_position is None:
+            return [stored_anchor.model_copy(deep=True)]
+        start = max(0, anchor_position - radius)
+        end = min(len(section_chunks), anchor_position + radius + 1)
+        return [chunk.model_copy(deep=True) for chunk in section_chunks[start:end]]
 
     def delete_document(self, document_id: str) -> None:
         self._data.chunks = {

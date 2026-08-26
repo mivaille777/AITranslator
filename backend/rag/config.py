@@ -41,6 +41,37 @@ class RagChunkingConfig(RagConfigModel):
         return self
 
 
+class RagSemanticChunkingConfig(RagConfigModel):
+    """Semantic paragraph grouping inside hard structural boundaries."""
+
+    enabled: bool = False
+    merge_similarity: float = Field(default=0.72, ge=-1.0, le=1.0)
+    strong_merge_similarity: float = Field(default=0.82, ge=-1.0, le=1.0)
+    strong_split_similarity: float = Field(default=0.58, ge=-1.0, le=1.0)
+    small_chunk_merge_similarity: float = Field(default=0.78, ge=-1.0, le=1.0)
+    adaptive_threshold_enabled: bool = True
+    adaptive_std_factor: float = Field(default=1.0, ge=0.0, le=5.0)
+    min_paragraphs_for_adaptive: int = Field(default=4, ge=2, le=128)
+    centroid_window: int = Field(default=4, ge=1, le=32)
+    semantic_sentence_fallback: bool = False
+
+    @model_validator(mode="after")
+    def validate_semantic_thresholds(self) -> "RagSemanticChunkingConfig":
+        if self.strong_split_similarity > self.merge_similarity:
+            raise ValueError(
+                "strong_split_similarity must not exceed merge_similarity"
+            )
+        if self.merge_similarity > self.strong_merge_similarity:
+            raise ValueError(
+                "merge_similarity must not exceed strong_merge_similarity"
+            )
+        if self.merge_similarity > self.small_chunk_merge_similarity:
+            raise ValueError(
+                "merge_similarity must not exceed small_chunk_merge_similarity"
+            )
+        return self
+
+
 class RagAdvancedParsingConfig(RagConfigModel):
     enabled: bool = False
     provider: str = "docling"
@@ -147,6 +178,9 @@ class RagConfig(RagConfigModel):
         default_factory=RagAdvancedParsingConfig
     )
     chunking: RagChunkingConfig = Field(default_factory=RagChunkingConfig)
+    semantic_chunking: RagSemanticChunkingConfig = Field(
+        default_factory=RagSemanticChunkingConfig
+    )
     embedding: RagEmbeddingConfig = Field(default_factory=RagEmbeddingConfig)
     vector_store: RagVectorStoreConfig = Field(default_factory=RagVectorStoreConfig)
     retrieval: RagRetrievalConfig = Field(default_factory=RagRetrievalConfig)
@@ -160,5 +194,6 @@ __all__ = [
     "RagEmbeddingConfig",
     "RagRerankerConfig",
     "RagRetrievalConfig",
+    "RagSemanticChunkingConfig",
     "RagVectorStoreConfig",
 ]

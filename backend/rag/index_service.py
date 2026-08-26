@@ -59,6 +59,11 @@ class IndexService:
         self._parser = parser
         self._sparse_retriever = sparse_retriever
 
+    @property
+    def chunker_version(self) -> str:
+        configured = str(getattr(self._chunker, "version", "") or "").strip()
+        return configured or CHUNKER_VERSION
+
     def index_document(self, path: str | Path) -> IndexDocumentResult:
         return self._index_document(path, force=False)
 
@@ -174,7 +179,7 @@ class IndexService:
                 source_uri=source_uri,
                 title=normalized.document.title,
                 parser_version=parser_version,
-                chunker_version=CHUNKER_VERSION,
+                chunker_version=self.chunker_version,
                 embedding_model=self._embedding_provider.model_name,
                 embedding_dimension=self._embedding_provider.dimension,
                 chunk_ids=new_chunk_ids,
@@ -213,7 +218,7 @@ class IndexService:
             record.status is IndexStatus.READY
             and record.content_hash == content_hash
             and record.parser_version == parser_version
-            and record.chunker_version == CHUNKER_VERSION
+            and record.chunker_version == self.chunker_version
             and record.embedding_model == self._embedding_provider.model_name
             and record.embedding_dimension == self._embedding_provider.dimension
         )

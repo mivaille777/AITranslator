@@ -9,6 +9,7 @@ from typing import Callable, TypeVar
 from backend.agent_core.exceptions import (
     AgentBudgetExceededError,
     AgentCancelledError,
+    AgentDecisionTimeoutError,
     AgentToolTimeoutError,
 )
 
@@ -20,7 +21,7 @@ class AgentExecutionPolicy:
     """Bounded execution policy for one Agent run.
 
     Retries are intentionally limited to read/compute tools by ProductAgentService.
-    Write tools are never automatically retried. Multi-step and future ReAct
+    Write tools are never automatically retried. Multi-step and ReAct
     orchestration are both hard-bounded so LangGraph loops cannot grow without
     limit.
     """
@@ -92,6 +93,68 @@ class AgentRunControl:
         )
 
 
+def _run_bounded_operation(
+    operation: Callable[[], T],
+    *,
+    control: AgentRunControl,
+    timeout: float,
+    stage: str,
+    thread_name: str,
+    timeout_error: Callable[[float], Exception],
+) -> T:
+    control.checkpoint(stage)
+    if timeout <= 0:
+        raise AgentBudgetExceededError(
+            f"Agent execution budget exhausted before {stage}."
+        )
+
+    queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
+
+    def worker() -> None:
+        try:
+            queue.put((True, operation()))
+        except Exception as exc:
+            queue.put((False, exc))
+
+    Thread(target=worker, name=thread_name, daemon=True).start()
+    started = monotonic()
+    while True:
+        control.checkpoint(stage)
+        elapsed = monotonic() - started
+        remaining = timeout - elapsed
+        if remaining <= 0:
+            raise timeout_error(timeout)
+        try:
+            ok, value = queue.get(timeout=min(0.05, remaining))
+        except Empty:
+            continue
+        if ok:
+            return value  # type: ignore[return-value]
+        if isinstance(value, Exception):
+            raise value
+        raise RuntimeError(f"Agent operation {stage} failed without an exception.")
+
+
+def run_react_decision_with_timeout(
+    operation: Callable[[], T],
+    *,
+    control: AgentRunControl,
+) -> T:
+    """Run one side-effect-free ReAct decision under the decision time budget."""
+
+    timeout = control.bounded_react_decision_timeout()
+    return _run_bounded_operation(
+        operation,
+        control=control,
+        timeout=timeout,
+        stage="react_decision",
+        thread_name="agent-react-decision",
+        timeout_error=lambda value: AgentDecisionTimeoutError(
+            f"Agent ReAct decision exceeded {value:.2f}s timeout."
+        ),
+    )
+
+
 def run_safe_tool_with_timeout(
     operation: Callable[[], T],
     *,
@@ -105,44 +168,22 @@ def run_safe_tool_with_timeout(
     side-effectful operations.
     """
 
-    control.checkpoint(f"tool:{tool_name}")
     timeout = control.bounded_tool_timeout()
-    if timeout <= 0:
-        raise AgentBudgetExceededError(
-            f"Agent execution budget exhausted before tool {tool_name}."
-        )
-
-    queue: Queue[tuple[bool, object]] = Queue(maxsize=1)
-
-    def worker() -> None:
-        try:
-            queue.put((True, operation()))
-        except Exception as exc:
-            queue.put((False, exc))
-
-    Thread(target=worker, name=f"agent-tool-{tool_name}", daemon=True).start()
-    started = monotonic()
-    while True:
-        control.checkpoint(f"tool:{tool_name}")
-        elapsed = monotonic() - started
-        remaining = timeout - elapsed
-        if remaining <= 0:
-            raise AgentToolTimeoutError(
-                f"Agent tool {tool_name} exceeded {timeout:.2f}s timeout."
-            )
-        try:
-            ok, value = queue.get(timeout=min(0.05, remaining))
-        except Empty:
-            continue
-        if ok:
-            return value  # type: ignore[return-value]
-        if isinstance(value, Exception):
-            raise value
-        raise RuntimeError(f"Agent tool {tool_name} failed without an exception.")
+    return _run_bounded_operation(
+        operation,
+        control=control,
+        timeout=timeout,
+        stage=f"tool:{tool_name}",
+        thread_name=f"agent-tool-{tool_name}",
+        timeout_error=lambda value: AgentToolTimeoutError(
+            f"Agent tool {tool_name} exceeded {value:.2f}s timeout."
+        ),
+    )
 
 
 __all__ = [
     "AgentExecutionPolicy",
     "AgentRunControl",
+    "run_react_decision_with_timeout",
     "run_safe_tool_with_timeout",
 ]

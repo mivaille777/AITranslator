@@ -19,6 +19,7 @@ from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
 from backend.rag.citation_service import build_evidence_citations
 from backend.rag.context_builder import GroundedContextBuilder
 from backend.rag.evidence_builder import build_agent_evidence
+from backend.rag.models import RetrievalCandidate
 from backend.rag.query_planner import RagQueryPlan, merge_query_results
 from backend.rag.stores.base import VectorSearchFilter
 from backend.rag.structure_retrieval import (
@@ -164,10 +165,9 @@ class CompanionChatService:
                 fallback_reason="no_relevant_evidence",
             )
         context_overrides = {
-            f"evidence:{candidate.chunk.chunk_id}": candidate.context_window.text
+            f"evidence:{candidate.chunk.chunk_id}": supplemental
             for candidate in result.candidates
-            if candidate.context_window is not None
-            and candidate.context_window.text.strip()
+            if (supplemental := self._supplemental_context(candidate))
         }
         context = self._grounded_context_builder.build(
             evidence,
@@ -200,6 +200,26 @@ class CompanionChatService:
                 else "context_budget_exhausted"
             ),
         )
+
+    @staticmethod
+    def _supplemental_context(candidate: RetrievalCandidate) -> str:
+        window = candidate.context_window
+        if window is None:
+            return ""
+        segments: list[str] = []
+        for chunk in window.chunks:
+            if chunk.chunk_id == candidate.chunk.chunk_id:
+                continue
+            location_parts: list[str] = []
+            if chunk.page_number is not None:
+                location_parts.append(f"Page {chunk.page_number}")
+            if chunk.section_heading.strip():
+                location_parts.append(f"Section {chunk.section_heading.strip()}")
+            location = " · ".join(location_parts) or "same section"
+            segments.append(
+                f"[Supplemental {location}]\n{chunk.text.strip()}"
+            )
+        return "\n\n".join(segment for segment in segments if segment.strip())
 
     def _ensure_text_service(self) -> AITextService | Any:
         if self._text_service is None:

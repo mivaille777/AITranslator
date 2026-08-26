@@ -120,8 +120,6 @@ class RagRetrievalConfig(RagConfigModel):
     def validate_retrieval_bounds(self) -> "RagRetrievalConfig":
         if self.final_top_k > self.fusion_top_k:
             raise ValueError("final_top_k must not exceed fusion_top_k")
-        if self.small_to_big_top_k > self.fusion_top_k:
-            raise ValueError("small_to_big_top_k must not exceed fusion_top_k")
         return self
 
 

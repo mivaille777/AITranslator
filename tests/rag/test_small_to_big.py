@@ -146,3 +146,46 @@ def test_overlap_is_removed_when_neighbor_source_spans_overlap() -> None:
 
     assert expanded[0].context_window is not None
     assert expanded[0].context_window.text.count("Gamma") == 1
+
+
+def test_multiple_true_hits_do_not_duplicate_each_other_or_claimed_siblings() -> None:
+    before = chunk("before", 0, "before context")
+    first_hit = chunk("first-hit", 1, "first matched child")
+    between = chunk("between", 2, "shared middle context")
+    second_hit = chunk("second-hit", 3, "second matched child")
+    after = chunk("after", 4, "after context")
+    catalog = [before, first_hit, between, second_hit, after]
+
+    def lookup(anchor, radius):
+        position = catalog.index(next(item for item in catalog if item.chunk_id == anchor.chunk_id))
+        return catalog[max(0, position - radius) : position + radius + 1]
+
+    expanded, metadata = SmallToBigContextExpander(
+        neighbor_lookup=lookup,
+        config=RagRetrievalConfig(
+            small_to_big_top_k=2,
+            small_to_big_neighbor_radius=2,
+            small_to_big_max_tokens_per_anchor=20,
+        ),
+        token_counter=WordCounter(),
+    ).expand(
+        [
+            RetrievalCandidate(chunk=first_hit, rank=1),
+            RetrievalCandidate(chunk=second_hit, rank=2),
+        ]
+    )
+
+    first_window = expanded[0].context_window
+    second_window = expanded[1].context_window
+    assert first_window is not None
+    assert "second-hit" not in {item.chunk_id for item in first_window.chunks}
+    if second_window is not None:
+        first_supplemental = {
+            item.chunk_id for item in first_window.chunks if item.chunk_id != "first-hit"
+        }
+        second_supplemental = {
+            item.chunk_id for item in second_window.chunks if item.chunk_id != "second-hit"
+        }
+        assert first_supplemental.isdisjoint(second_supplemental)
+        assert "first-hit" not in {item.chunk_id for item in second_window.chunks}
+    assert metadata["small_to_big_neighbor_count"] <= 3

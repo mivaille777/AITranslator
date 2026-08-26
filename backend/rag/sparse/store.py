@@ -12,7 +12,7 @@ from backend.rag.models import DocumentChunk, RetrievalCandidate
 from backend.rag.sparse.bm25 import BM25Index
 from backend.rag.sparse.tokenizer import SparseTokenizer
 from backend.rag.stores.base import VectorSearchFilter
-from backend.rag.structure_retrieval import normalize_section_heading
+from backend.rag.structure_retrieval import section_match_priority
 
 
 @runtime_checkable
@@ -101,37 +101,17 @@ class BM25SparseRetriever:
     ) -> list[RetrievalCandidate]:
         if top_k <= 0:
             raise ValueError("top_k must be positive")
-        aliases = tuple(
-            normalized
-            for normalized in (normalize_section_heading(item) for item in headings)
-            if normalized
-        )
-        if not aliases:
+        if not any(str(item).strip() for item in headings):
             return []
 
         matches: list[tuple[int, DocumentChunk]] = []
         for chunk in self._data.chunks.values():
             if not self._matches_filter(chunk, filters):
                 continue
-            heading = normalize_section_heading(chunk.section_heading)
-            hierarchy = tuple(
-                normalize_section_heading(item) for item in chunk.section_path if item
+            priority = section_match_priority(
+                RetrievalCandidate(chunk=chunk),
+                headings,
             )
-            prefix = normalize_section_heading(chunk.text[:180])
-            priority = 0
-            if heading in aliases or any(item in aliases for item in hierarchy):
-                priority = 3
-            elif heading and any(
-                heading.startswith(alias) or alias in heading for alias in aliases
-            ):
-                priority = 2
-            elif any(
-                item and any(item.startswith(alias) or alias in item for alias in aliases)
-                for item in hierarchy
-            ):
-                priority = 2
-            elif any(prefix.startswith(alias) for alias in aliases):
-                priority = 1
             if priority:
                 matches.append((priority, chunk))
 

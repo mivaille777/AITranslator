@@ -59,16 +59,27 @@ class AgentMultiStepPlannerService:
         prompt_registry: PromptRegistry | None = None,
         security_service: AgentSecurityService | None = None,
     ) -> None:
-        self._text_service = text_service or AITextService()
+        # Keep provider construction lazy so creating ProductAgentService does
+        # not require credentials before a complex plan is actually requested.
+        self._text_service = text_service
         self._prompt_registry = prompt_registry or PromptRegistry((MULTI_STEP_PLANNER_PROMPT,))
         self._security = security_service or AgentSecurityService()
 
+    def _get_text_service(self) -> AITextService | Any:
+        if self._text_service is None:
+            self._text_service = AITextService()
+        return self._text_service
+
     @property
     def provider_name(self) -> str:
+        if self._text_service is None:
+            return "unknown"
         return str(getattr(self._text_service, "provider_name", "") or "").strip() or "unknown"
 
     @property
     def model(self) -> str:
+        if self._text_service is None:
+            return "unknown"
         return str(getattr(self._text_service, "model", "") or "").strip() or "unknown"
 
     @property
@@ -76,7 +87,8 @@ class AgentMultiStepPlannerService:
         return self._prompt_registry.get("agent.multi_step_planner").prompt_id
 
     def _client(self) -> Any:
-        provider = getattr(self._text_service, "provider", None)
+        text_service = self._get_text_service()
+        provider = getattr(text_service, "provider", None)
         client = getattr(provider, "client", None)
         complete = getattr(client, "complete", None)
         if not callable(complete):
@@ -270,6 +282,8 @@ class AgentMultiStepPlannerService:
         return self._validate(self._decode(raw), tools=tools, max_steps=max_steps)
 
     def close(self) -> None:
+        if self._text_service is None:
+            return
         close = getattr(self._text_service, "close", None)
         if callable(close):
             close()

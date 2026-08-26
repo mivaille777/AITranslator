@@ -62,6 +62,7 @@ from backend.rag.models import (
     KnowledgeDocument,
     NormalizedDocument,
     RetrievalCandidate,
+    RetrievalContextWindow,
     RetrievalResult,
     build_stable_chunk_id,
 )
@@ -83,6 +84,7 @@ from backend.rag.performance import (
     performance_sweeps,
 )
 from backend.rag.query_planner import RagQueryPlan, RagQueryPlanner, merge_query_results
+from backend.rag.small_to_big import SmallToBigContextExpander
 from backend.rag.tokenization import (
     HeuristicTokenCounter,
     TokenCounter,
@@ -147,7 +149,9 @@ __all__ = [
     "RagVectorStoreConfig",
     "RagVectorStoreError",
     "RetrievalCandidate",
+    "RetrievalContextWindow",
     "RetrievalResult",
+    "SmallToBigContextExpander",
     "StructureAwareChunker",
     "TokenCounter",
     "TransformersTokenCounter",

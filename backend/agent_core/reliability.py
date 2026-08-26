@@ -20,8 +20,9 @@ class AgentExecutionPolicy:
     """Bounded execution policy for one Agent run.
 
     Retries are intentionally limited to read/compute tools by ProductAgentService.
-    Write tools are never automatically retried. Multi-step planning/execution
-    is also hard-bounded so LangGraph loops cannot grow without limit.
+    Write tools are never automatically retried. Multi-step and future ReAct
+    orchestration are both hard-bounded so LangGraph loops cannot grow without
+    limit.
     """
 
     total_timeout_seconds: float = 45.0
@@ -29,6 +30,9 @@ class AgentExecutionPolicy:
     max_safe_retries: int = 1
     max_plan_steps: int = 4
     max_tool_calls: int = 4
+    max_react_iterations: int = 6
+    react_decision_timeout_seconds: float = 12.0
+    max_observation_chars: int = 3000
 
     def __post_init__(self) -> None:
         if self.total_timeout_seconds <= 0:
@@ -41,6 +45,12 @@ class AgentExecutionPolicy:
             raise ValueError("max_plan_steps must be at least 2")
         if self.max_tool_calls < 1:
             raise ValueError("max_tool_calls must be positive")
+        if self.max_react_iterations < 1:
+            raise ValueError("max_react_iterations must be positive")
+        if self.react_decision_timeout_seconds <= 0:
+            raise ValueError("react_decision_timeout_seconds must be positive")
+        if self.max_observation_chars < 1:
+            raise ValueError("max_observation_chars must be positive")
 
 
 @dataclass(slots=True)
@@ -74,6 +84,12 @@ class AgentRunControl:
 
     def bounded_tool_timeout(self) -> float:
         return min(self.policy.tool_timeout_seconds, self.remaining_seconds)
+
+    def bounded_react_decision_timeout(self) -> float:
+        return min(
+            self.policy.react_decision_timeout_seconds,
+            self.remaining_seconds,
+        )
 
 
 def run_safe_tool_with_timeout(

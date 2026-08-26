@@ -8,6 +8,7 @@ from backend.rag.exceptions import RagRetrievalError
 from backend.rag.fusion import rrf_fuse
 from backend.rag.models import RetrievalCandidate, RetrievalResult
 from backend.rag.rerankers.base import RerankerProvider
+from backend.rag.small_to_big import SmallToBigContextExpander
 from backend.rag.sparse.store import SparseRetriever
 from backend.rag.stores.base import VectorSearchFilter, VectorStore
 from backend.rag.structure_retrieval import order_structural_candidates
@@ -136,6 +137,25 @@ class RetrievalService:
             section_hints=section_hints,
             limit=desired_top_k,
         )
+
+        small_to_big_ms = 0.0
+        small_to_big_error = ""
+        small_to_big_metadata = {
+            "small_to_big_expanded_count": 0,
+            "small_to_big_neighbor_count": 0,
+        }
+        section_neighbors = getattr(self._sparse, "section_neighbors", None)
+        if self._config.small_to_big_enabled and callable(section_neighbors):
+            expansion_started = perf_counter()
+            try:
+                candidates, small_to_big_metadata = SmallToBigContextExpander(
+                    neighbor_lookup=section_neighbors,
+                    config=self._config,
+                ).expand(candidates)
+            except Exception as exc:  # noqa: BLE001 - context expansion is additive
+                small_to_big_error = str(exc) or exc.__class__.__name__
+            small_to_big_ms = (perf_counter() - expansion_started) * 1000
+
         return RetrievalResult(
             query=query,
             candidates=candidates,
@@ -153,10 +173,14 @@ class RetrievalService:
                 "structural_search_ms": structural_ms,
                 "fusion_ms": fusion_ms,
                 "rerank_ms": rerank_ms,
+                "small_to_big_ms": small_to_big_ms,
                 "fallback_reason": fallback_reason,
                 "reranker_applied": reranker_applied,
                 "reranker_fallback_reason": reranker_fallback_reason,
                 "structural_section_hints": list(section_hints),
+                "small_to_big_enabled": self._config.small_to_big_enabled,
+                "small_to_big_error": small_to_big_error,
+                **small_to_big_metadata,
             },
         )
 

@@ -34,6 +34,10 @@ def test_rag_config_defaults_match_v1_contract() -> None:
     assert config.vector_store.storage_path == "config/rag/qdrant"
     assert config.retrieval.fusion == "rrf"
     assert config.retrieval.final_top_k == 8
+    assert config.retrieval.small_to_big_enabled is True
+    assert config.retrieval.small_to_big_top_k == 4
+    assert config.retrieval.small_to_big_neighbor_radius == 1
+    assert config.retrieval.small_to_big_max_tokens_per_anchor == 1200
 
 
 def test_embedding_dimension_must_be_positive() -> None:
@@ -80,6 +84,11 @@ def test_final_top_k_must_not_exceed_fusion_top_k() -> None:
         RagRetrievalConfig(fusion_top_k=4, final_top_k=8)
 
 
+def test_small_to_big_top_k_must_not_exceed_fusion_top_k() -> None:
+    with pytest.raises(ValidationError):
+        RagRetrievalConfig(fusion_top_k=3, final_top_k=3, small_to_big_top_k=4)
+
+
 def test_default_toml_rag_section_validates_against_contract() -> None:
     root = Path(__file__).resolve().parents[2]
     with (root / "config" / "default.toml").open("rb") as handle:
@@ -100,3 +109,7 @@ def test_default_toml_rag_section_validates_against_contract() -> None:
     assert config.chunking.minimum_tokens == 80
     assert config.embedding.dimension == 1024
     assert config.retrieval.dense_top_k == 30
+    assert config.retrieval.small_to_big_enabled is True
+    assert config.retrieval.small_to_big_top_k == 4
+    assert config.retrieval.small_to_big_neighbor_radius == 1
+    assert config.retrieval.small_to_big_max_tokens_per_anchor == 1200

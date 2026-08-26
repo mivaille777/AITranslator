@@ -85,7 +85,7 @@ def test_complex_query_returns_typed_bounded_plan() -> None:
         "C8 mechanism",
     )
     assert len(plan.retrieval_queries) == MAX_RAG_RETRIEVAL_QUERIES
-    assert planner.prompt_id.endswith("@1.2.0")
+    assert planner.prompt_id.endswith("@1.3.0")
     assert len(client.calls) == 1
     prompt = json.loads(client.calls[0]["user_prompt"])
     assert prompt["policy"]["recursive_decomposition"] is False
@@ -94,6 +94,8 @@ def test_complex_query_returns_typed_bounded_plan() -> None:
     assert "References/Bibliography" in client.calls[0]["system_prompt"]
     assert "Table" in client.calls[0]["system_prompt"]
     assert "Figure" in client.calls[0]["system_prompt"]
+    assert "Equation" in client.calls[0]["system_prompt"]
+    assert "Formula" in client.calls[0]["system_prompt"]
 
 
 def test_simple_query_is_rewritten_before_retrieval() -> None:

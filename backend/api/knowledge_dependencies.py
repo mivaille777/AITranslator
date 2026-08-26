@@ -17,6 +17,7 @@ from backend.rag.index_service import IndexService
 from backend.rag.parsers import parse_document
 from backend.rag.rerankers import Qwen3RerankerProvider
 from backend.rag.retrieval_service import RetrievalService
+from backend.rag.semantic_chunking import SemanticStructureAwareChunker
 from backend.rag.sparse import BM25SparseRetriever
 from backend.rag.stores import QdrantLocalVectorStore
 from backend.services.knowledge_library_service import (
@@ -125,8 +126,14 @@ def _build_runtime() -> RagRuntime:
             model_manager=model_manager,
         ),
     )
+    structural_chunker = StructureAwareChunker(config.chunking)
+    chunker = SemanticStructureAwareChunker(
+        base_chunker=structural_chunker,
+        semantic_config=config.semantic_chunking,
+        embedding_provider=embedding,
+    )
     index = IndexService(
-        chunker=StructureAwareChunker(config.chunking),
+        chunker=chunker,
         embedding_provider=embedding,
         vector_store=vector_store,
         sparse_retriever=sparse,

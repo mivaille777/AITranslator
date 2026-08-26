@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import ceil
 from typing import Any
@@ -58,6 +59,8 @@ class GroundedContextBuilder:
         self,
         evidence: list[AgentEvidenceItem],
         citations: list[AgentCitationRef],
+        *,
+        context_overrides: Mapping[str, str] | None = None,
     ) -> GroundedContext:
         CitationService().validate(citations, evidence)
         citation_by_evidence: dict[str, AgentCitationRef] = {}
@@ -65,6 +68,7 @@ class GroundedContextBuilder:
             for evidence_id in citation.evidence_ids:
                 citation_by_evidence.setdefault(evidence_id, citation)
 
+        overrides = context_overrides or {}
         allowed = "\n".join(
             f"- {citation.citation_id} => {citation.label} => "
             f"{', '.join(citation.evidence_ids)}"
@@ -77,6 +81,7 @@ class GroundedContextBuilder:
             "- Do not invent sources, titles, URLs, pages, sections, or citations.\n"
             "- Add citations to factual claims when supported.\n"
             "- Use only the allowed display labels below.\n"
+            "- Supplemental same-section context belongs to its anchor evidence and is not a separate citation.\n"
             "- Internal retrieval scores are not user facts.\n"
             f"ALLOWED CITATIONS\n{allowed}\n"
             "EVIDENCE\n"
@@ -89,11 +94,18 @@ class GroundedContextBuilder:
             if citation is None:
                 omitted.append(item.evidence_id)
                 continue
+            override = str(overrides.get(item.evidence_id, "") or "").strip()
+            evidence_text = override or item.excerpt.strip()
+            evidence_label = (
+                "Evidence Context (anchor + same-section neighbors)"
+                if override
+                else "Evidence"
+            )
             segment = (
                 f"\n[C{position}] {citation.label}\n"
                 f"Title: {item.title or 'Untitled source'}\n"
                 f"Location: {item.location or 'Location unavailable'}\n"
-                f"Evidence: {item.excerpt.strip()}\n"
+                f"{evidence_label}: {evidence_text}\n"
             )
             if len(text) + len(segment) > self.max_context_chars:
                 omitted.append(item.evidence_id)

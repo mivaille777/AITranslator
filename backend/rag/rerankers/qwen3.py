@@ -78,8 +78,22 @@ class Qwen3RerankerProvider:
         parts: list[str] = []
         if chunk.title.strip():
             parts.append(f"Document: {chunk.title.strip()}")
-        if chunk.section_heading.strip():
+        hierarchy = " > ".join(
+            item.strip() for item in chunk.section_path if item.strip()
+        )
+        if hierarchy:
+            parts.append(f"Hierarchy: {hierarchy}")
+        elif chunk.section_heading.strip():
             parts.append(f"Section: {chunk.section_heading.strip()}")
+        if chunk.chunk_type.strip():
+            parts.append(f"Type: {chunk.chunk_type.strip()}")
+        special_labels = chunk.metadata.get("special_labels", [])
+        if isinstance(special_labels, list):
+            labels = ", ".join(
+                str(item).strip() for item in special_labels if str(item).strip()
+            )
+            if labels:
+                parts.append(f"Labels: {labels}")
         if chunk.page_number is not None:
             parts.append(f"Page: {chunk.page_number}")
         parts.append(f"Content:\n{chunk.text}")

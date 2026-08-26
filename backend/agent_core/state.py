@@ -5,6 +5,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, model_validator
 
+from backend.models.agent_react import (
+    AgentObservation,
+    AgentReActContext,
+    AgentReActDecision,
+    AgentReActStatus,
+)
 from backend.models.agent_runtime import (
     AgentCitationRef,
     AgentConversationContext,
@@ -86,6 +92,7 @@ class AgentState(BaseModel):
     reading_context: AgentReadingContext = Field(default_factory=AgentReadingContext)
     route: AgentRouteDecision = Field(default_factory=AgentRouteDecision)
     plan: AgentPlanContext = Field(default_factory=AgentPlanContext)
+    react: AgentReActContext = Field(default_factory=AgentReActContext)
     evidence: list[AgentEvidenceItem] = Field(default_factory=list)
     citations: list[AgentCitationRef] = Field(default_factory=list)
     response_state: AgentResponseContext = Field(default_factory=AgentResponseContext)
@@ -325,6 +332,60 @@ class AgentState(BaseModel):
             self.intent = "answer"
         elif self.route.kind == "complex":
             self.intent = "complex"
+        return self.sync_contract()
+
+    def start_react(self) -> "AgentState":
+        """Start a fresh ReAct context without affecting existing plan execution."""
+
+        self.react = AgentReActContext(status="running")
+        return self.sync_contract()
+
+    def record_react_decision(
+        self,
+        decision: AgentReActDecision | dict[str, Any],
+    ) -> "AgentState":
+        item = (
+            decision
+            if isinstance(decision, AgentReActDecision)
+            else AgentReActDecision.model_validate(decision)
+        )
+        if item.iteration <= self.react.iteration:
+            raise ValueError("ReAct decision iteration must advance monotonically")
+        decisions = [*self.react.decisions, item]
+        self.react = self.react.model_copy(
+            update={
+                "status": "running",
+                "iteration": item.iteration,
+                "decisions": decisions,
+                "last_decision": item,
+            }
+        )
+        return self.sync_contract()
+
+    def record_react_observation(
+        self,
+        observation: AgentObservation | dict[str, Any],
+    ) -> "AgentState":
+        item = (
+            observation
+            if isinstance(observation, AgentObservation)
+            else AgentObservation.model_validate(observation)
+        )
+        if item.iteration > self.react.iteration:
+            raise ValueError("ReAct observation cannot be ahead of the current iteration")
+        if not any(
+            decision.iteration == item.iteration
+            and decision.kind == "tool"
+            and decision.tool_name == item.tool_name
+            for decision in self.react.decisions
+        ):
+            raise ValueError("ReAct observation must match a recorded tool decision")
+        observations = [*self.react.observations, item]
+        self.react = self.react.model_copy(update={"observations": observations})
+        return self.sync_contract()
+
+    def mark_react_status(self, status: AgentReActStatus) -> "AgentState":
+        self.react = self.react.model_copy(update={"status": status})
         return self.sync_contract()
 
     def record_tool_call(self, call: dict[str, Any]) -> "AgentState":

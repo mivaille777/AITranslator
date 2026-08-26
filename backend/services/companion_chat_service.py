@@ -163,7 +163,17 @@ class CompanionChatService:
                 tool_context="No relevant knowledge evidence was found. Answer generally if possible and do not cite a source.",
                 fallback_reason="no_relevant_evidence",
             )
-        context = self._grounded_context_builder.build(evidence, citations)
+        context_overrides = {
+            f"evidence:{candidate.chunk.chunk_id}": candidate.context_window.text
+            for candidate in result.candidates
+            if candidate.context_window is not None
+            and candidate.context_window.text.strip()
+        }
+        context = self._grounded_context_builder.build(
+            evidence,
+            citations,
+            context_overrides=context_overrides,
+        )
         included = set(context.included_evidence_ids)
         bounded_evidence = tuple(
             item for item in evidence if item.evidence_id in included

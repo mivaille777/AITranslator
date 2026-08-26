@@ -114,12 +114,20 @@ class BM25SparseRetriever:
             if not self._matches_filter(chunk, filters):
                 continue
             heading = normalize_section_heading(chunk.section_heading)
+            hierarchy = tuple(
+                normalize_section_heading(item) for item in chunk.section_path if item
+            )
             prefix = normalize_section_heading(chunk.text[:180])
             priority = 0
-            if heading in aliases:
+            if heading in aliases or any(item in aliases for item in hierarchy):
                 priority = 3
             elif heading and any(
                 heading.startswith(alias) or alias in heading for alias in aliases
+            ):
+                priority = 2
+            elif any(
+                item and any(item.startswith(alias) or alias in item for alias in aliases)
+                for item in hierarchy
             ):
                 priority = 2
             elif any(prefix.startswith(alias) for alias in aliases):
@@ -172,9 +180,15 @@ class BM25SparseRetriever:
 
     @staticmethod
     def _search_text(chunk: DocumentChunk) -> str:
+        special_labels = chunk.metadata.get("special_labels", [])
+        if not isinstance(special_labels, list):
+            special_labels = []
         parts = [
             chunk.title.strip(),
+            " > ".join(item.strip() for item in chunk.section_path if item.strip()),
             chunk.section_heading.strip(),
+            chunk.chunk_type.strip(),
+            " ".join(str(item).strip() for item in special_labels if str(item).strip()),
             chunk.text,
         ]
         return "\n".join(part for part in parts if part)

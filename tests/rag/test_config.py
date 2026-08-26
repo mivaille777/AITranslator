@@ -84,9 +84,14 @@ def test_final_top_k_must_not_exceed_fusion_top_k() -> None:
         RagRetrievalConfig(fusion_top_k=4, final_top_k=8)
 
 
-def test_small_to_big_top_k_must_not_exceed_fusion_top_k() -> None:
-    with pytest.raises(ValidationError):
-        RagRetrievalConfig(fusion_top_k=3, final_top_k=3, small_to_big_top_k=4)
+def test_small_to_big_top_k_can_exceed_small_fixture_candidate_count() -> None:
+    config = RagRetrievalConfig(
+        fusion_top_k=3,
+        final_top_k=3,
+        small_to_big_top_k=4,
+    )
+
+    assert config.small_to_big_top_k == 4
 
 
 def test_default_toml_rag_section_validates_against_contract() -> None:

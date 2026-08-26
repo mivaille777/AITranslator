@@ -20,6 +20,7 @@ _INTENTS: tuple[tuple[StructuralRetrievalIntent, tuple[re.Pattern[str], ...]], .
             name="bibliography",
             section_aliases=(
                 "references",
+                "reference",
                 "bibliography",
                 "works cited",
                 "reference list",
@@ -122,6 +123,19 @@ _INTENTS: tuple[tuple[StructuralRetrievalIntent, tuple[re.Pattern[str], ...]], .
             re.compile(r"图\s*\d+|图表"),
         ),
     ),
+    (
+        StructuralRetrievalIntent(
+            name="equation",
+            section_aliases=("equation", "equations", "formula", "formulae"),
+            search_terms=("Equation", "Eq.", "Formula"),
+            final_top_k=10,
+        ),
+        (
+            re.compile(r"\beq(?:uation)?\.?\s*\(?\d*\)?\b", re.IGNORECASE),
+            re.compile(r"\bformulae?\b", re.IGNORECASE),
+            re.compile(r"公式|方程|式\s*\(?\d+\)?"),
+        ),
+    ),
 )
 
 _HEADING_PREFIX = re.compile(
@@ -183,25 +197,55 @@ def build_structural_queries(
     return tuple(unique)
 
 
+def _matches_alias(value: str, aliases: tuple[str, ...]) -> bool:
+    return bool(value) and any(
+        alias and (value == alias or value.startswith(alias) or alias in value)
+        for alias in aliases
+    )
+
+
 def section_match_priority(
     candidate: RetrievalCandidate,
     section_aliases: tuple[str, ...],
 ) -> int:
     if not section_aliases:
         return 0
-    aliases = tuple(normalize_section_heading(item) for item in section_aliases)
-    heading = normalize_section_heading(candidate.chunk.section_heading)
-    if heading:
-        if heading in aliases:
-            return 3
-        if any(
-            alias and (heading.startswith(alias) or alias in heading)
-            for alias in aliases
-        ):
-            return 2
+    aliases = tuple(
+        normalized
+        for normalized in (normalize_section_heading(item) for item in section_aliases)
+        if normalized
+    )
+    chunk = candidate.chunk
 
-    prefix = normalize_section_heading(candidate.chunk.text[:180])
-    if any(alias and prefix.startswith(alias) for alias in aliases):
+    chunk_type = normalize_section_heading(chunk.chunk_type)
+    labels = chunk.metadata.get("special_labels", [])
+    normalized_labels = (
+        tuple(
+            normalize_section_heading(str(item))
+            for item in labels
+            if str(item).strip()
+        )
+        if isinstance(labels, list)
+        else ()
+    )
+    if _matches_alias(chunk_type, aliases) or any(
+        _matches_alias(label, aliases) for label in normalized_labels
+    ):
+        return 4
+
+    heading = normalize_section_heading(chunk.section_heading)
+    hierarchy = tuple(
+        normalize_section_heading(item) for item in chunk.section_path if item
+    )
+    if heading in aliases or any(item in aliases for item in hierarchy):
+        return 3
+    if _matches_alias(heading, aliases) or any(
+        _matches_alias(item, aliases) for item in hierarchy
+    ):
+        return 2
+
+    prefix = normalize_section_heading(chunk.text[:180])
+    if _matches_alias(prefix, aliases):
         return 1
     return 0
 
@@ -230,8 +274,6 @@ def order_structural_candidates(
             )
         )
     else:
-        # Across documents, the incoming order already carries RRF/reranker
-        # relevance. Do not replace that signal with arbitrary document-id order.
         matching.sort(key=lambda item: (-item[2], item[0]))
 
     non_matching = [item for item in scored if item[2] == 0]

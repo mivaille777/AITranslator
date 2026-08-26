@@ -98,14 +98,29 @@ formula_enabled = false
 document_timeout_seconds = 120.0
 
 [rag.chunking]
-# Hierarchy-first scientific-document chunking. Section/subsection and paragraph
-# boundaries win over token length. The token values are soft/preferred/hard
-# bounds; overlap is used only when an oversized paragraph must be split.
+# Hard structure first: section/subsection and academic special blocks define
+# non-crossable boundaries. Token values are only soft/preferred/hard guards.
 target_tokens = 420
 preferred_max_tokens = 550
 hard_max_tokens = 750
 overlap_tokens = 80
 minimum_tokens = 80
+
+[rag.semantic_chunking]
+# Semantic paragraph grouping is applied only inside ordinary prose regions.
+# Table/Figure/Equation/References keep their dedicated structural strategies.
+enabled = true
+merge_similarity = 0.72
+strong_merge_similarity = 0.82
+strong_split_similarity = 0.58
+small_chunk_merge_similarity = 0.78
+adaptive_threshold_enabled = true
+adaptive_std_factor = 1.0
+min_paragraphs_for_adaptive = 4
+centroid_window = 4
+# First production version keeps the proven sentence/token fallback from the
+# structural chunker. Sentence-level semantic fallback is a later optimization.
+semantic_sentence_fallback = false
 
 [rag.embedding]
 provider = "qwen3"

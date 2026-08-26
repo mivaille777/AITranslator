@@ -43,6 +43,8 @@ class SmallToBigContextExpander:
                 "small_to_big_neighbor_count": 0,
             }
 
+        true_hit_ids = {candidate.chunk.chunk_id for candidate in candidates}
+        claimed_supplemental_ids: set[str] = set()
         expanded: list[RetrievalCandidate] = []
         expanded_count = 0
         neighbor_count = 0
@@ -50,12 +52,19 @@ class SmallToBigContextExpander:
             if position >= self._config.small_to_big_top_k:
                 expanded.append(candidate)
                 continue
-            window = self._window_for(candidate.chunk)
+            excluded = (true_hit_ids - {candidate.chunk.chunk_id}) | claimed_supplemental_ids
+            window = self._window_for(candidate.chunk, excluded_chunk_ids=excluded)
             if window is None or len(window.chunks) <= 1:
                 expanded.append(candidate)
                 continue
+            supplemental_ids = {
+                chunk.chunk_id
+                for chunk in window.chunks
+                if chunk.chunk_id != candidate.chunk.chunk_id
+            }
+            claimed_supplemental_ids.update(supplemental_ids)
             expanded_count += 1
-            neighbor_count += max(0, len(window.chunks) - 1)
+            neighbor_count += len(supplemental_ids)
             metadata = dict(candidate.metadata)
             metadata.update(
                 {
@@ -80,7 +89,12 @@ class SmallToBigContextExpander:
             "small_to_big_neighbor_count": neighbor_count,
         }
 
-    def _window_for(self, anchor: DocumentChunk) -> RetrievalContextWindow | None:
+    def _window_for(
+        self,
+        anchor: DocumentChunk,
+        *,
+        excluded_chunk_ids: set[str],
+    ) -> RetrievalContextWindow | None:
         if anchor.chunk_type not in _EXPANDABLE_CHUNK_TYPES:
             return None
         if not anchor.section_path:
@@ -92,6 +106,8 @@ class SmallToBigContextExpander:
         )
         unique: dict[str, DocumentChunk] = {anchor.chunk_id: anchor}
         for chunk in neighbors:
+            if chunk.chunk_id in excluded_chunk_ids:
+                continue
             if chunk.document_id != anchor.document_id:
                 continue
             if chunk.section_path != anchor.section_path:

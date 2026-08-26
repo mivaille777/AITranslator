@@ -63,14 +63,14 @@ def test_pair_construction_score_mapping_sort_and_top_k() -> None:
     assert [item.chunk.chunk_id for item in results] == ["chunk_1", "chunk_2"]
     assert [item.rerank_score for item in results] == [0.9, 0.5]
     assert model.calls[0][0] == [
-        ("query", "Content:\nfirst"),
-        ("query", "Content:\nsecond"),
-        ("query", "Content:\nthird"),
+        ("query", "Type: paragraph_group\nContent:\nfirst"),
+        ("query", "Type: paragraph_group\nContent:\nsecond"),
+        ("query", "Type: paragraph_group\nContent:\nthird"),
     ]
     assert model.calls[0][1]["batch_size"] == 4
 
 
-def test_pair_includes_document_section_and_page_metadata() -> None:
+def test_pair_includes_document_hierarchy_type_labels_and_page_metadata() -> None:
     model = Model([0.8])
     reranker = provider(model, [])
     candidate = RetrievalCandidate(
@@ -79,9 +79,12 @@ def test_pair_includes_document_section_and_page_metadata() -> None:
             document_id="wen-paper",
             title="Water Tank Paper",
             section_heading="References",
+            section_path=["6 References"],
+            chunk_type="reference_group",
             page_number=11,
             text="[1] A. Author, Example reference.",
             chunk_index=0,
+            metadata={"special_labels": ["[1]"]},
         ),
         rank=1,
     )
@@ -92,7 +95,9 @@ def test_pair_includes_document_section_and_page_metadata() -> None:
         (
             "Which references were cited?",
             "Document: Water Tank Paper\n"
-            "Section: References\n"
+            "Hierarchy: 6 References\n"
+            "Type: reference_group\n"
+            "Labels: [1]\n"
             "Page: 11\n"
             "Content:\n[1] A. Author, Example reference.",
         )

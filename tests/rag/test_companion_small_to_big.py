@@ -109,8 +109,10 @@ def test_small_to_big_context_is_internal_while_sources_remain_anchor_only() -> 
     assert result.evidence[0].excerpt == "anchor child evidence"
     assert len(result.citations) == 1
     assert result.citations[0].evidence_ids == ["evidence:anchor"]
+    assert "Evidence: anchor child evidence" in chat.request.tool_context
+    assert "Supplemental Same-Section Context" in chat.request.tool_context
+    assert "not independently citable" in chat.request.tool_context
     assert "previous same-section context" in chat.request.tool_context
     assert "following same-section context" in chat.request.tool_context
-    assert "anchor + same-section neighbors" in chat.request.tool_context
     assert "evidence:previous" not in chat.request.tool_context
     assert "evidence:following" not in chat.request.tool_context

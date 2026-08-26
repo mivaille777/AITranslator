@@ -128,16 +128,17 @@ def make_state() -> AgentState:
     )
 
 
-def test_reading_agent_graph_compiles_explicit_stage_10_6_nodes() -> None:
+def test_reading_agent_graph_compiles_explicit_react_nodes() -> None:
     graph = ReadingAgentGraph(ProductAgentRuntimeAdapter(FakeProductAgentService()))
 
     assert graph.node_names == (
         "prepare_conversation",
         "route_request",
         "execute_direct",
-        "plan_multi_step",
-        "execute_plan_step",
-        "synthesize_multi_step",
+        "start_react",
+        "decide_react",
+        "execute_react_tool",
+        "finalize_react",
         "finalize_conversation",
     )
     assert callable(graph.compiled_graph.invoke)

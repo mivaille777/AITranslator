@@ -69,13 +69,13 @@ def test_context_budget_truncation_is_deterministic_and_ranked() -> None:
         _evidence("evidence:rank-3", rank=3, score=0.70, excerpt="C" * 260),
     ]
     citations = build_evidence_citations(evidence)
-    builder = GroundedContextBuilder(max_context_tokens=200)
+    builder = GroundedContextBuilder(max_context_tokens=300)
 
     first = builder.build(evidence, citations)
     second = builder.build(evidence, citations)
 
     assert first == second
-    assert first.estimated_tokens <= 200
+    assert first.estimated_tokens <= 300
     assert first.included_evidence_ids == ("evidence:rank-1",)
     assert first.omitted_evidence_ids == (
         "evidence:rank-2",

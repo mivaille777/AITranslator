@@ -9,6 +9,7 @@ from backend.rag.config import (
     RagEmbeddingConfig,
     RagRerankerConfig,
     RagRetrievalConfig,
+    RagSemanticChunkingConfig,
     RagVectorStoreConfig,
 )
 from backend.rag.context_builder import GroundedContext, GroundedContextBuilder
@@ -84,6 +85,10 @@ from backend.rag.performance import (
     performance_sweeps,
 )
 from backend.rag.query_planner import RagQueryPlan, RagQueryPlanner, merge_query_results
+from backend.rag.semantic_chunking import (
+    SEMANTIC_CHUNKER_VERSION,
+    SemanticStructureAwareChunker,
+)
 from backend.rag.small_to_big import SmallToBigContextExpander
 from backend.rag.tokenization import (
     HeuristicTokenCounter,
@@ -96,6 +101,7 @@ __all__ = [
     "CHUNKER_VERSION",
     "EMBEDDING_MODEL_ID",
     "RERANKER_MODEL_ID",
+    "SEMANTIC_CHUNKER_VERSION",
     "AdvancedParserWithFallback",
     "CitationService",
     "DoclingDocumentParser",
@@ -146,11 +152,13 @@ __all__ = [
     "RagRerankerConfig",
     "RagRetrievalConfig",
     "RagRetrievalError",
+    "RagSemanticChunkingConfig",
     "RagVectorStoreConfig",
     "RagVectorStoreError",
     "RetrievalCandidate",
     "RetrievalContextWindow",
     "RetrievalResult",
+    "SemanticStructureAwareChunker",
     "SmallToBigContextExpander",
     "StructureAwareChunker",
     "TokenCounter",

@@ -6,8 +6,8 @@ from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
 from backend.agent_core.runtime import AgentRuntime
 from backend.agent_core.state import AgentState
 from backend.agent_graph.reading_agent_graph import ReadingAgentGraph
-from backend.models.agent_runtime import AgentPlanContext, AgentPlanStep
-from backend.services.agent_router_service import AgentSemanticRouterService
+from backend.models.agent_react import AgentReActDecision
+from backend.models.agent_runtime import AgentRouteDecision
 from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolSpec
 from backend.services.product_agent_service import ProductAgentService
 
@@ -70,35 +70,23 @@ class FakeRegistry:
         )
 
 
-class NeverSingleStepPlanner:
+class ComplexRouter:
+    def route(self, **_kwargs):
+        return AgentRouteDecision(
+            kind="complex",
+            source="deterministic",
+            intent="complex",
+            user_visible_reason="The request requires multiple actions.",
+        )
+
+
+class NeverSemanticRouter:
     provider_name = "never"
     model = "never"
     prompt_id = "never@test"
 
-    def plan(self, **_kwargs):
-        raise AssertionError("Compound request should not use the single-step planner.")
-
-
-class FakeMultiStepPlanner:
-    provider_name = "fake-planner"
-    model = "fake-model"
-    prompt_id = "agent.multi_step_planner@test"
-
-    def plan(self, **_kwargs):
-        return AgentPlanContext(
-            goal="Translate and save the selection.",
-            mode="multi_step",
-            steps=[
-                AgentPlanStep(step_id="step-1", tool_name="translate_selection"),
-                AgentPlanStep(
-                    step_id="step-2",
-                    tool_name="save_research_note",
-                    arguments={"user_note": "Keep this"},
-                    depends_on=["step-1"],
-                ),
-            ],
-            current_step_id="step-1",
-        )
+    def route(self, **_kwargs):
+        raise AssertionError("Deterministic complex route should skip semantic routing.")
 
 
 class FakeChatService:
@@ -117,15 +105,52 @@ class FakeChatService:
         )
 
 
+class WriteReActDecisionService:
+    provider_name = "fake-react"
+    model = "fake-react-model"
+    prompt_id = "agent.react_decision@test"
+
+    def decide(self, *, iteration, observations=(), **_kwargs):
+        if iteration == 1:
+            return AgentReActDecision(
+                iteration=1,
+                kind="tool",
+                tool_name="translate_selection",
+                action_summary="Translate first.",
+            )
+        if iteration == 2:
+            assert len(observations) == 1
+            return AgentReActDecision(
+                iteration=2,
+                kind="tool",
+                tool_name="save_research_note",
+                arguments={"user_note": "Keep this"},
+                action_summary="Save the requested note.",
+            )
+        assert len(observations) == 2
+        return AgentReActDecision(
+            iteration=3,
+            kind="final",
+            action_summary="The requested actions are complete.",
+            final_answer="Saved.",
+        )
+
+    def close(self) -> None:
+        pass
+
+
 def _runtime(registry: FakeRegistry, chat: FakeChatService) -> AgentRuntime:
     service = ProductAgentService(
         registry=registry,
         chat_service=chat,
-        semantic_router=AgentSemanticRouterService(planner=NeverSingleStepPlanner()),
-        multi_step_planner=FakeMultiStepPlanner(),
+        router=ComplexRouter(),
+        semantic_router=NeverSemanticRouter(),
     )
     return AgentRuntime(
-        workflow_adapter=ReadingAgentGraph(ProductAgentRuntimeAdapter(service)),
+        workflow_adapter=ReadingAgentGraph(
+            ProductAgentRuntimeAdapter(service),
+            react_decision_service=WriteReActDecisionService(),
+        ),
     )
 
 
@@ -141,23 +166,25 @@ def _state(*, confirmed: bool = False) -> AgentState:
     )
 
 
-def test_multi_step_write_stops_for_confirmation_before_side_effect() -> None:
+def test_react_write_stops_for_confirmation_before_side_effect() -> None:
     registry = FakeRegistry()
     chat = FakeChatService()
 
     result = _runtime(registry, chat).execute(_state())
 
     assert result.response["status"] == "confirmation_required"
+    assert result.react.status == "confirmation_required"
     assert registry.executions == ["translate_selection"]
     assert chat.calls == 0
-    assert [step.status for step in result.plan.steps] == ["completed", "pending"]
+    assert [item.kind for item in result.react.decisions] == ["tool", "tool"]
+    assert [item.tool_name for item in result.react.observations] == ["translate_selection"]
     assert [call["name"] for call in result.tool_calls] == [
         "translate_selection",
         "save_research_note",
     ]
 
 
-def test_confirmed_final_write_executes_once_without_post_write_synthesis() -> None:
+def test_confirmed_react_write_executes_once_without_post_write_model_synthesis() -> None:
     registry = FakeRegistry()
     chat = FakeChatService()
 
@@ -165,6 +192,7 @@ def test_confirmed_final_write_executes_once_without_post_write_synthesis() -> N
 
     assert registry.executions == ["translate_selection", "save_research_note"]
     assert chat.calls == 0
+    assert result.react.status == "completed"
     assert result.response["status"] == "completed"
     assert result.response["output_text"] == "tool:save_research_note"
-    assert [step.status for step in result.plan.steps] == ["completed", "completed"]
+    assert [item.kind for item in result.react.decisions] == ["tool", "tool", "final"]

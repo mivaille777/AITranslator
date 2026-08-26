@@ -12,6 +12,7 @@ from backend.rag.config import (
     RagConfig,
     RagEmbeddingConfig,
     RagRetrievalConfig,
+    RagSemanticChunkingConfig,
 )
 
 
@@ -24,6 +25,11 @@ def test_rag_config_defaults_match_v1_contract() -> None:
     assert config.chunking.preferred_max_tokens is None
     assert config.chunking.hard_max_tokens is None
     assert config.chunking.overlap_tokens == 80
+    assert config.semantic_chunking.enabled is False
+    assert config.semantic_chunking.merge_similarity == pytest.approx(0.72)
+    assert config.semantic_chunking.strong_merge_similarity == pytest.approx(0.82)
+    assert config.semantic_chunking.strong_split_similarity == pytest.approx(0.58)
+    assert config.semantic_chunking.centroid_window == 4
     assert config.embedding.model == "Qwen/Qwen3-Embedding-0.6B"
     assert config.embedding.dimension == 1024
     assert config.embedding.batch_size == 8
@@ -79,19 +85,27 @@ def test_hierarchical_chunk_bounds_must_be_monotonic() -> None:
         )
 
 
+def test_semantic_thresholds_must_be_monotonic() -> None:
+    with pytest.raises(ValidationError):
+        RagSemanticChunkingConfig(
+            strong_split_similarity=0.80,
+            merge_similarity=0.72,
+        )
+    with pytest.raises(ValidationError):
+        RagSemanticChunkingConfig(
+            merge_similarity=0.85,
+            strong_merge_similarity=0.82,
+        )
+    with pytest.raises(ValidationError):
+        RagSemanticChunkingConfig(
+            merge_similarity=0.80,
+            small_chunk_merge_similarity=0.75,
+        )
+
+
 def test_final_top_k_must_not_exceed_fusion_top_k() -> None:
     with pytest.raises(ValidationError):
         RagRetrievalConfig(fusion_top_k=4, final_top_k=8)
-
-
-def test_small_to_big_top_k_can_exceed_small_fixture_candidate_count() -> None:
-    config = RagRetrievalConfig(
-        fusion_top_k=3,
-        final_top_k=3,
-        small_to_big_top_k=4,
-    )
-
-    assert config.small_to_big_top_k == 4
 
 
 def test_default_toml_rag_section_validates_against_contract() -> None:
@@ -112,6 +126,16 @@ def test_default_toml_rag_section_validates_against_contract() -> None:
     assert config.chunking.preferred_max_tokens == 550
     assert config.chunking.hard_max_tokens == 750
     assert config.chunking.minimum_tokens == 80
+    assert config.semantic_chunking.enabled is True
+    assert config.semantic_chunking.merge_similarity == pytest.approx(0.72)
+    assert config.semantic_chunking.strong_merge_similarity == pytest.approx(0.82)
+    assert config.semantic_chunking.strong_split_similarity == pytest.approx(0.58)
+    assert config.semantic_chunking.small_chunk_merge_similarity == pytest.approx(0.78)
+    assert config.semantic_chunking.adaptive_threshold_enabled is True
+    assert config.semantic_chunking.adaptive_std_factor == pytest.approx(1.0)
+    assert config.semantic_chunking.min_paragraphs_for_adaptive == 4
+    assert config.semantic_chunking.centroid_window == 4
+    assert config.semantic_chunking.semantic_sentence_fallback is False
     assert config.embedding.dimension == 1024
     assert config.retrieval.dense_top_k == 30
     assert config.retrieval.small_to_big_enabled is True

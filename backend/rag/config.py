@@ -27,7 +27,7 @@ class RagChunkingConfig(RagConfigModel):
         return self.hard_max_tokens or self.effective_preferred_max_tokens
 
     @model_validator(mode="after")
-    def validate_chunk_bounds(self) -> RagChunkingConfig:
+    def validate_chunk_bounds(self) -> "RagChunkingConfig":
         preferred = self.effective_preferred_max_tokens
         hard = self.effective_hard_max_tokens
         if self.minimum_tokens > self.target_tokens:
@@ -111,11 +111,17 @@ class RagRetrievalConfig(RagConfigModel):
     fusion_top_k: int = Field(default=20, ge=1)
     final_top_k: int = Field(default=8, ge=1)
     fusion: str = "rrf"
+    small_to_big_enabled: bool = True
+    small_to_big_top_k: int = Field(default=4, ge=1)
+    small_to_big_neighbor_radius: int = Field(default=1, ge=0, le=3)
+    small_to_big_max_tokens_per_anchor: int = Field(default=1200, ge=1, le=6000)
 
     @model_validator(mode="after")
-    def validate_retrieval_bounds(self) -> RagRetrievalConfig:
+    def validate_retrieval_bounds(self) -> "RagRetrievalConfig":
         if self.final_top_k > self.fusion_top_k:
             raise ValueError("final_top_k must not exceed fusion_top_k")
+        if self.small_to_big_top_k > self.fusion_top_k:
+            raise ValueError("small_to_big_top_k must not exceed fusion_top_k")
         return self
 
 

@@ -144,7 +144,8 @@ class StructureAwareChunker:
                 paragraphs, index, _BLOCK_TABLE
             ):
                 table = paragraphs[index + 1]
-                start = self._special_start(buffer, paragraph.start_char)
+                lead = self._lead_heading(buffer)
+                start = lead.start_char if lead else paragraph.start_char
                 self._flush_nonlead_buffer(spans, section, buffer)
                 buffer = []
                 spans.append(
@@ -152,12 +153,16 @@ class StructureAwareChunker:
                         section,
                         start=start,
                         end=table.end_char,
-                        first=paragraph,
+                        first=lead or paragraph,
                         last=table,
                         chunk_type="table",
                         boundary_strategy="table_block",
                         labels=(paragraph.label, table.label),
-                        block_types=(paragraph.block_type, table.block_type),
+                        block_types=tuple(
+                            block.block_type
+                            for block in (lead, paragraph, table)
+                            if block is not None
+                        ),
                     )
                 )
                 index += 2
@@ -176,7 +181,8 @@ class StructureAwareChunker:
                     block_types.append(caption.block_type)
                     last = caption
                     consumed = 2
-                start = self._special_start(buffer, paragraph.start_char)
+                lead = self._lead_heading(buffer)
+                start = lead.start_char if lead else paragraph.start_char
                 self._flush_nonlead_buffer(spans, section, buffer)
                 buffer = []
                 spans.append(
@@ -184,19 +190,22 @@ class StructureAwareChunker:
                         section,
                         start=start,
                         end=end,
-                        first=paragraph,
+                        first=lead or paragraph,
                         last=last,
                         chunk_type="table",
                         boundary_strategy="table_block",
                         labels=tuple(labels),
-                        block_types=tuple(block_types),
+                        block_types=tuple(
+                            ([lead.block_type] if lead else []) + block_types
+                        ),
                     )
                 )
                 index += consumed
                 continue
 
             if paragraph.block_type == _BLOCK_FIGURE_CAPTION:
-                start = self._special_start(buffer, paragraph.start_char)
+                lead = self._lead_heading(buffer)
+                start = lead.start_char if lead else paragraph.start_char
                 self._flush_nonlead_buffer(spans, section, buffer)
                 buffer = []
                 end = paragraph.end_char
@@ -204,7 +213,10 @@ class StructureAwareChunker:
                 consumed = 1
                 if self._next_is(paragraphs, index, _BLOCK_PARAGRAPH):
                     context = paragraphs[index + 1]
-                    if self._token_counter.count(text[start : context.end_char]) <= self._config.effective_hard_max_tokens:
+                    if (
+                        self._token_counter.count(text[start : context.end_char])
+                        <= self._config.effective_hard_max_tokens
+                    ):
                         end = context.end_char
                         last = context
                         consumed = 2
@@ -213,12 +225,16 @@ class StructureAwareChunker:
                         section,
                         start=start,
                         end=end,
-                        first=paragraph,
+                        first=lead or paragraph,
                         last=last,
                         chunk_type="figure_context",
                         boundary_strategy="figure_context",
                         labels=(paragraph.label,),
-                        block_types=(paragraph.block_type, last.block_type),
+                        block_types=tuple(
+                            block.block_type
+                            for block in (lead, paragraph, last)
+                            if block is not None
+                        ),
                     )
                 )
                 index += consumed
@@ -228,15 +244,23 @@ class StructureAwareChunker:
                 context_before: DocumentParagraphNode | None = None
                 if buffer and buffer[-1].block_type == _BLOCK_PARAGRAPH:
                     context_before = buffer.pop()
-                self._flush_buffer(spans, section, buffer)
-                buffer = []
-                start = context_before.start_char if context_before else paragraph.start_char
+                lead = self._lead_heading(buffer)
+                if lead is not None:
+                    buffer = []
+                else:
+                    self._flush_buffer(spans, section, buffer)
+                    buffer = []
+                first = lead or context_before or paragraph
+                start = first.start_char
                 end = paragraph.end_char
                 last = paragraph
                 consumed = 1
                 if self._next_is(paragraphs, index, _BLOCK_PARAGRAPH):
                     context_after = paragraphs[index + 1]
-                    if self._token_counter.count(text[start : context_after.end_char]) <= self._config.effective_hard_max_tokens:
+                    if (
+                        self._token_counter.count(text[start : context_after.end_char])
+                        <= self._config.effective_hard_max_tokens
+                    ):
                         end = context_after.end_char
                         last = context_after
                         consumed = 2
@@ -245,14 +269,14 @@ class StructureAwareChunker:
                         section,
                         start=start,
                         end=end,
-                        first=context_before or paragraph,
+                        first=first,
                         last=last,
                         chunk_type="equation_context",
                         boundary_strategy="equation_context",
                         labels=(paragraph.label,),
                         block_types=tuple(
                             block.block_type
-                            for block in (context_before, paragraph, last)
+                            for block in (lead, context_before, paragraph, last)
                             if block is not None
                         ),
                     )
@@ -501,31 +525,27 @@ class StructureAwareChunker:
     ) -> bool:
         return index + 1 < len(paragraphs) and paragraphs[index + 1].block_type == block_type
 
-    def _special_start(
+    def _lead_heading(
         self,
         buffer: list[DocumentParagraphNode],
-        default_start: int,
-    ) -> int:
+    ) -> DocumentParagraphNode | None:
         if (
             len(buffer) == 1
             and buffer[0].block_type == _BLOCK_HEADING
             and self._token_counter.count(buffer[0].text) <= self._config.minimum_tokens
         ):
-            return buffer[0].start_char
-        return default_start
+            return buffer[0]
+        return None
 
-    @staticmethod
     def _flush_nonlead_buffer(
+        self,
         spans: list[_ChunkSpan],
         section: DocumentSectionNode,
         buffer: list[DocumentParagraphNode],
     ) -> None:
-        if (
-            len(buffer) == 1
-            and buffer[0].block_type == _BLOCK_HEADING
-        ):
+        if self._lead_heading(buffer) is not None:
             return
-        StructureAwareChunker._flush_buffer(spans, section, buffer)
+        self._flush_buffer(spans, section, buffer)
 
     @staticmethod
     def _special_span(
@@ -672,13 +692,15 @@ class StructureAwareChunker:
             "special_labels": list(span.special_labels),
         }
         if span.chunk_type == "reference_group":
-            metadata["reference_entry_count"] = sum(
-                1 for item in span.block_types if item == _BLOCK_REFERENCE_ENTRY
-            ) or len(span.special_labels)
+            metadata["reference_entry_count"] = len(span.special_labels)
         if span.chunk_type in {"table", "figure_context", "equation_context"}:
             metadata["special_block"] = True
-        if self._token_counter.count(chunk_text) > self._config.effective_hard_max_tokens:
-            metadata["oversized_special_block"] = span.chunk_type != "paragraph_group"
+        if (
+            span.chunk_type != "paragraph_group"
+            and self._token_counter.count(chunk_text)
+            > self._config.effective_hard_max_tokens
+        ):
+            metadata["oversized_special_block"] = True
         if document.document.metadata:
             metadata["document_metadata"] = deepcopy(document.document.metadata)
         if document.metadata:

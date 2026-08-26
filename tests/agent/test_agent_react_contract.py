@@ -24,8 +24,8 @@ def test_react_tool_decision_is_strict_and_contains_no_reasoning_field() -> None
 
     assert decision.tool_name == "search_knowledge"
     assert decision.arguments == {"query": "safe Bayesian optimization"}
-    assert "thought" not in decision.model_fields
-    assert "reasoning" not in decision.model_fields
+    assert "thought" not in AgentReActDecision.model_fields
+    assert "reasoning" not in AgentReActDecision.model_fields
 
     with pytest.raises(ValidationError, match="tool decisions require tool_name"):
         AgentReActDecision(iteration=1, kind="tool")

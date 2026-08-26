@@ -286,7 +286,10 @@ class StructureAwareChunker:
 
             paragraph_tokens = self._token_counter.count(paragraph.text)
             if paragraph_tokens > self._config.effective_hard_max_tokens:
-                if buffer and self._buffer_tokens(text, buffer) <= self._config.minimum_tokens:
+                if buffer and (
+                    self._lead_heading(buffer) is not None
+                    or self._buffer_tokens(text, buffer) <= self._config.minimum_tokens
+                ):
                     start = buffer[0].start_char
                     paragraph_start_index = buffer[0].paragraph_index
                     block_types = tuple(item.block_type for item in buffer)
@@ -329,6 +332,14 @@ class StructureAwareChunker:
             combined_tokens = self._token_counter.count(
                 text[buffer[0].start_char : paragraph.end_char]
             )
+            if (
+                self._lead_heading(buffer) is not None
+                and combined_tokens <= self._config.effective_hard_max_tokens
+            ):
+                buffer.append(paragraph)
+                index += 1
+                continue
+
             current_tokens = self._buffer_tokens(text, buffer)
             if self._should_keep_paragraph_group(
                 current_tokens=current_tokens,
@@ -525,15 +536,11 @@ class StructureAwareChunker:
     ) -> bool:
         return index + 1 < len(paragraphs) and paragraphs[index + 1].block_type == block_type
 
+    @staticmethod
     def _lead_heading(
-        self,
         buffer: list[DocumentParagraphNode],
     ) -> DocumentParagraphNode | None:
-        if (
-            len(buffer) == 1
-            and buffer[0].block_type == _BLOCK_HEADING
-            and self._token_counter.count(buffer[0].text) <= self._config.minimum_tokens
-        ):
+        if len(buffer) == 1 and buffer[0].block_type == _BLOCK_HEADING:
             return buffer[0]
         return None
 

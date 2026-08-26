@@ -40,6 +40,26 @@ def test_context_formats_evidence_and_program_citations() -> None:
     assert context.included_evidence_ids == ("evidence:1",)
 
 
+def test_context_override_is_used_for_synthesis_without_mutating_evidence() -> None:
+    evidence = [_evidence("evidence:1", rank=1, score=0.9, excerpt="anchor only")]
+    citations = build_evidence_citations(evidence)
+
+    context = GroundedContextBuilder().build(
+        evidence,
+        citations,
+        context_overrides={
+            "evidence:1": "previous context\n\nanchor only\n\nfollowing context"
+        },
+    )
+
+    assert "Evidence Context (anchor + same-section neighbors)" in context.text
+    assert "previous context" in context.text
+    assert "following context" in context.text
+    assert evidence[0].excerpt == "anchor only"
+    assert evidence[0].evidence_id == "evidence:1"
+    assert citations[0].evidence_ids == ["evidence:1"]
+
+
 def test_context_budget_truncation_is_deterministic_and_ranked() -> None:
     evidence = [
         _evidence("evidence:rank-2", rank=2, score=0.99, excerpt="B" * 260),
@@ -86,4 +106,5 @@ def test_context_contains_all_grounding_safety_rules() -> None:
     assert "State clearly when Evidence is insufficient" in context.text
     assert "Do not invent sources" in context.text
     assert "Use only the allowed display labels" in context.text
+    assert "same-section context belongs to its anchor evidence" in context.text
     assert "Internal retrieval scores are not user facts" in context.text

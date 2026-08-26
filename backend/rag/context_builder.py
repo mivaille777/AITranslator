@@ -81,7 +81,8 @@ class GroundedContextBuilder:
             "- Do not invent sources, titles, URLs, pages, sections, or citations.\n"
             "- Add citations to factual claims when supported.\n"
             "- Use only the allowed display labels below.\n"
-            "- Supplemental same-section context belongs to its anchor evidence and is not a separate citation.\n"
+            "- Supplemental same-section context is interpretation-only and is not independently citable.\n"
+            "- Do not make a factual claim supported only by Supplemental Context.\n"
             "- Internal retrieval scores are not user facts.\n"
             f"ALLOWED CITATIONS\n{allowed}\n"
             "EVIDENCE\n"
@@ -94,19 +95,19 @@ class GroundedContextBuilder:
             if citation is None:
                 omitted.append(item.evidence_id)
                 continue
-            override = str(overrides.get(item.evidence_id, "") or "").strip()
-            evidence_text = override or item.excerpt.strip()
-            evidence_label = (
-                "Evidence Context (anchor + same-section neighbors)"
-                if override
-                else "Evidence"
-            )
+            supplemental = str(overrides.get(item.evidence_id, "") or "").strip()
             segment = (
                 f"\n[C{position}] {citation.label}\n"
                 f"Title: {item.title or 'Untitled source'}\n"
                 f"Location: {item.location or 'Location unavailable'}\n"
-                f"{evidence_label}: {evidence_text}\n"
+                f"Evidence: {item.excerpt.strip()}\n"
             )
+            if supplemental:
+                segment += (
+                    "Supplemental Same-Section Context "
+                    "(interpretation only; not independently citable):\n"
+                    f"{supplemental}\n"
+                )
             if len(text) + len(segment) > self.max_context_chars:
                 omitted.append(item.evidence_id)
                 continue

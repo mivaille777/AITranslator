@@ -41,6 +41,23 @@ class StoredAgentRun:
 
 
 @dataclass(frozen=True, slots=True)
+class StoredAgentEvent:
+    """One already-redacted persisted runtime event.
+
+    The event payload is constrained by ``_ALLOWED_EVENT_FIELDS`` before it is
+    written to SQLite. Evaluation code can therefore inspect the execution
+    trajectory without gaining access to user text, document content, model
+    output, tool arguments, or private reasoning.
+    """
+
+    sequence: int
+    event_type: str
+    timestamp: str
+    elapsed_ms: int
+    payload: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class AgentObservabilitySummary:
     sample_size: int
     completed_runs: int
@@ -90,8 +107,26 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
         {
             "action",
             "tool_name",
+            "mode",
+            "route_kind",
+            "route_source",
             "request_id",
             "duration_ms",
+            "provider",
+            "model",
+            "prompt_id",
+        }
+    ),
+    "react_started": frozenset(
+        {"max_iterations", "max_tool_calls", "request_id"}
+    ),
+    "decision_ready": frozenset(
+        {
+            "iteration",
+            "kind",
+            "tool_name",
+            "argument_keys",
+            "action_fingerprint",
             "provider",
             "model",
             "prompt_id",
@@ -110,6 +145,20 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
             "request_id",
             "duration_ms",
         }
+    ),
+    "observation_ready": frozenset(
+        {
+            "observation_id",
+            "iteration",
+            "tool_name",
+            "success",
+            "summary_chars",
+            "evidence_count",
+            "citation_count",
+        }
+    ),
+    "react_limit_reached": frozenset(
+        {"iteration", "tool_call_count", "reason"}
     ),
     "rag_query_started": frozenset({"query_id", "retrieval_strategy"}),
     "rag_query_rewritten": frozenset(
@@ -132,7 +181,15 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
     ),
     "rag_fallback": frozenset({"query_id", "fallback_reason"}),
     "synthesis_ready": frozenset(
-        {"provider", "model", "prompt_id", "request_id", "duration_ms"}
+        {
+            "provider",
+            "model",
+            "prompt_id",
+            "request_id",
+            "duration_ms",
+            "source",
+            "grounded",
+        }
     ),
     "failure": frozenset({"code", "stage", "fallback_reason"}),
     "cancelled": frozenset({"code", "fallback_reason"}),
@@ -449,20 +506,43 @@ class AgentTraceStoreService:
             ),
         )
 
-    def event_payloads(self, run_id: str) -> tuple[dict[str, object], ...]:
-        """Testing/debug helper returning only already-redacted persisted payloads."""
+    def list_events(self, run_id: str) -> tuple[StoredAgentEvent, ...]:
+        """Return the redacted persisted event sequence for one run."""
+
+        candidate = str(run_id or "").strip()
+        if not candidate:
+            return ()
         with self._lock:
             with closing(self._connect()) as connection:
                 self._ensure_schema(connection)
                 rows = connection.execute(
-                    "SELECT payload_json FROM agent_events WHERE run_id = ? ORDER BY sequence ASC",
-                    (str(run_id or "").strip(),),
+                    """
+                    SELECT sequence, event_type, timestamp, elapsed_ms, payload_json
+                    FROM agent_events
+                    WHERE run_id = ?
+                    ORDER BY sequence ASC
+                    """,
+                    (candidate,),
                 ).fetchall()
-        return tuple(json.loads(str(row["payload_json"])) for row in rows)
+        return tuple(
+            StoredAgentEvent(
+                sequence=int(row["sequence"]),
+                event_type=str(row["event_type"]),
+                timestamp=str(row["timestamp"]),
+                elapsed_ms=int(row["elapsed_ms"]),
+                payload=json.loads(str(row["payload_json"])),
+            )
+            for row in rows
+        )
+
+    def event_payloads(self, run_id: str) -> tuple[dict[str, object], ...]:
+        """Testing/debug helper returning only already-redacted persisted payloads."""
+        return tuple(event.payload for event in self.list_events(run_id))
 
 
 __all__ = [
     "AgentTraceStoreService",
     "StoredAgentRun",
+    "StoredAgentEvent",
     "AgentObservabilitySummary",
 ]

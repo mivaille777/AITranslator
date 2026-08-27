@@ -10,6 +10,7 @@ import {
 import { queryKeys, queryPolling } from "../../shared/query/query-keys"
 import { Badge } from "../../shared/ui/Badge"
 import { Button } from "../../shared/ui/Button"
+import { companionLayoutClassNames } from "./companion-layout"
 import {
   filterConversationHistory,
   groupConversationHistory,
@@ -83,8 +84,8 @@ export default function ConversationHistoryPanel({
   }
 
   return (
-    <aside className="border-b border-slate-200 bg-[#060918] p-3 text-slate-200 xl:border-b-0 xl:border-r xl:border-white/[0.06]">
-      <div className="px-1 py-2">
+    <aside className={companionLayoutClassNames.historyPanel}>
+      <div className="shrink-0 px-1 py-2">
         <div className="flex items-center justify-between gap-2">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -119,7 +120,7 @@ export default function ConversationHistoryPanel({
         </label>
       </div>
 
-      <div className="mt-2 max-h-[540px] overflow-y-auto pr-1">
+      <div className={companionLayoutClassNames.historyScroller}>
         {conversationsQuery.isLoading && (
           <p className="px-2 py-3 text-xs text-slate-500">Loading conversations…</p>
         )}

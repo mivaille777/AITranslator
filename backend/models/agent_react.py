@@ -15,6 +15,7 @@ AgentReActStatus = Literal[
     "limit_reached",
     "failed",
 ]
+AgentEvidenceGateAction = Literal["stop", "refine", "retrieve"]
 
 
 def _observation_id() -> str:
@@ -59,6 +60,43 @@ class AgentReActDecision(AgentReActContractModel):
         return self
 
 
+class AgentEvidenceGateAssessment(AgentReActContractModel):
+    """Deterministic retrieval-quality assessment consumed by ReAct.
+
+    Scores are normalized proxies derived from stable evidence properties. They
+    intentionally do not treat raw dense/sparse/fusion/reranker scores as one
+    calibrated confidence scale.
+    """
+
+    action: AgentEvidenceGateAction
+    coverage_score: float = Field(ge=0.0, le=1.0)
+    diversity_score: float = Field(ge=0.0, le=1.0)
+    novelty_score: float = Field(ge=0.0, le=1.0)
+    quality_score: float = Field(ge=0.0, le=1.0)
+    evidence_count: int = Field(ge=0)
+    unique_source_count: int = Field(ge=0)
+    unique_location_count: int = Field(ge=0)
+    novel_evidence_count: int = Field(ge=0)
+    search_count: int = Field(ge=0)
+    remaining_searches: int = Field(ge=0)
+    retrieval_fallback: bool = False
+    reason_codes: list[str] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def normalize_gate(self) -> "AgentEvidenceGateAssessment":
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for raw in self.reason_codes:
+            reason = str(raw or "").strip().lower()
+            if reason and reason not in seen:
+                normalized.append(reason[:128])
+                seen.add(reason)
+        self.reason_codes = normalized
+        if self.novel_evidence_count > self.evidence_count:
+            raise ValueError("gate novel_evidence_count cannot exceed evidence_count")
+        return self
+
+
 class AgentRetrievalObservation(AgentReActContractModel):
     """Compact retrieval metadata used by ReAct without exposing RAG internals."""
 
@@ -69,6 +107,7 @@ class AgentRetrievalObservation(AgentReActContractModel):
     citation_count: int = Field(default=0, ge=0)
     novel_evidence_count: int = Field(default=0, ge=0)
     fallback_reason: str = Field(default="", max_length=512)
+    gate: AgentEvidenceGateAssessment | None = None
 
     @model_validator(mode="after")
     def normalize_retrieval(self) -> "AgentRetrievalObservation":
@@ -137,6 +176,8 @@ class AgentReActContext(AgentReActContractModel):
 
 
 __all__ = [
+    "AgentEvidenceGateAction",
+    "AgentEvidenceGateAssessment",
     "AgentObservation",
     "AgentRetrievalObservation",
     "AgentReActContext",

@@ -1,7 +1,7 @@
 import type { AgentTraceEventType } from "../../../api/agent"
 import type { AgentActivityItem } from "../state/agent-workspace-state"
 
-export type AgentTimelineStageId = "plan" | "tool" | "observation" | "result"
+export type AgentTimelineStageId = "decision" | "tool" | "observation" | "result"
 export type AgentTimelineStageStatus = "idle" | "active" | "complete" | "warning"
 
 export interface AgentTimelineStage {
@@ -14,19 +14,19 @@ export interface AgentTimelineStage {
 
 export const agentTimelineStageDefinitions = [
   {
-    id: "plan",
-    label: "Plan",
-    description: "Choose the next bounded action.",
+    id: "decision",
+    label: "Decision",
+    description: "Choose one bounded next action or finish.",
   },
   {
     id: "tool",
-    label: "Tool Call",
-    description: "Execute the selected capability.",
+    label: "Action",
+    description: "Execute the selected capability safely.",
   },
   {
     id: "observation",
     label: "Observation",
-    description: "Return tool evidence to the Agent.",
+    description: "Return compact tool evidence to the Agent.",
   },
   {
     id: "result",
@@ -36,10 +36,13 @@ export const agentTimelineStageDefinitions = [
 ] as const
 
 const eventStage: Partial<Record<AgentTraceEventType, AgentTimelineStageId>> = {
-  plan_ready: "plan",
+  plan_ready: "decision",
+  react_started: "decision",
+  decision_ready: "decision",
   tool_call: "tool",
   retry: "tool",
   tool_result: "observation",
+  observation_ready: "observation",
   rag_query_started: "observation",
   rag_query_rewritten: "observation",
   rag_dense_completed: "observation",
@@ -48,6 +51,7 @@ const eventStage: Partial<Record<AgentTraceEventType, AgentTimelineStageId>> = {
   rag_rerank_completed: "observation",
   rag_evidence_selected: "observation",
   rag_fallback: "observation",
+  react_limit_reached: "result",
   synthesis_ready: "result",
   failure: "result",
   cancelled: "result",
@@ -99,7 +103,7 @@ export function deriveAgentTimelineStages(
       running
       && activities.length > 0
       && latestStageId === null
-      && definition.id === "plan"
+      && definition.id === "decision"
     ) {
       status = "active"
     }

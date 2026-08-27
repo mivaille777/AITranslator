@@ -24,6 +24,7 @@ import {
   type CompanionContextSnapshot,
   type CompanionRuntimeMessage,
 } from "./companion-runtime"
+import { companionLayoutClassNames } from "./companion-layout"
 import ConversationHistoryPanel from "./ConversationHistoryPanel"
 import { KnowledgeRetrievalControl } from "./components/KnowledgeRetrievalControl"
 import { useCompanionConversationRuntime } from "./useCompanionConversationRuntime"
@@ -232,7 +233,7 @@ export default function CompanionWorkspaceV2() {
   )
 
   return (
-    <section className="ait-chat-shell ait-surface grid min-h-[680px] overflow-hidden xl:grid-cols-[270px_340px_minmax(0,1fr)]">
+    <section className={companionLayoutClassNames.shell}>
       <ConversationHistoryPanel
         activeConversationId={runtime.conversationId}
         hasCurrentReading={Boolean(readingHandoff)}
@@ -246,7 +247,7 @@ export default function CompanionWorkspaceV2() {
         onDeletedActive={handleDeletedActive}
       />
 
-      <aside className="border-b border-slate-200/70 bg-slate-50/60 p-5 xl:border-b-0 xl:border-r">
+      <aside className={companionLayoutClassNames.contextPanel}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -388,8 +389,8 @@ export default function CompanionWorkspaceV2() {
         />
       </aside>
 
-      <div className="flex min-h-0 flex-col bg-white/95">
-        <div className="min-h-0 flex-1 overflow-y-auto p-5 lg:p-6">
+      <div className={companionLayoutClassNames.chatColumn}>
+        <div className={companionLayoutClassNames.messageScroller}>
           {runtime.messages.length === 0 && (
             <EmptyState
               title={runtime.contextMode === "general"
@@ -540,7 +541,7 @@ export default function CompanionWorkspaceV2() {
         </div>
 
         <form
-          className="border-t border-slate-100/80 bg-white/90 p-4 backdrop-blur-xl"
+          className={companionLayoutClassNames.composer}
           onSubmit={handleSubmit}
         >
           {!runtime.chatAvailable && runtime.chatStatusLoaded && (

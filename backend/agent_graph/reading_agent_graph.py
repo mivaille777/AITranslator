@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from types import SimpleNamespace
 from typing import Any, Callable, TypedDict
 
@@ -88,6 +90,44 @@ def _merge_emitted(existing: object, new_items: set[AgentEventType]) -> list[str
         values.update(str(item) for item in existing if str(item))
     values.update(item.value for item in new_items)
     return sorted(values)
+
+
+def _react_action_fingerprint(state: AgentState, decision: AgentReActDecision) -> str:
+    """Create a run-local opaque fingerprint for duplicate-action detection.
+
+    The persisted value is salted by run_id, so identical tool arguments cannot
+    be correlated across independent runs. Raw argument values are never placed
+    in trace payloads.
+    """
+
+    if decision.kind != "tool":
+        return ""
+    canonical = json.dumps(
+        {
+            "tool_name": decision.tool_name,
+            "arguments": decision.arguments,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    material = f"{state.run_id}\0{canonical}".encode("utf-8")
+    return hashlib.sha256(material).hexdigest()[:20]
+
+
+def _is_repeated_react_action(
+    state: AgentState,
+    decision: AgentReActDecision,
+) -> bool:
+    if decision.kind != "tool":
+        return False
+    return any(
+        previous.kind == "tool"
+        and previous.tool_name == decision.tool_name
+        and previous.arguments == decision.arguments
+        for previous in state.react.decisions[:-1]
+    )
 
 
 class ReadingAgentGraph:
@@ -363,6 +403,7 @@ class ReadingAgentGraph:
             raise
 
         emitted: set[AgentEventType] = set()
+        action_fingerprint = _react_action_fingerprint(state, decision)
         if emit is not None:
             emit(
                 AgentEventType.DECISION_READY,
@@ -371,6 +412,7 @@ class ReadingAgentGraph:
                     "kind": decision.kind,
                     "tool_name": decision.tool_name,
                     "argument_keys": sorted(decision.arguments),
+                    "action_fingerprint": action_fingerprint,
                     "action_summary": decision.action_summary,
                     "provider": str(
                         getattr(self._react_decision_service, "provider_name", "") or ""
@@ -384,6 +426,16 @@ class ReadingAgentGraph:
                 },
             )
             emitted.add(AgentEventType.DECISION_READY)
+
+        if _is_repeated_react_action(state, decision):
+            emitted.update(
+                self._emit_react_limit(
+                    state,
+                    emit,
+                    reason="repeated_action_detected",
+                )
+            )
+
         return {
             "agent_state": _dump_agent_state(state),
             "emitted_event_types": _merge_emitted(

@@ -56,3 +56,11 @@ const fallbackRoute = workspaceRoutes[0]
 export function getWorkspaceRouteMeta(pathname: string): WorkspaceRouteMeta {
   return workspaceRoutes.find((route) => route.path === pathname) ?? fallbackRoute
 }
+
+/**
+ * Routes that own their internal scroll containers instead of letting the
+ * workspace <main> element scroll the whole page.
+ */
+export function workspaceRouteUsesFixedHeight(pathname: string): boolean {
+  return pathname === "/chat"
+}

@@ -220,6 +220,33 @@ def test_rag_observability_reuses_agent_trace_and_sanitizes_tool_event() -> None
     assert "The GP constrains" not in repr(tool_payload)
 
 
+def test_grounding_verification_emits_only_aggregate_runtime_metrics() -> None:
+    chat = CapturingChat()
+    events: list[tuple[str, dict]] = []
+
+    _service(Registry(), chat).run(
+        _resolved_route=_route(KNOWLEDGE_TOOL.name),
+        event_sink=lambda event_type, payload: events.append((event_type, payload)),
+        **_payload(),
+    )
+
+    verification = next(
+        payload
+        for event_type, payload in events
+        if event_type == "grounding_verification_evaluated"
+    )
+    assert verification["passed"] is True
+    assert verification["fallback_applied"] is False
+    assert verification["claim_count"] == 0
+    assert verification["citation_coverage"] == 1.0
+    assert verification["support_rate"] == 1.0
+    assert verification["reason_codes"] == ["no_verifiable_claims"]
+    serialized = repr(verification)
+    assert "Grounded answer" not in serialized
+    assert "The GP constrains" not in serialized
+    assert "Current reading selection" not in serialized
+
+
 def test_product_adapter_populates_agent_state_evidence_and_citations() -> None:
     chat = CapturingChat()
     adapter = ProductAgentRuntimeAdapter(_service(Registry(), chat))

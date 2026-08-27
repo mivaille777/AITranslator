@@ -86,6 +86,7 @@ def evaluate_persisted_agent_run(
             max_redundant_actions=payload.max_redundant_actions,
             require_no_react_limit=payload.require_no_react_limit,
             require_grounded_response=payload.require_grounded_response,
+            require_grounding_verification_pass=payload.require_grounding_verification_pass,
             require_confirmation_guard=payload.require_confirmation_guard,
         ),
         events=store.list_events(run_id),

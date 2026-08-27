@@ -8,7 +8,10 @@ from backend.agent_core.reliability import AgentExecutionPolicy, AgentRunControl
 from backend.agent_core.runtime import AgentRuntime
 from backend.agent_core.state import AgentState
 from backend.agent_graph.reading_agent_graph import ReadingAgentGraph
-from backend.models.agent_react import AgentReActDecision
+from backend.models.agent_react import (
+    AgentEvidenceGateAssessment,
+    AgentReActDecision,
+)
 from backend.models.agent_runtime import AgentEvidenceItem, AgentRouteDecision
 from backend.rag.citation_service import build_evidence_citations
 from backend.services.agent_tool_registry import AgentToolExecutionResult, AgentToolSpec
@@ -188,6 +191,27 @@ class SequenceDecisionService:
         )
 
 
+class AlwaysRetrieveGate:
+    """Test-only gate that keeps retrieval open so budget guards can be isolated."""
+
+    def assess(self, *, evidence, latest_retrieval, search_count, remaining_searches):
+        return AgentEvidenceGateAssessment(
+            action="retrieve",
+            coverage_score=0.0,
+            diversity_score=0.0,
+            novelty_score=0.0,
+            quality_score=0.0,
+            evidence_count=len(evidence),
+            unique_source_count=0,
+            unique_location_count=0,
+            novel_evidence_count=min(latest_retrieval.novel_evidence_count, len(evidence)),
+            search_count=search_count,
+            remaining_searches=remaining_searches,
+            retrieval_fallback=False,
+            reason_codes=["test_keep_retrieving"],
+        )
+
+
 def _state() -> AgentState:
     return AgentState(
         session_id="agentic-rag",
@@ -200,16 +224,19 @@ def _state() -> AgentState:
 def _runtime(
     service: ComplexKnowledgeService,
     decision_service: SequenceDecisionService,
+    *,
+    evidence_gate_service=None,
 ) -> AgentRuntime:
     return AgentRuntime(
         workflow_adapter=ReadingAgentGraph(
             ProductAgentRuntimeAdapter(service),
             react_decision_service=decision_service,
+            evidence_gate_service=evidence_gate_service,
         )
     )
 
 
-def test_agentic_rag_reformulates_query_and_accumulates_novel_evidence() -> None:
+def test_agentic_rag_reformulates_query_and_gate_stops_when_evidence_is_sufficient() -> None:
     first_query = "Gaussian process global search exploration uncertainty"
     second_query = "LLM local refinement bounded candidate mechanism"
     service = ComplexKnowledgeService(
@@ -222,7 +249,7 @@ def test_agentic_rag_reformulates_query_and_accumulates_novel_evidence() -> None
         (
             ("search", first_query),
             ("search", second_query),
-            ("final", "Enough evidence is available."),
+            ("final", "This third LLM decision should not be called."),
         )
     )
     runtime = _runtime(service, decisions)
@@ -231,6 +258,7 @@ def test_agentic_rag_reformulates_query_and_accumulates_novel_evidence() -> None
 
     assert service.executed_queries == [first_query, second_query]
     assert service.synthesis_calls == 1
+    assert len(decisions.calls) == 2
     assert result.react.status == "completed"
     assert len(result.react.observations) == 2
     first = result.react.observations[0].retrieval
@@ -240,26 +268,26 @@ def test_agentic_rag_reformulates_query_and_accumulates_novel_evidence() -> None
     assert second.query == second_query
     assert first.novel_evidence_count == 1
     assert second.novel_evidence_count == 1
+    assert first.gate is not None and first.gate.action == "refine"
+    assert second.gate is not None and second.gate.action == "stop"
+    assert second.gate.evidence_count == 2
+    assert "evidence_sufficient" in second.gate.reason_codes
     assert decisions.calls[1]["observations"][0].retrieval.query == first_query
     assert decisions.calls[1]["remaining_knowledge_searches"] == 2
-    assert decisions.calls[2]["remaining_knowledge_searches"] == 1
     assert {item.evidence_id for item in result.evidence} == {
         "evidence:gp",
         "evidence:llm",
     }
-    observation_events = [
+    gate_events = [
         event
         for event in runtime.events
-        if event.event_type == AgentEventType.OBSERVATION_READY
+        if event.event_type == AgentEventType.EVIDENCE_GATE_EVALUATED
     ]
-    assert len(observation_events) == 2
-    assert observation_events[0].payload["novel_evidence_count"] == 1
-    assert observation_events[1].payload["novel_evidence_count"] == 1
-    assert observation_events[0].payload["query_fingerprint"]
-    assert first_query not in repr(observation_events[0].payload)
+    assert [event.payload["action"] for event in gate_events] == ["refine", "stop"]
+    assert gate_events[-1].payload["evidence_count"] == 2
 
 
-def test_agentic_rag_marks_search_that_adds_no_new_evidence() -> None:
+def test_agentic_rag_gate_stops_search_that_adds_no_new_evidence() -> None:
     first_query = "GP search behavior"
     second_query = "GP statistical exploration behavior"
     same = _evidence("gp", "The GP performs broad statistical search.")
@@ -273,19 +301,22 @@ def test_agentic_rag_marks_search_that_adds_no_new_evidence() -> None:
         (
             ("search", first_query),
             ("search", second_query),
-            ("final", "Use the available evidence."),
+            ("final", "This should be bypassed by the gate."),
         )
     )
 
     result = _runtime(service, decisions).execute(_state())
 
+    assert len(decisions.calls) == 2
     second = result.react.observations[1].retrieval
-    assert second is not None
+    assert second is not None and second.gate is not None
     assert second.evidence_count == 1
     assert second.novel_evidence_count == 0
+    assert second.gate.action == "stop"
+    assert "no_novel_evidence_after_refinement" in second.gate.reason_codes
 
 
-def test_agentic_rag_search_budget_blocks_third_retrieval() -> None:
+def test_agentic_rag_search_budget_still_blocks_third_retrieval() -> None:
     queries = (
         "first missing concept",
         "second missing concept",
@@ -299,7 +330,11 @@ def test_agentic_rag_search_budget_blocks_third_retrieval() -> None:
         }
     )
     decisions = SequenceDecisionService(tuple(("search", query) for query in queries))
-    runtime = _runtime(service, decisions)
+    runtime = _runtime(
+        service,
+        decisions,
+        evidence_gate_service=AlwaysRetrieveGate(),
+    )
     control = AgentRunControl(
         policy=AgentExecutionPolicy(
             max_tool_calls=4,
@@ -324,7 +359,7 @@ def test_agentic_rag_search_budget_blocks_third_retrieval() -> None:
     assert limit.payload["knowledge_search_count"] == 2
 
 
-def test_agentic_rag_trace_persists_metrics_without_raw_query(tmp_path) -> None:
+def test_agentic_rag_trace_persists_gate_metrics_without_raw_query(tmp_path) -> None:
     private_query = "PRIVATE exact research query about GP anchors"
     service = ComplexKnowledgeService(
         {private_query: (_evidence("private", "PRIVATE retrieved excerpt."),)}
@@ -345,17 +380,26 @@ def test_agentic_rag_trace_persists_metrics_without_raw_query(tmp_path) -> None:
     )
 
     result = runtime.execute(_state())
-    persisted = store.event_payloads(result.run_id)
-    serialized = repr(persisted)
+    persisted = store.list_events(result.run_id)
+    serialized = repr(tuple(event.payload for event in persisted))
 
     assert private_query not in serialized
     assert "PRIVATE retrieved excerpt." not in serialized
     observation_payload = next(
-        payload
-        for payload in persisted
-        if payload.get("tool_name") == KNOWLEDGE_TOOL.name
-        and "query_fingerprint" in payload
+        event.payload
+        for event in persisted
+        if event.event_type == "observation_ready"
+        and event.payload.get("tool_name") == KNOWLEDGE_TOOL.name
     )
     assert observation_payload["query_fingerprint"]
     assert observation_payload["novel_evidence_count"] == 1
     assert observation_payload["knowledge_search_count"] == 1
+    assert observation_payload["gate_action"] == "refine"
+    gate_payload = next(
+        event.payload
+        for event in persisted
+        if event.event_type == "evidence_gate_evaluated"
+    )
+    assert gate_payload["action"] == "refine"
+    assert gate_payload["evidence_count"] == 1
+    assert "insufficient_evidence_count" in gate_payload["reason_codes"]

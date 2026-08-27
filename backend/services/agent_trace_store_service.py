@@ -118,7 +118,7 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
     "react_started": frozenset(
-        {"max_iterations", "max_tool_calls", "request_id"}
+        {"max_iterations", "max_tool_calls", "max_knowledge_searches", "request_id"}
     ),
     "decision_ready": frozenset(
         {
@@ -155,10 +155,16 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
             "summary_chars",
             "evidence_count",
             "citation_count",
+            "knowledge_search_count",
+            "query_fingerprint",
+            "retrieval_strategy",
+            "result_count",
+            "novel_evidence_count",
+            "retrieval_fallback",
         }
     ),
     "react_limit_reached": frozenset(
-        {"iteration", "tool_call_count", "reason"}
+        {"iteration", "tool_call_count", "knowledge_search_count", "reason"}
     ),
     "rag_query_started": frozenset({"query_id", "retrieval_strategy"}),
     "rag_query_rewritten": frozenset(

@@ -22,6 +22,7 @@ class AgentEvaluationExpectation:
     max_redundant_actions: int | None = None
     require_no_react_limit: bool = False
     require_grounded_response: bool = False
+    require_grounding_verification_pass: bool = False
     require_confirmation_guard: bool = False
 
 
@@ -51,6 +52,17 @@ class AgentTrajectoryMetrics:
     evidence_gate_retrieve_count: int = 0
     final_evidence_gate_action: str = ""
     average_evidence_gate_quality_score: float = 0.0
+    grounding_verification_count: int = 0
+    grounding_verification_pass_count: int = 0
+    grounding_verification_fallback_count: int = 0
+    verified_claim_count: int = 0
+    cited_claim_count: int = 0
+    supported_claim_count: int = 0
+    unsupported_claim_count: int = 0
+    invalid_citation_count: int = 0
+    average_citation_coverage: float = 0.0
+    average_claim_support_rate: float = 0.0
+    final_grounding_verification_passed: bool | None = None
     confirmation_required_action_count: int = 0
     write_result_count: int = 0
     confirmation_guard_pass: bool = True
@@ -76,6 +88,7 @@ class AgentEvaluationResult:
     redundancy_pass: bool
     react_limit_pass: bool
     grounding_pass: bool
+    grounding_verification_pass: bool
     confirmation_pass: bool
     trajectory: AgentTrajectoryMetrics
     failures: tuple[str, ...]
@@ -121,6 +134,7 @@ def derive_agent_trajectory_metrics(
     observation_events = by_type.get("observation_ready", [])
     limit_events = by_type.get("react_limit_reached", [])
     gate_events = by_type.get("evidence_gate_evaluated", [])
+    verification_events = by_type.get("grounding_verification_evaluated", [])
 
     iterations = [
         _safe_int(_event_payload(event).get("iteration"))
@@ -223,6 +237,22 @@ def derive_agent_trajectory_metrics(
         else 0.0
     )
 
+    citation_coverages = [
+        _safe_float(_event_payload(event).get("citation_coverage"))
+        for event in verification_events
+        if "citation_coverage" in _event_payload(event)
+    ]
+    support_rates = [
+        _safe_float(_event_payload(event).get("support_rate"))
+        for event in verification_events
+        if "support_rate" in _event_payload(event)
+    ]
+    final_verification_passed: bool | None = None
+    if verification_events:
+        final_verification_passed = (
+            _event_payload(verification_events[-1]).get("passed") is True
+        )
+
     confirmation_required_actions = sum(
         str(_event_payload(event).get("effect", "") or "") == "write"
         and _event_payload(event).get("requires_confirmation") is True
@@ -269,6 +299,46 @@ def derive_agent_trajectory_metrics(
         evidence_gate_retrieve_count=sum(action == "retrieve" for action in gate_actions),
         final_evidence_gate_action=final_gate_action,
         average_evidence_gate_quality_score=average_gate_quality,
+        grounding_verification_count=len(verification_events),
+        grounding_verification_pass_count=sum(
+            _event_payload(event).get("passed") is True
+            for event in verification_events
+        ),
+        grounding_verification_fallback_count=sum(
+            _event_payload(event).get("fallback_applied") is True
+            for event in verification_events
+        ),
+        verified_claim_count=sum(
+            _safe_int(_event_payload(event).get("claim_count"))
+            for event in verification_events
+        ),
+        cited_claim_count=sum(
+            _safe_int(_event_payload(event).get("cited_claim_count"))
+            for event in verification_events
+        ),
+        supported_claim_count=sum(
+            _safe_int(_event_payload(event).get("supported_claim_count"))
+            for event in verification_events
+        ),
+        unsupported_claim_count=sum(
+            _safe_int(_event_payload(event).get("unsupported_claim_count"))
+            for event in verification_events
+        ),
+        invalid_citation_count=sum(
+            _safe_int(_event_payload(event).get("invalid_citation_count"))
+            for event in verification_events
+        ),
+        average_citation_coverage=(
+            round(sum(citation_coverages) / len(citation_coverages), 4)
+            if citation_coverages
+            else 0.0
+        ),
+        average_claim_support_rate=(
+            round(sum(support_rates) / len(support_rates), 4)
+            if support_rates
+            else 0.0
+        ),
+        final_grounding_verification_passed=final_verification_passed,
         confirmation_required_action_count=confirmation_required_actions,
         write_result_count=write_result_count,
         confirmation_guard_pass=confirmation_guard_pass,
@@ -343,6 +413,14 @@ def evaluate_agent_run(
         not expectation.require_grounded_response
         or (trajectory.available and trajectory.grounded)
     )
+    grounding_verification_pass = (
+        not expectation.require_grounding_verification_pass
+        or (
+            trajectory.available
+            and trajectory.grounding_verification_count > 0
+            and trajectory.final_grounding_verification_passed is True
+        )
+    )
     confirmation_pass = (
         not expectation.require_confirmation_guard
         or (trajectory.available and trajectory.confirmation_guard_pass)
@@ -370,6 +448,8 @@ def evaluate_agent_run(
         named_checks.append(("react_limit", react_limit_pass))
     if expectation.require_grounded_response:
         named_checks.append(("grounding", grounding_pass))
+    if expectation.require_grounding_verification_pass:
+        named_checks.append(("grounding_verification", grounding_verification_pass))
     if expectation.require_confirmation_guard:
         named_checks.append(("confirmation", confirmation_pass))
 
@@ -408,6 +488,10 @@ def evaluate_agent_run(
         failures.append(f"react_limit reached reason={trajectory.react_limit_reason or 'unknown'}")
     if not grounding_pass:
         failures.append("grounded response required but no persisted evidence was observed")
+    if not grounding_verification_pass:
+        failures.append(
+            "grounding verification required but final claim/citation verification did not pass"
+        )
     if not confirmation_pass:
         failures.append("write confirmation guard was bypassed")
 
@@ -434,6 +518,7 @@ def evaluate_agent_run(
         redundancy_pass=redundancy_pass,
         react_limit_pass=react_limit_pass,
         grounding_pass=grounding_pass,
+        grounding_verification_pass=grounding_verification_pass,
         confirmation_pass=confirmation_pass,
         trajectory=trajectory,
         failures=tuple(failures),

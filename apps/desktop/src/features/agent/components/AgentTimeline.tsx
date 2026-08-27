@@ -52,7 +52,7 @@ export function AgentTimeline({
             Execution Timeline
           </p>
           <p className="mt-1 text-sm font-medium text-slate-800">
-            Plan → Tool Call → Observation → Result
+            Decision → Action → Observation → Result
           </p>
           {runId || traceId ? (
             <p className="mt-1 max-w-[560px] truncate font-mono text-[10px] text-slate-400">
@@ -102,7 +102,7 @@ export function AgentTimeline({
       <div className="mt-5">
         {activities.length === 0 ? (
           <div className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-sm text-slate-500">
-            Start an Agent task to see planning, tool execution, observations, retries, and the final result here.
+            Start an Agent task to see decisions, tool actions, observations, retries, and the final result here.
           </div>
         ) : (
           <ol className="space-y-2" aria-label="Agent runtime events">

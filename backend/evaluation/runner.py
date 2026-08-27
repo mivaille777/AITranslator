@@ -36,6 +36,13 @@ class AgentEvaluationBatchResult:
     redundant_action_rate: float
     react_limit_rate: float
     grounded_rate: float
+    grounding_verification_run_rate: float
+    grounding_verification_pass_rate: float
+    grounding_verification_fallback_rate: float
+    average_citation_coverage: float
+    average_claim_support_rate: float
+    invalid_citation_run_rate: float
+    unsupported_claim_run_rate: float
     confirmation_guard_rate: float
     results: tuple[AgentEvaluationResult, ...]
 
@@ -60,6 +67,7 @@ def _missing_result(case: AgentEvaluationExpectation) -> AgentEvaluationResult:
         redundancy_pass=False,
         react_limit_pass=False,
         grounding_pass=False,
+        grounding_verification_pass=False,
         confirmation_pass=False,
         trajectory=AgentTrajectoryMetrics(),
         failures=("no persisted run mapped to evaluation case",),
@@ -92,16 +100,40 @@ def evaluate_agent_batch(
     )
     trajectories = [result.trajectory for result in results if result.trajectory.available]
     trajectory_count = len(trajectories)
+    verified_trajectories = [
+        item for item in trajectories if item.grounding_verification_count > 0
+    ]
+    verified_count = len(verified_trajectories)
 
     def trajectory_rate(predicate: Callable[[AgentTrajectoryMetrics], bool]) -> float:
         if not trajectory_count:
             return 0.0
         return round(sum(predicate(item) for item in trajectories) / trajectory_count, 4)
 
-    def trajectory_average(value: Callable[[AgentTrajectoryMetrics], int]) -> float:
+    def trajectory_average(
+        value: Callable[[AgentTrajectoryMetrics], int | float]
+    ) -> float:
         if not trajectory_count:
             return 0.0
         return round(sum(value(item) for item in trajectories) / trajectory_count, 2)
+
+    def verified_rate(predicate: Callable[[AgentTrajectoryMetrics], bool]) -> float:
+        if not verified_count:
+            return 0.0
+        return round(
+            sum(predicate(item) for item in verified_trajectories) / verified_count,
+            4,
+        )
+
+    def verified_average(
+        value: Callable[[AgentTrajectoryMetrics], int | float]
+    ) -> float:
+        if not verified_count:
+            return 0.0
+        return round(
+            sum(value(item) for item in verified_trajectories) / verified_count,
+            4,
+        )
 
     return AgentEvaluationBatchResult(
         total_cases=total,
@@ -140,6 +172,27 @@ def evaluate_agent_batch(
         ),
         react_limit_rate=trajectory_rate(lambda item: item.react_limit_reached),
         grounded_rate=trajectory_rate(lambda item: item.grounded),
+        grounding_verification_run_rate=(
+            round(verified_count / trajectory_count, 4) if trajectory_count else 0.0
+        ),
+        grounding_verification_pass_rate=verified_rate(
+            lambda item: item.final_grounding_verification_passed is True
+        ),
+        grounding_verification_fallback_rate=verified_rate(
+            lambda item: item.grounding_verification_fallback_count > 0
+        ),
+        average_citation_coverage=verified_average(
+            lambda item: item.average_citation_coverage
+        ),
+        average_claim_support_rate=verified_average(
+            lambda item: item.average_claim_support_rate
+        ),
+        invalid_citation_run_rate=verified_rate(
+            lambda item: item.invalid_citation_count > 0
+        ),
+        unsupported_claim_run_rate=verified_rate(
+            lambda item: item.unsupported_claim_count > 0
+        ),
         confirmation_guard_rate=trajectory_rate(
             lambda item: item.confirmation_guard_pass
         ),

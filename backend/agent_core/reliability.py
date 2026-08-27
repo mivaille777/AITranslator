@@ -23,7 +23,8 @@ class AgentExecutionPolicy:
     Retries are intentionally limited to read/compute tools by ProductAgentService.
     Write tools are never automatically retried. Multi-step and ReAct
     orchestration are both hard-bounded so LangGraph loops cannot grow without
-    limit.
+    limit. Agentic knowledge retrieval also has its own budget so iterative RAG
+    cannot consume every available Tool call.
     """
 
     total_timeout_seconds: float = 45.0
@@ -32,6 +33,7 @@ class AgentExecutionPolicy:
     max_plan_steps: int = 4
     max_tool_calls: int = 4
     max_react_iterations: int = 6
+    max_knowledge_searches: int = 3
     react_decision_timeout_seconds: float = 12.0
     max_observation_chars: int = 3000
 
@@ -48,6 +50,10 @@ class AgentExecutionPolicy:
             raise ValueError("max_tool_calls must be positive")
         if self.max_react_iterations < 1:
             raise ValueError("max_react_iterations must be positive")
+        if self.max_knowledge_searches < 1:
+            raise ValueError("max_knowledge_searches must be positive")
+        if self.max_knowledge_searches > self.max_tool_calls:
+            raise ValueError("max_knowledge_searches cannot exceed max_tool_calls")
         if self.react_decision_timeout_seconds <= 0:
             raise ValueError("react_decision_timeout_seconds must be positive")
         if self.max_observation_chars < 1:

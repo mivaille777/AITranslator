@@ -474,7 +474,7 @@ class ProductAgentService:
     ):
         control.checkpoint("synthesis")
         started = monotonic()
-        answer = self._grounded_synthesis_service.send(
+        verified = self._grounded_synthesis_service.send_verified(
             session_id=str(payload.get("session_id", "agent-session")),
             user_message=str(payload["user_message"]),
             **reading,
@@ -484,6 +484,26 @@ class ProductAgentService:
             evidence=evidence,
             citations=citations,
         )
+        answer = verified.answer
+        verification = verified.verification
+        if verification is not None:
+            self._emit(
+                event_sink,
+                "grounding_verification_evaluated",
+                {
+                    "passed": verification.passed,
+                    "fallback_applied": verified.fallback_applied,
+                    "claim_count": verification.claim_count,
+                    "cited_claim_count": verification.cited_claim_count,
+                    "supported_claim_count": verification.supported_claim_count,
+                    "unsupported_claim_count": verification.unsupported_claim_count,
+                    "invalid_citation_count": verification.invalid_citation_count,
+                    "citation_coverage": verification.citation_coverage,
+                    "support_rate": verification.support_rate,
+                    "reason_codes": list(verification.reason_codes),
+                    "request_id": answer.request_id,
+                },
+            )
         control.checkpoint("synthesis_result")
         self._emit(
             event_sink,

@@ -216,3 +216,48 @@ def test_react_iteration_limit_synthesizes_existing_observation_and_stops() -> N
         event.event_type for event in runtime.events
     }
     assert runtime.events[-1].event_type == AgentEventType.AGENT_END
+
+
+def test_react_repeated_action_guard_stops_before_second_tool_execution() -> None:
+    service = ComplexService()
+    control = AgentRunControl(
+        policy=AgentExecutionPolicy(
+            max_react_iterations=4,
+            max_tool_calls=4,
+        )
+    )
+    runtime = AgentRuntime(
+        workflow_adapter=ReadingAgentGraph(
+            ProductAgentRuntimeAdapter(service),
+            react_decision_service=AlwaysToolDecision(),
+        )
+    )
+
+    result = runtime.execute(_state(), control=control)
+
+    assert service.executions == 1
+    assert service.synthesis_calls == 1
+    assert result.react.status == "limit_reached"
+    assert len(result.react.decisions) == 2
+    assert len(result.react.observations) == 1
+    assert result.response["output_text"] == "bounded fallback answer"
+
+    limit_event = next(
+        event
+        for event in runtime.events
+        if event.event_type == AgentEventType.REACT_LIMIT_REACHED
+    )
+    assert limit_event.payload["reason"] == "repeated_action_detected"
+    assert limit_event.payload["tool_call_count"] == 1
+
+    decision_events = [
+        event
+        for event in runtime.events
+        if event.event_type == AgentEventType.DECISION_READY
+    ]
+    assert len(decision_events) == 2
+    assert decision_events[0].payload["action_fingerprint"]
+    assert (
+        decision_events[0].payload["action_fingerprint"]
+        == decision_events[1].payload["action_fingerprint"]
+    )

@@ -167,6 +167,19 @@ class AgentClaimEvidenceVerifier:
         citation_map = self._citation_map(citations)
         evidence_map = self._evidence_map(evidence)
 
+        if not claims:
+            return ClaimEvidenceVerification(
+                passed=True,
+                claim_count=0,
+                cited_claim_count=0,
+                supported_claim_count=0,
+                unsupported_claim_count=0,
+                invalid_citation_count=0,
+                citation_coverage=1.0,
+                support_rate=1.0,
+                reason_codes=("no_verifiable_claims",),
+            )
+
         cited_claims = 0
         supported_claims = 0
         invalid_citations = 0
@@ -207,22 +220,15 @@ class AgentClaimEvidenceVerifier:
                 reasons.add("weak_claim_evidence_overlap")
 
         claim_count = len(claims)
-        if claim_count == 0:
-            reasons.add("no_verifiable_claims")
-        citation_coverage = (
-            cited_claims / claim_count if claim_count else 0.0
-        )
-        support_rate = (
-            supported_claims / claim_count if claim_count else 0.0
-        )
+        citation_coverage = cited_claims / claim_count
+        support_rate = supported_claims / claim_count
         if citation_coverage < self.policy.minimum_citation_coverage:
             reasons.add("citation_coverage_below_policy")
         if support_rate < self.policy.minimum_support_rate:
             reasons.add("claim_support_below_policy")
 
         passed = (
-            claim_count > 0
-            and invalid_citations == 0
+            invalid_citations == 0
             and citation_coverage >= self.policy.minimum_citation_coverage
             and support_rate >= self.policy.minimum_support_rate
         )

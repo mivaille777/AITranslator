@@ -7,6 +7,7 @@ import BrowserReadingContextPanel from "./features/reading/BrowserReadingContext
 import TranslationWorkspace from "./features/translation/TranslationWorkspace"
 import { useTranslationWorkspace } from "./features/translation/useTranslationWorkspace"
 import WorkspaceShell from "./features/workspace/WorkspaceShell"
+import { workspaceRouteUsesFixedHeight } from "./features/workspace/workspace-navigation"
 import WorkspaceRouteBoundary from "./shared/errors/WorkspaceRouteBoundary"
 
 const ReadingWorkspace = lazy(() => import("./features/reading/ReadingWorkspace"))
@@ -34,6 +35,7 @@ function WorkspaceRouteFallback() {
 function App() {
   const workspace = useTranslationWorkspace()
   const location = useLocation()
+  const fixedHeightRoute = workspaceRouteUsesFixedHeight(location.pathname)
 
   return (
     <WorkspaceShell
@@ -44,7 +46,10 @@ function App() {
       browserStatusChecking={workspace.browserStatusChecking}
     >
       <CompanionHandoffNavigator />
-      <div key={location.pathname} className="workspace-route-enter">
+      <div
+        key={location.pathname}
+        className={`workspace-route-enter ${fixedHeightRoute ? "h-full min-h-0" : ""}`}
+      >
         <WorkspaceRouteBoundary>
           <Suspense fallback={<WorkspaceRouteFallback />}>
             <Routes>

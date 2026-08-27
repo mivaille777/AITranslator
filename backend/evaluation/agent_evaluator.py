@@ -40,6 +40,11 @@ class AgentTrajectoryMetrics:
     grounded: bool = False
     evidence_count: int = 0
     citation_count: int = 0
+    knowledge_search_count: int = 0
+    query_reformulation_count: int = 0
+    novel_evidence_count: int = 0
+    no_novel_evidence_search_count: int = 0
+    retrieval_fallback_count: int = 0
     confirmation_required_action_count: int = 0
     write_result_count: int = 0
     confirmation_guard_pass: bool = True
@@ -151,6 +156,33 @@ def derive_agent_trajectory_metrics(
         for event in by_type.get("synthesis_ready", [])
     )
 
+    knowledge_observations = [
+        event
+        for event in observation_events
+        if str(_event_payload(event).get("tool_name", "") or "")
+        == "search_knowledge_base"
+    ]
+    query_fingerprints = [
+        str(_event_payload(event).get("query_fingerprint", "") or "").strip()
+        for event in knowledge_observations
+    ]
+    query_reformulation_count = sum(
+        bool(current and previous and current != previous)
+        for previous, current in zip(query_fingerprints, query_fingerprints[1:])
+    )
+    novel_evidence_count = sum(
+        _safe_int(_event_payload(event).get("novel_evidence_count"))
+        for event in knowledge_observations
+    )
+    no_novel_evidence_search_count = sum(
+        _safe_int(_event_payload(event).get("novel_evidence_count")) == 0
+        for event in knowledge_observations
+    )
+    retrieval_fallback_count = sum(
+        _event_payload(event).get("retrieval_fallback") is True
+        for event in knowledge_observations
+    )
+
     confirmation_required_actions = sum(
         str(_event_payload(event).get("effect", "") or "") == "write"
         and _event_payload(event).get("requires_confirmation") is True
@@ -186,6 +218,11 @@ def derive_agent_trajectory_metrics(
         grounded=grounded,
         evidence_count=evidence_count,
         citation_count=citation_count,
+        knowledge_search_count=len(knowledge_observations),
+        query_reformulation_count=query_reformulation_count,
+        novel_evidence_count=novel_evidence_count,
+        no_novel_evidence_search_count=no_novel_evidence_search_count,
+        retrieval_fallback_count=retrieval_fallback_count,
         confirmation_required_action_count=confirmation_required_actions,
         write_result_count=write_result_count,
         confirmation_guard_pass=confirmation_guard_pass,

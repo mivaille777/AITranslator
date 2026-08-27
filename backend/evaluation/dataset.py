@@ -61,6 +61,9 @@ def load_evaluation_dataset(path: str | Path) -> tuple[AgentEvaluationExpectatio
                 require_grounded_response=bool(
                     payload.get("require_grounded_response", False)
                 ),
+                require_grounding_verification_pass=bool(
+                    payload.get("require_grounding_verification_pass", False)
+                ),
                 require_confirmation_guard=bool(
                     payload.get("require_confirmation_guard", False)
                 ),
@@ -92,6 +95,7 @@ def write_evaluation_dataset(
                 "max_redundant_actions": case.max_redundant_actions,
                 "require_no_react_limit": case.require_no_react_limit,
                 "require_grounded_response": case.require_grounded_response,
+                "require_grounding_verification_pass": case.require_grounding_verification_pass,
                 "require_confirmation_guard": case.require_confirmation_guard,
             },
             ensure_ascii=False,

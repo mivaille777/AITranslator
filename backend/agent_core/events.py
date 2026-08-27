@@ -28,6 +28,7 @@ class AgentEventType(str, Enum):
     RAG_EVIDENCE_SELECTED = "rag_evidence_selected"
     RAG_FALLBACK = "rag_fallback"
     SYNTHESIS_READY = "synthesis_ready"
+    GROUNDING_VERIFICATION_EVALUATED = "grounding_verification_evaluated"
     FAILURE = "failure"
     CANCELLED = "cancelled"
     AGENT_END = "agent_end"

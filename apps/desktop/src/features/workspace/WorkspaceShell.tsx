@@ -15,7 +15,11 @@ import type { BrowserBridgeStatusResponse } from "../../api/types"
 import { desktop } from "../../desktop"
 import WindowFrame from "../../components/WindowFrame"
 import WorkspaceHeader from "../system/WorkspaceHeader"
-import { getWorkspaceRouteMeta, workspaceRoutes } from "./workspace-navigation"
+import {
+  getWorkspaceRouteMeta,
+  workspaceRoutes,
+  workspaceRouteUsesFixedHeight,
+} from "./workspace-navigation"
 
 const icons = {
   "/translation": Languages,
@@ -37,6 +41,7 @@ export default function WorkspaceShell({ children, backendState, backendService,
 }) {
   const location = useLocation()
   const routeMeta = getWorkspaceRouteMeta(location.pathname)
+  const fixedHeightRoute = workspaceRouteUsesFixedHeight(location.pathname)
 
   return (
     <WindowFrame>
@@ -86,7 +91,13 @@ export default function WorkspaceShell({ children, backendState, backendService,
         <div className="min-w-0 flex-1 p-3 pl-0">
           <div className="h-full overflow-hidden rounded-[24px] border border-white/50 bg-white/75 shadow-[0_16px_48px_rgba(15,23,42,0.1)] backdrop-blur-xl">
             <WorkspaceHeader title={routeMeta.label} description={routeMeta.description} backendState={backendState} backendService={backendService} providerName={providerName} browserStatus={browserStatus} browserStatusChecking={browserStatusChecking} />
-            <main className="h-[calc(100%-64px)] overflow-auto px-4 py-5 sm:px-6 lg:px-8 lg:py-7 workspace-route-enter">{children}</main>
+            <main
+              className={`h-[calc(100%-64px)] min-h-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-7 workspace-route-enter ${
+                fixedHeightRoute ? "overflow-hidden" : "overflow-auto"
+              }`}
+            >
+              {children}
+            </main>
           </div>
         </div>
       </div>

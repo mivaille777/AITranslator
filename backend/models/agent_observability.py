@@ -63,6 +63,7 @@ class AgentEvaluationRequest(BaseModel):
     max_redundant_actions: int | None = Field(default=None, ge=0, le=50)
     require_no_react_limit: bool = False
     require_grounded_response: bool = False
+    require_grounding_verification_pass: bool = False
     require_confirmation_guard: bool = False
 
 
@@ -91,6 +92,17 @@ class AgentTrajectoryMetricsResponse(BaseModel):
     evidence_gate_retrieve_count: int = Field(ge=0)
     final_evidence_gate_action: str
     average_evidence_gate_quality_score: float = Field(ge=0.0, le=1.0)
+    grounding_verification_count: int = Field(ge=0)
+    grounding_verification_pass_count: int = Field(ge=0)
+    grounding_verification_fallback_count: int = Field(ge=0)
+    verified_claim_count: int = Field(ge=0)
+    cited_claim_count: int = Field(ge=0)
+    supported_claim_count: int = Field(ge=0)
+    unsupported_claim_count: int = Field(ge=0)
+    invalid_citation_count: int = Field(ge=0)
+    average_citation_coverage: float = Field(ge=0.0, le=1.0)
+    average_claim_support_rate: float = Field(ge=0.0, le=1.0)
+    final_grounding_verification_passed: bool | None = None
     confirmation_required_action_count: int = Field(ge=0)
     write_result_count: int = Field(ge=0)
     confirmation_guard_pass: bool
@@ -115,6 +127,7 @@ class AgentEvaluationResponse(BaseModel):
     redundancy_pass: bool
     react_limit_pass: bool
     grounding_pass: bool
+    grounding_verification_pass: bool
     confirmation_pass: bool
     trajectory: AgentTrajectoryMetricsResponse
     failures: list[str] = Field(default_factory=list)

@@ -50,6 +50,11 @@ function withDuration(detail: string, payload: Record<string, unknown>): string 
   return duration > 0 ? `${detail} · ${duration} ms` : detail
 }
 
+function reactIteration(payload: Record<string, unknown>): string {
+  const iteration = numeric(payload.iteration)
+  return iteration > 0 ? ` #${iteration}` : ""
+}
+
 function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
   const payload = event.payload
   switch (event.event_type) {
@@ -72,14 +77,51 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
     case "plan_ready": {
       const action = text(payload.action)
       const toolName = text(payload.tool_name)
+      const mode = text(payload.mode)
       return {
         sequence: event.sequence,
         eventType: event.event_type,
-        label: toolName ? `Plan ready: ${toolName}` : "Plan ready",
+        label: mode === "react" ? "Adaptive execution selected" : toolName ? `Plan ready: ${toolName}` : "Plan ready",
         detail: withDuration(
-          text(payload.user_visible_reason) || (action === "answer" ? "The Agent will answer directly." : "The Agent selected its next action."),
+          mode === "react"
+            ? "This complex request will choose one bounded action at a time."
+            : text(payload.user_visible_reason) || (action === "answer" ? "The Agent will answer directly." : "The Agent selected its next action."),
           payload,
         ),
+        tone: "neutral",
+      }
+    }
+    case "react_started": {
+      const maxIterations = numeric(payload.max_iterations)
+      const maxToolCalls = numeric(payload.max_tool_calls)
+      const limits = [
+        maxIterations > 0 ? `${maxIterations} decisions` : "",
+        maxToolCalls > 0 ? `${maxToolCalls} tool calls` : "",
+      ].filter(Boolean)
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "ReAct loop started",
+        detail: limits.length > 0
+          ? `Adaptive execution is bounded to ${limits.join(" · ")}.`
+          : "Adaptive execution started with bounded runtime limits.",
+        tone: "neutral",
+      }
+    }
+    case "decision_ready": {
+      const kind = text(payload.kind)
+      const toolName = text(payload.tool_name)
+      const summary = text(payload.action_summary)
+      const isFinal = kind === "final"
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: isFinal
+          ? `Decision${reactIteration(payload)}: finish`
+          : `Decision${reactIteration(payload)}: ${toolName || "tool"}`,
+        detail: summary || (isFinal
+          ? "The Agent has enough information to finish."
+          : "The Agent selected the next bounded tool action."),
         tone: "neutral",
       }
     }
@@ -113,6 +155,35 @@ function eventToActivity(event: AgentTraceEvent): AgentActivityItem {
         label: `${toolName} completed`,
         detail: withDuration(text(payload.provider) || "Tool result returned to the Agent.", payload),
         tone: "success",
+      }
+    }
+    case "observation_ready": {
+      const toolName = text(payload.tool_name) || "tool"
+      const evidenceCount = numeric(payload.evidence_count)
+      const citationCount = numeric(payload.citation_count)
+      const facts = [
+        evidenceCount > 0 ? `${evidenceCount} evidence` : "",
+        citationCount > 0 ? `${citationCount} citations` : "",
+      ].filter(Boolean)
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: `Observation${reactIteration(payload)}: ${toolName}`,
+        detail: facts.length > 0
+          ? `Observation recorded · ${facts.join(" · ")}.`
+          : "A compact tool observation is ready for the next decision.",
+        tone: payload.success === false ? "warning" : "success",
+      }
+    }
+    case "react_limit_reached": {
+      const reason = text(payload.reason)
+      const toolCallCount = numeric(payload.tool_call_count)
+      return {
+        sequence: event.sequence,
+        eventType: event.event_type,
+        label: "ReAct budget reached",
+        detail: `${reason || "Adaptive execution reached its configured limit."}${toolCallCount > 0 ? ` · ${toolCallCount} tool calls` : ""}`,
+        tone: "warning",
       }
     }
     case "rag_query_started":

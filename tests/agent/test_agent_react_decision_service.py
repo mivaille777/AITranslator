@@ -6,8 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from app.ai.errors import AIResponseError
-from backend.models.agent_react import AgentObservation
-from backend.services.agent_react_decision_service import AgentReActDecisionService
+from backend.models.agent_react import AgentObservation, AgentRetrievalObservation
+from backend.services.agent_react_decision_service import (
+    REACT_DECISION_SYSTEM_PROMPT,
+    AgentReActDecisionService,
+)
 from backend.services.agent_tool_registry import AgentToolSpec
 
 
@@ -36,7 +39,11 @@ TOOLS = (
         "translate_selection",
         input_schema={"target_language": {"type": "string", "maxLength": 64}},
     ),
-    _tool("search_knowledge_base", requires_reading_context=False),
+    _tool(
+        "search_knowledge_base",
+        requires_reading_context=False,
+        input_schema={"query": {"type": "string", "maxLength": 4000}},
+    ),
     _tool(
         "save_research_note",
         effect="write",
@@ -102,6 +109,24 @@ def test_react_decision_service_returns_one_validated_tool_action() -> None:
     assert decision.tool_name == "translate_selection"
     assert decision.arguments == {"target_language": "zh-CN"}
     assert decision.final_answer == ""
+
+
+def test_react_decision_service_validates_agentic_rag_query() -> None:
+    decision, _calls = _decide(
+        {
+            "kind": "tool",
+            "tool_name": "search_knowledge_base",
+            "arguments": {"query": "GP uncertainty calibration in PID tuning"},
+            "action_summary": "Search for evidence about uncertainty calibration.",
+            "final_answer": "",
+        },
+        user_message="Find evidence about uncertainty calibration.",
+        source_text="",
+    )
+
+    assert decision.kind == "tool"
+    assert decision.tool_name == "search_knowledge_base"
+    assert decision.arguments == {"query": "GP uncertainty calibration in PID tuning"}
 
 
 def test_react_decision_service_returns_final_without_tool_call() -> None:
@@ -175,7 +200,7 @@ def test_react_decision_output_schema_rejects_hidden_reasoning_fields() -> None:
         )
 
 
-def test_react_decision_prompt_contains_compact_observations_not_private_reasoning() -> None:
+def test_react_decision_prompt_contains_retrieval_observation_and_budgets() -> None:
     observation = AgentObservation(
         iteration=1,
         tool_name="search_knowledge_base",
@@ -183,6 +208,14 @@ def test_react_decision_prompt_contains_compact_observations_not_private_reasoni
         summary="evidence " * 1000,
         evidence_ids=["ev-1"],
         citation_ids=["cite-1"],
+        retrieval=AgentRetrievalObservation(
+            query="Gaussian process exploration mechanism",
+            retrieval_strategy="hybrid",
+            result_count=3,
+            evidence_count=1,
+            citation_count=1,
+            novel_evidence_count=1,
+        ),
     )
     _decision, calls = _decide(
         {
@@ -196,14 +229,28 @@ def test_react_decision_prompt_contains_compact_observations_not_private_reasoni
         user_message="Answer using the retrieved evidence.",
         observations=(observation,),
         max_observation_chars=120,
+        remaining_tool_calls=2,
+        remaining_knowledge_searches=1,
     )
 
     payload = json.loads(calls[0]["user_prompt"])
     assert payload["iteration"] == 2
     assert len(payload["prior_observations"][0]["summary"]) <= 120
     assert payload["prior_observations"][0]["evidence_ids"] == ["ev-1"]
+    retrieval = payload["prior_observations"][0]["retrieval"]
+    assert retrieval["query"] == "Gaussian process exploration mechanism"
+    assert retrieval["novel_evidence_count"] == 1
+    assert payload["runtime_policy"]["remaining_tool_calls"] == 2
+    assert payload["runtime_policy"]["remaining_knowledge_searches"] == 1
+    assert payload["runtime_policy"]["rag_control_boundary"] == "query_continue_stop_only"
     assert "reasoning" not in payload
     assert payload["runtime_policy"]["private_reasoning_exposed"] is False
+
+
+def test_react_decision_prompt_keeps_rag_internal_algorithms_outside_agent_control() -> None:
+    assert "Do not attempt to control dense retrieval" in REACT_DECISION_SYSTEM_PROMPT
+    assert "novel_evidence_count" in REACT_DECISION_SYSTEM_PROMPT
+    assert "remaining_knowledge_searches" in REACT_DECISION_SYSTEM_PROMPT
 
 
 def test_react_decision_requires_positive_iteration_and_observation_budget() -> None:

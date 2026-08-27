@@ -161,6 +161,26 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
             "result_count",
             "novel_evidence_count",
             "retrieval_fallback",
+            "gate_action",
+            "gate_quality_score",
+        }
+    ),
+    "evidence_gate_evaluated": frozenset(
+        {
+            "iteration",
+            "action",
+            "coverage_score",
+            "diversity_score",
+            "novelty_score",
+            "quality_score",
+            "evidence_count",
+            "unique_source_count",
+            "unique_location_count",
+            "novel_evidence_count",
+            "search_count",
+            "remaining_searches",
+            "retrieval_fallback",
+            "reason_codes",
         }
     ),
     "react_limit_reached": frozenset(

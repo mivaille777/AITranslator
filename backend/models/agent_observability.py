@@ -80,6 +80,11 @@ class AgentTrajectoryMetricsResponse(BaseModel):
     grounded: bool
     evidence_count: int = Field(ge=0)
     citation_count: int = Field(ge=0)
+    knowledge_search_count: int = Field(ge=0)
+    query_reformulation_count: int = Field(ge=0)
+    novel_evidence_count: int = Field(ge=0)
+    no_novel_evidence_search_count: int = Field(ge=0)
+    retrieval_fallback_count: int = Field(ge=0)
     confirmation_required_action_count: int = Field(ge=0)
     write_result_count: int = Field(ge=0)
     confirmation_guard_pass: bool

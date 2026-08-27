@@ -14,11 +14,13 @@ from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
 from backend.agent_core.reliability import AgentRunControl, run_react_decision_with_timeout
 from backend.agent_core.state import AgentState
 from backend.models.agent_react import (
+    AgentEvidenceGateAssessment,
     AgentObservation,
     AgentRetrievalObservation,
     AgentReActDecision,
 )
-from backend.models.agent_runtime import AgentPlanStep, AgentRouteDecision
+from backend.models.agent_runtime import AgentEvidenceItem, AgentPlanStep, AgentRouteDecision
+from backend.services.agent_evidence_gate_service import AgentEvidenceGateService
 from backend.services.agent_react_decision_service import AgentReActDecisionService
 
 
@@ -110,12 +112,7 @@ def _run_local_fingerprint(state: AgentState, payload: object) -> str:
 
 
 def _react_action_fingerprint(state: AgentState, decision: AgentReActDecision) -> str:
-    """Create a run-local opaque fingerprint for duplicate-action detection.
-
-    The persisted value is salted by run_id, so identical tool arguments cannot
-    be correlated across independent runs. Raw argument values are never placed
-    in trace payloads.
-    """
+    """Create a run-local opaque fingerprint for duplicate-action detection."""
 
     if decision.kind != "tool":
         return ""
@@ -160,6 +157,43 @@ def _prior_evidence_ids(state: AgentState) -> set[str]:
     }
 
 
+def _cumulative_knowledge_evidence(state: AgentState) -> list[AgentEvidenceItem]:
+    evidence: list[AgentEvidenceItem] = []
+    seen: set[str] = set()
+    for result in state.tool_results:
+        if not isinstance(result, dict):
+            continue
+        tool_name = str(result.get("tool_name", "") or result.get("name", "") or "")
+        if tool_name != _KNOWLEDGE_SEARCH_TOOL:
+            continue
+        data = result.get("data", {})
+        if not isinstance(data, dict):
+            continue
+        raw_evidence = data.get("evidence", ())
+        if not isinstance(raw_evidence, (list, tuple)):
+            continue
+        for raw in raw_evidence:
+            try:
+                item = (
+                    raw
+                    if isinstance(raw, AgentEvidenceItem)
+                    else AgentEvidenceItem.model_validate(raw)
+                )
+            except Exception:
+                continue
+            if item.evidence_id and item.evidence_id not in seen:
+                evidence.append(item)
+                seen.add(item.evidence_id)
+    return evidence
+
+
+def _latest_evidence_gate(state: AgentState) -> AgentEvidenceGateAssessment | None:
+    for observation in reversed(state.react.observations):
+        if observation.retrieval is not None and observation.retrieval.gate is not None:
+            return observation.retrieval.gate
+    return None
+
+
 def _retrieval_observation(
     state: AgentState,
     decision: AgentReActDecision,
@@ -197,8 +231,10 @@ class ReadingAgentGraph:
     into a compact observation before the next decision. Knowledge retrieval is
     agentic only at the query/continue/stop layer; dense/sparse retrieval,
     fusion, reranking, evidence construction, and citations remain owned by the
-    RAG subsystem. Tool execution, safe retries, grounding, and write
-    confirmation remain owned by the existing ProductAgentService boundary.
+    RAG subsystem. A deterministic evidence-sufficiency gate evaluates cumulative
+    retrieval evidence and can stop further retrieval before another LLM decision
+    is spent. Tool execution, safe retries, grounding, and write confirmation
+    remain owned by the existing ProductAgentService boundary.
     """
 
     node_names = (
@@ -216,9 +252,11 @@ class ReadingAgentGraph:
         self,
         adapter: ProductAgentRuntimeAdapter,
         react_decision_service: AgentReActDecisionService | Any | None = None,
+        evidence_gate_service: AgentEvidenceGateService | Any | None = None,
     ) -> None:
         self._adapter = adapter
         self._react_decision_service = react_decision_service or AgentReActDecisionService()
+        self._evidence_gate_service = evidence_gate_service or AgentEvidenceGateService()
         builder = StateGraph(
             ReadingAgentGraphState,
             context_schema=ReadingAgentRuntimeContext,
@@ -237,10 +275,7 @@ class ReadingAgentGraph:
         builder.add_conditional_edges(
             "route_request",
             self._route_branch,
-            {
-                "complex": "start_react",
-                "direct": "execute_direct",
-            },
+            {"complex": "start_react", "direct": "execute_direct"},
         )
         builder.add_edge("execute_direct", "finalize_conversation")
         builder.add_edge("start_react", "decide_react")
@@ -315,10 +350,7 @@ class ReadingAgentGraph:
         )
         return {AgentEventType.REACT_LIMIT_REACHED}
 
-    def _prepare_conversation(
-        self,
-        graph_state: ReadingAgentGraphState,
-    ) -> dict[str, Any]:
+    def _prepare_conversation(self, graph_state: ReadingAgentGraphState) -> dict[str, Any]:
         state = _coerce_agent_state(graph_state["agent_state"])
         conversation_run = self._adapter.begin_conversation(state)
         return {
@@ -371,8 +403,7 @@ class ReadingAgentGraph:
         return {
             "agent_state": _dump_agent_state(state),
             "emitted_event_types": _merge_emitted(
-                graph_state.get("emitted_event_types", ()),
-                emitted,
+                graph_state.get("emitted_event_types", ()), emitted
             ),
         }
 
@@ -382,7 +413,7 @@ class ReadingAgentGraph:
         runtime: Runtime[ReadingAgentRuntimeContext],
     ) -> dict[str, Any]:
         state = _coerce_agent_state(graph_state["agent_state"])
-        emit, _control = self._runtime(runtime)
+        emit, control = self._runtime(runtime)
         state.start_react()
         emitted: set[AgentEventType] = set()
         if emit is not None:
@@ -400,9 +431,9 @@ class ReadingAgentGraph:
             emit(
                 AgentEventType.REACT_STARTED,
                 {
-                    "max_iterations": _control.policy.max_react_iterations,
-                    "max_tool_calls": _control.policy.max_tool_calls,
-                    "max_knowledge_searches": _control.policy.max_knowledge_searches,
+                    "max_iterations": control.policy.max_react_iterations,
+                    "max_tool_calls": control.policy.max_tool_calls,
+                    "max_knowledge_searches": control.policy.max_knowledge_searches,
                     "request_id": state.execution.request_id,
                 },
             )
@@ -410,8 +441,7 @@ class ReadingAgentGraph:
         return {
             "agent_state": _dump_agent_state(state),
             "emitted_event_types": _merge_emitted(
-                graph_state.get("emitted_event_types", ()),
-                emitted,
+                graph_state.get("emitted_event_types", ()), emitted
             ),
         }
 
@@ -424,10 +454,39 @@ class ReadingAgentGraph:
         emit, control = self._runtime(runtime)
         if state.react.iteration >= control.policy.max_react_iterations:
             emitted = self._emit_react_limit(
-                state,
-                emit,
-                reason="iteration_budget_exhausted",
+                state, emit, reason="iteration_budget_exhausted"
             )
+            return {
+                "agent_state": _dump_agent_state(state),
+                "emitted_event_types": _merge_emitted(
+                    graph_state.get("emitted_event_types", ()), emitted
+                ),
+            }
+
+        latest_gate = _latest_evidence_gate(state)
+        if latest_gate is not None and latest_gate.action == "stop":
+            decision = AgentReActDecision(
+                iteration=state.react.iteration + 1,
+                kind="final",
+                action_summary="Use the accumulated evidence after the retrieval quality gate stopped further search.",
+            )
+            state.record_react_decision(decision)
+            emitted: set[AgentEventType] = set()
+            if emit is not None:
+                emit(
+                    AgentEventType.DECISION_READY,
+                    {
+                        "iteration": decision.iteration,
+                        "kind": decision.kind,
+                        "tool_name": "",
+                        "argument_keys": [],
+                        "action_fingerprint": "",
+                        "provider": "deterministic-evidence-gate",
+                        "model": "",
+                        "prompt_id": "evidence-gate",
+                    },
+                )
+                emitted.add(AgentEventType.DECISION_READY)
             return {
                 "agent_state": _dump_agent_state(state),
                 "emitted_event_types": _merge_emitted(
@@ -504,9 +563,7 @@ class ReadingAgentGraph:
         if _is_repeated_react_action(state, decision):
             emitted.update(
                 self._emit_react_limit(
-                    state,
-                    emit,
-                    reason="repeated_action_detected",
+                    state, emit, reason="repeated_action_detected"
                 )
             )
         elif (
@@ -517,9 +574,7 @@ class ReadingAgentGraph:
         ):
             emitted.update(
                 self._emit_react_limit(
-                    state,
-                    emit,
-                    reason="knowledge_search_budget_exhausted",
+                    state, emit, reason="knowledge_search_budget_exhausted"
                 )
             )
 
@@ -563,9 +618,7 @@ class ReadingAgentGraph:
 
         if len(state.tool_calls) >= control.policy.max_tool_calls:
             emitted = self._emit_react_limit(
-                state,
-                emit,
-                reason="tool_call_budget_exhausted",
+                state, emit, reason="tool_call_budget_exhausted"
             )
             return {
                 "agent_state": _dump_agent_state(state),
@@ -579,9 +632,7 @@ class ReadingAgentGraph:
             >= min(control.policy.max_knowledge_searches, control.policy.max_tool_calls)
         ):
             emitted = self._emit_react_limit(
-                state,
-                emit,
-                reason="knowledge_search_budget_exhausted",
+                state, emit, reason="knowledge_search_budget_exhausted"
             )
             return {
                 "agent_state": _dump_agent_state(state),
@@ -622,6 +673,42 @@ class ReadingAgentGraph:
             summary = f"{decision.tool_name} completed."
         summary = summary[: control.policy.max_observation_chars]
         retrieval = _retrieval_observation(state, decision, result)
+
+        if retrieval is not None:
+            search_count = _knowledge_search_count(state)
+            max_searches = min(
+                control.policy.max_knowledge_searches,
+                control.policy.max_tool_calls,
+            )
+            gate = self._evidence_gate_service.assess(
+                evidence=_cumulative_knowledge_evidence(state),
+                latest_retrieval=retrieval,
+                search_count=search_count,
+                remaining_searches=max(0, max_searches - search_count),
+            )
+            retrieval = retrieval.model_copy(update={"gate": gate})
+            if emit is not None:
+                emit(
+                    AgentEventType.EVIDENCE_GATE_EVALUATED,
+                    {
+                        "iteration": decision.iteration,
+                        "action": gate.action,
+                        "coverage_score": gate.coverage_score,
+                        "diversity_score": gate.diversity_score,
+                        "novelty_score": gate.novelty_score,
+                        "quality_score": gate.quality_score,
+                        "evidence_count": gate.evidence_count,
+                        "unique_source_count": gate.unique_source_count,
+                        "unique_location_count": gate.unique_location_count,
+                        "novel_evidence_count": gate.novel_evidence_count,
+                        "search_count": gate.search_count,
+                        "remaining_searches": gate.remaining_searches,
+                        "retrieval_fallback": gate.retrieval_fallback,
+                        "reason_codes": list(gate.reason_codes),
+                    },
+                )
+                emitted.add(AgentEventType.EVIDENCE_GATE_EVALUATED)
+
         observation = AgentObservation(
             iteration=decision.iteration,
             tool_name=decision.tool_name,
@@ -654,6 +741,14 @@ class ReadingAgentGraph:
                         "result_count": retrieval.result_count,
                         "novel_evidence_count": retrieval.novel_evidence_count,
                         "retrieval_fallback": bool(retrieval.fallback_reason),
+                        "gate_action": (
+                            retrieval.gate.action if retrieval.gate is not None else ""
+                        ),
+                        "gate_quality_score": (
+                            retrieval.gate.quality_score
+                            if retrieval.gate is not None
+                            else 0.0
+                        ),
                     }
                 )
             emit(AgentEventType.OBSERVATION_READY, observation_payload)
@@ -662,17 +757,13 @@ class ReadingAgentGraph:
         if len(state.tool_calls) >= control.policy.max_tool_calls:
             emitted.update(
                 self._emit_react_limit(
-                    state,
-                    emit,
-                    reason="tool_call_budget_exhausted",
+                    state, emit, reason="tool_call_budget_exhausted"
                 )
             )
         elif state.react.iteration >= control.policy.max_react_iterations:
             emitted.update(
                 self._emit_react_limit(
-                    state,
-                    emit,
-                    reason="iteration_budget_exhausted",
+                    state, emit, reason="iteration_budget_exhausted"
                 )
             )
 
@@ -689,6 +780,9 @@ class ReadingAgentGraph:
         if state.response_state.status == "confirmation_required":
             return "confirmation"
         if state.react.status == "limit_reached":
+            return "finalize"
+        gate = _latest_evidence_gate(state)
+        if gate is not None and gate.action == "stop":
             return "finalize"
         return "continue"
 
@@ -765,8 +859,7 @@ class ReadingAgentGraph:
     ) -> dict[str, Any]:
         state = _coerce_agent_state(graph_state["agent_state"])
         self._adapter.complete_conversation(
-            _load_conversation_run(graph_state.get("conversation_run")),
-            state,
+            _load_conversation_run(graph_state.get("conversation_run")), state
         )
         return {"agent_state": _dump_agent_state(state)}
 
@@ -791,10 +884,11 @@ class ReadingAgentGraph:
                 "control": control or AgentRunControl(),
             },
         )
-        final_state = _coerce_agent_state(result.get("agent_state", initial["agent_state"]))
+        final_state = _coerce_agent_state(
+            result.get("agent_state", initial["agent_state"])
+        )
         emitted = {
-            AgentEventType(item)
-            for item in result.get("emitted_event_types", ())
+            AgentEventType(item) for item in result.get("emitted_event_types", ())
         }
         return final_state, emitted
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from backend.evaluation.agent_evaluator import AgentEvaluationExpectation
 from backend.evaluation.runner import evaluate_agent_batch
-from backend.services.agent_trace_store_service import StoredAgentRun
+from backend.services.agent_trace_store_service import StoredAgentEvent, StoredAgentRun
 
 
 def stored_run(*, run_id: str, intent: str, tool_name: str, status: str) -> StoredAgentRun:
@@ -26,6 +26,16 @@ def stored_run(*, run_id: str, intent: str, tool_name: str, status: str) -> Stor
         timeout_count=0,
         fallback_reason="",
         event_count=6,
+    )
+
+
+def stored_event(sequence: int, event_type: str, **payload: object) -> StoredAgentEvent:
+    return StoredAgentEvent(
+        sequence=sequence,
+        event_type=event_type,
+        timestamp=f"2026-08-27T00:00:{sequence:02d}+00:00",
+        elapsed_ms=sequence * 10,
+        payload=dict(payload),
     )
 
 
@@ -57,5 +67,124 @@ def test_agent_evaluation_batch_reports_pass_rate_and_missing_run() -> None:
     assert result.passed_cases == 1
     assert result.pass_rate == 0.5
     assert result.average_score == 0.5
+    assert result.trajectory_case_count == 0
     assert result.results[1].passed is False
     assert "no persisted run" in result.results[1].failures[0]
+
+
+def test_agent_evaluation_batch_aggregates_react_trajectory_metrics() -> None:
+    cases = (
+        AgentEvaluationExpectation(
+            case_id="react-grounded",
+            expected_intent="complex",
+            expect_react=True,
+            max_tool_calls=2,
+            max_redundant_actions=0,
+            require_no_react_limit=True,
+            require_grounded_response=True,
+        ),
+        AgentEvaluationExpectation(
+            case_id="react-limited",
+            expected_intent="complex",
+            expect_react=True,
+        ),
+    )
+    runs = {
+        "react-grounded": stored_run(
+            run_id="run-grounded",
+            intent="complex",
+            tool_name="explain_selection",
+            status="completed",
+        ),
+        "react-limited": stored_run(
+            run_id="run-limited",
+            intent="complex",
+            tool_name="knowledge_search",
+            status="completed",
+        ),
+    }
+    events = {
+        "run-grounded": (
+            stored_event(0, "react_started"),
+            stored_event(
+                1,
+                "decision_ready",
+                iteration=1,
+                kind="tool",
+                tool_name="knowledge_search",
+                action_fingerprint="search",
+            ),
+            stored_event(2, "tool_call", name="knowledge_search", effect="read"),
+            stored_event(
+                3,
+                "observation_ready",
+                iteration=1,
+                tool_name="knowledge_search",
+                evidence_count=2,
+                citation_count=1,
+            ),
+            stored_event(
+                4,
+                "decision_ready",
+                iteration=2,
+                kind="tool",
+                tool_name="explain_selection",
+                action_fingerprint="explain",
+            ),
+            stored_event(5, "tool_call", name="explain_selection", effect="compute"),
+            stored_event(
+                6,
+                "observation_ready",
+                iteration=2,
+                tool_name="explain_selection",
+                evidence_count=2,
+                citation_count=1,
+            ),
+            stored_event(7, "decision_ready", iteration=3, kind="final"),
+            stored_event(8, "synthesis_ready", grounded=True),
+        ),
+        "run-limited": (
+            stored_event(0, "react_started"),
+            stored_event(
+                1,
+                "decision_ready",
+                iteration=1,
+                kind="tool",
+                tool_name="knowledge_search",
+                action_fingerprint="duplicate",
+            ),
+            stored_event(2, "tool_call", name="knowledge_search", effect="read"),
+            stored_event(3, "observation_ready", iteration=1, tool_name="knowledge_search"),
+            stored_event(
+                4,
+                "decision_ready",
+                iteration=2,
+                kind="tool",
+                tool_name="knowledge_search",
+                action_fingerprint="duplicate",
+            ),
+            stored_event(
+                5,
+                "react_limit_reached",
+                iteration=2,
+                tool_call_count=1,
+                reason="repeated_action_detected",
+            ),
+        ),
+    }
+
+    result = evaluate_agent_batch(
+        cases,
+        resolve_run=lambda case: runs.get(case.case_id),
+        resolve_events=lambda run: events[run.run_id],
+    )
+
+    assert result.total_cases == 2
+    assert result.trajectory_case_count == 2
+    assert result.react_run_rate == 1.0
+    assert result.average_react_iterations == 2.5
+    assert result.average_tool_calls == 1.5
+    assert result.redundant_action_rate == 0.5
+    assert result.react_limit_rate == 0.5
+    assert result.grounded_rate == 0.5
+    assert result.confirmation_guard_rate == 1.0

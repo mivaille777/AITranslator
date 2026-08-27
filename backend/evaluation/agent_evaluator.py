@@ -170,17 +170,23 @@ def derive_agent_trajectory_metrics(
         bool(current and previous and current != previous)
         for previous, current in zip(query_fingerprints, query_fingerprints[1:])
     )
+    novelty_observations = [
+        event
+        for event in knowledge_observations
+        if "novel_evidence_count" in _event_payload(event)
+    ]
     novel_evidence_count = sum(
         _safe_int(_event_payload(event).get("novel_evidence_count"))
-        for event in knowledge_observations
+        for event in novelty_observations
     )
     no_novel_evidence_search_count = sum(
         _safe_int(_event_payload(event).get("novel_evidence_count")) == 0
-        for event in knowledge_observations
+        for event in novelty_observations
     )
     retrieval_fallback_count = sum(
         _event_payload(event).get("retrieval_fallback") is True
         for event in knowledge_observations
+        if "retrieval_fallback" in _event_payload(event)
     )
 
     confirmation_required_actions = sum(

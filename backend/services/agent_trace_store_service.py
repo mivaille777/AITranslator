@@ -206,6 +206,21 @@ _ALLOWED_EVENT_FIELDS: dict[str, frozenset[str]] = {
         {"query_id", "final_count", "total_rag_ms", "evidence"}
     ),
     "rag_fallback": frozenset({"query_id", "fallback_reason"}),
+    "grounding_verification_evaluated": frozenset(
+        {
+            "passed",
+            "fallback_applied",
+            "claim_count",
+            "cited_claim_count",
+            "supported_claim_count",
+            "unsupported_claim_count",
+            "invalid_citation_count",
+            "citation_coverage",
+            "support_rate",
+            "reason_codes",
+            "request_id",
+        }
+    ),
     "synthesis_ready": frozenset(
         {
             "provider",

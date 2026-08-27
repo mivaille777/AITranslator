@@ -85,6 +85,12 @@ class AgentTrajectoryMetricsResponse(BaseModel):
     novel_evidence_count: int = Field(ge=0)
     no_novel_evidence_search_count: int = Field(ge=0)
     retrieval_fallback_count: int = Field(ge=0)
+    evidence_gate_count: int = Field(ge=0)
+    evidence_gate_stop_count: int = Field(ge=0)
+    evidence_gate_refine_count: int = Field(ge=0)
+    evidence_gate_retrieve_count: int = Field(ge=0)
+    final_evidence_gate_action: str
+    average_evidence_gate_quality_score: float = Field(ge=0.0, le=1.0)
     confirmation_required_action_count: int = Field(ge=0)
     write_result_count: int = Field(ge=0)
     confirmation_guard_pass: bool

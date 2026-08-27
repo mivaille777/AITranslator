@@ -8,6 +8,7 @@ from backend.agent_core.reliability import AgentExecutionPolicy, AgentRunControl
 from backend.agent_core.state import AgentState
 from backend.models.agent_react import (
     AgentObservation,
+    AgentRetrievalObservation,
     AgentReActContext,
     AgentReActDecision,
 )
@@ -73,6 +74,39 @@ def test_observation_is_compact_and_normalizes_reference_ids() -> None:
     assert observation.summary == "Found supporting passages."
     assert observation.evidence_ids == ["ev-1", "ev-2"]
     assert observation.citation_ids == ["cite-1"]
+
+
+def test_retrieval_observation_is_scoped_to_knowledge_tool() -> None:
+    retrieval = AgentRetrievalObservation(
+        query="  GP global exploration  ",
+        retrieval_strategy=" hybrid ",
+        result_count=4,
+        evidence_count=2,
+        citation_count=2,
+        novel_evidence_count=1,
+        fallback_reason=" reranker unavailable ",
+    )
+    observation = AgentObservation(
+        iteration=1,
+        tool_name="search_knowledge_base",
+        success=True,
+        retrieval=retrieval,
+    )
+
+    assert observation.retrieval is not None
+    assert observation.retrieval.query == "GP global exploration"
+    assert observation.retrieval.retrieval_strategy == "hybrid"
+    assert observation.retrieval.fallback_reason == "reranker unavailable"
+
+    with pytest.raises(ValidationError, match="only valid for knowledge search"):
+        AgentObservation(
+            iteration=1,
+            tool_name="translate_selection",
+            success=True,
+            retrieval=retrieval,
+        )
+    with pytest.raises(ValidationError, match="cannot exceed evidence_count"):
+        AgentRetrievalObservation(evidence_count=1, novel_evidence_count=2)
 
 
 def test_agent_state_keeps_react_context_separate_from_existing_plan_contract() -> None:
@@ -165,6 +199,7 @@ def test_execution_policy_bounds_future_react_loop_and_observations() -> None:
     policy = AgentExecutionPolicy()
 
     assert policy.max_react_iterations == 6
+    assert policy.max_knowledge_searches == 3
     assert policy.react_decision_timeout_seconds == 12.0
     assert policy.max_observation_chars == 3000
 
@@ -178,6 +213,8 @@ def test_execution_policy_bounds_future_react_loop_and_observations() -> None:
 
     with pytest.raises(ValueError, match="max_react_iterations must be positive"):
         AgentExecutionPolicy(max_react_iterations=0)
+    with pytest.raises(ValueError, match="max_knowledge_searches must be positive"):
+        AgentExecutionPolicy(max_knowledge_searches=0)
     with pytest.raises(ValueError, match="react_decision_timeout_seconds must be positive"):
         AgentExecutionPolicy(react_decision_timeout_seconds=0)
     with pytest.raises(ValueError, match="max_observation_chars must be positive"):

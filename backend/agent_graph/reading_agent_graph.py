@@ -13,12 +13,17 @@ from backend.agent_core.exceptions import AgentRuntimeError
 from backend.agent_core.product_adapter import ProductAgentRuntimeAdapter
 from backend.agent_core.reliability import AgentRunControl, run_react_decision_with_timeout
 from backend.agent_core.state import AgentState
-from backend.models.agent_react import AgentObservation, AgentReActDecision
+from backend.models.agent_react import (
+    AgentObservation,
+    AgentRetrievalObservation,
+    AgentReActDecision,
+)
 from backend.models.agent_runtime import AgentPlanStep, AgentRouteDecision
 from backend.services.agent_react_decision_service import AgentReActDecisionService
 
 
 GraphEventSink = Callable[[AgentEventType, dict[str, Any]], None]
+_KNOWLEDGE_SEARCH_TOOL = "search_knowledge_base"
 
 
 class ReadingAgentGraphState(TypedDict, total=False):
@@ -92,6 +97,18 @@ def _merge_emitted(existing: object, new_items: set[AgentEventType]) -> list[str
     return sorted(values)
 
 
+def _run_local_fingerprint(state: AgentState, payload: object) -> str:
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    material = f"{state.run_id}\0{canonical}".encode("utf-8")
+    return hashlib.sha256(material).hexdigest()[:20]
+
+
 def _react_action_fingerprint(state: AgentState, decision: AgentReActDecision) -> str:
     """Create a run-local opaque fingerprint for duplicate-action detection.
 
@@ -102,18 +119,13 @@ def _react_action_fingerprint(state: AgentState, decision: AgentReActDecision) -
 
     if decision.kind != "tool":
         return ""
-    canonical = json.dumps(
+    return _run_local_fingerprint(
+        state,
         {
             "tool_name": decision.tool_name,
             "arguments": decision.arguments,
         },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
     )
-    material = f"{state.run_id}\0{canonical}".encode("utf-8")
-    return hashlib.sha256(material).hexdigest()[:20]
 
 
 def _is_repeated_react_action(
@@ -130,15 +142,63 @@ def _is_repeated_react_action(
     )
 
 
+def _knowledge_search_count(state: AgentState) -> int:
+    return sum(
+        str(item.get("name", "") or item.get("tool_name", "") or "")
+        == _KNOWLEDGE_SEARCH_TOOL
+        for item in state.tool_calls
+        if isinstance(item, dict)
+    )
+
+
+def _prior_evidence_ids(state: AgentState) -> set[str]:
+    return {
+        evidence_id
+        for observation in state.react.observations
+        for evidence_id in observation.evidence_ids
+        if evidence_id
+    }
+
+
+def _retrieval_observation(
+    state: AgentState,
+    decision: AgentReActDecision,
+    result: dict[str, Any],
+) -> AgentRetrievalObservation | None:
+    if decision.tool_name != _KNOWLEDGE_SEARCH_TOOL:
+        return None
+    data = dict(result.get("data", {}) or {})
+    evidence_ids = [item.evidence_id for item in state.evidence]
+    previous = _prior_evidence_ids(state)
+    results = data.get("results", ())
+    result_count = len(results) if isinstance(results, (list, tuple)) else 0
+    query = str(
+        data.get("query", "")
+        or decision.arguments.get("query", "")
+        or ""
+    ).strip()
+    return AgentRetrievalObservation(
+        query=query,
+        retrieval_strategy=str(data.get("retrieval_strategy", "") or ""),
+        result_count=result_count,
+        evidence_count=len(evidence_ids),
+        citation_count=len(state.citations),
+        novel_evidence_count=sum(item not in previous for item in evidence_ids),
+        fallback_reason=str(data.get("fallback_reason", "") or ""),
+    )
+
+
 class ReadingAgentGraph:
     """Bounded LangGraph workflow for the AITrans Reading Agent.
 
     Deterministic and single-tool requests stay on the established direct path.
     Only ``complex`` routes enter a bounded ReAct loop where the model chooses
     one registered Tool or Final per iteration and every Tool result is converted
-    into a compact observation before the next decision. Tool execution, safe
-    retries, RAG grounding, and write confirmation remain owned by the existing
-    ProductAgentService boundary.
+    into a compact observation before the next decision. Knowledge retrieval is
+    agentic only at the query/continue/stop layer; dense/sparse retrieval,
+    fusion, reranking, evidence construction, and citations remain owned by the
+    RAG subsystem. Tool execution, safe retries, grounding, and write
+    confirmation remain owned by the existing ProductAgentService boundary.
     """
 
     node_names = (
@@ -249,6 +309,7 @@ class ReadingAgentGraph:
             {
                 "iteration": state.react.iteration,
                 "tool_call_count": len(state.tool_calls),
+                "knowledge_search_count": _knowledge_search_count(state),
                 "reason": reason,
             },
         )
@@ -341,6 +402,7 @@ class ReadingAgentGraph:
                 {
                     "max_iterations": _control.policy.max_react_iterations,
                     "max_tool_calls": _control.policy.max_tool_calls,
+                    "max_knowledge_searches": _control.policy.max_knowledge_searches,
                     "request_id": state.execution.request_id,
                 },
             )
@@ -384,6 +446,7 @@ class ReadingAgentGraph:
             raise exc
 
         iteration = state.react.iteration + 1
+        knowledge_search_count = _knowledge_search_count(state)
         payload = self._adapter.build_payload(state)
         try:
             decision = run_react_decision_with_timeout(
@@ -392,6 +455,17 @@ class ReadingAgentGraph:
                     tools=tools,
                     observations=tuple(state.react.observations),
                     max_observation_chars=control.policy.max_observation_chars,
+                    remaining_tool_calls=max(
+                        0, control.policy.max_tool_calls - len(state.tool_calls)
+                    ),
+                    remaining_knowledge_searches=max(
+                        0,
+                        min(
+                            control.policy.max_knowledge_searches,
+                            control.policy.max_tool_calls,
+                        )
+                        - knowledge_search_count,
+                    ),
                     **payload,
                 ),
                 control=control,
@@ -433,6 +507,19 @@ class ReadingAgentGraph:
                     state,
                     emit,
                     reason="repeated_action_detected",
+                )
+            )
+        elif (
+            decision.kind == "tool"
+            and decision.tool_name == _KNOWLEDGE_SEARCH_TOOL
+            and knowledge_search_count
+            >= min(control.policy.max_knowledge_searches, control.policy.max_tool_calls)
+        ):
+            emitted.update(
+                self._emit_react_limit(
+                    state,
+                    emit,
+                    reason="knowledge_search_budget_exhausted",
                 )
             )
 
@@ -486,6 +573,22 @@ class ReadingAgentGraph:
                     graph_state.get("emitted_event_types", ()), emitted
                 ),
             }
+        if (
+            decision.tool_name == _KNOWLEDGE_SEARCH_TOOL
+            and _knowledge_search_count(state)
+            >= min(control.policy.max_knowledge_searches, control.policy.max_tool_calls)
+        ):
+            emitted = self._emit_react_limit(
+                state,
+                emit,
+                reason="knowledge_search_budget_exhausted",
+            )
+            return {
+                "agent_state": _dump_agent_state(state),
+                "emitted_event_types": _merge_emitted(
+                    graph_state.get("emitted_event_types", ()), emitted
+                ),
+            }
 
         step = AgentPlanStep(
             step_id=f"react-{decision.iteration}",
@@ -518,6 +621,7 @@ class ReadingAgentGraph:
         if not summary:
             summary = f"{decision.tool_name} completed."
         summary = summary[: control.policy.max_observation_chars]
+        retrieval = _retrieval_observation(state, decision, result)
         observation = AgentObservation(
             iteration=decision.iteration,
             tool_name=decision.tool_name,
@@ -525,22 +629,34 @@ class ReadingAgentGraph:
             summary=summary,
             evidence_ids=[item.evidence_id for item in state.evidence],
             citation_ids=[item.citation_id for item in state.citations],
+            retrieval=retrieval,
         )
         state.record_react_observation(observation)
 
         if emit is not None:
-            emit(
-                AgentEventType.OBSERVATION_READY,
-                {
-                    "observation_id": observation.observation_id,
-                    "iteration": observation.iteration,
-                    "tool_name": observation.tool_name,
-                    "success": observation.success,
-                    "summary_chars": len(observation.summary),
-                    "evidence_count": len(observation.evidence_ids),
-                    "citation_count": len(observation.citation_ids),
-                },
-            )
+            observation_payload: dict[str, Any] = {
+                "observation_id": observation.observation_id,
+                "iteration": observation.iteration,
+                "tool_name": observation.tool_name,
+                "success": observation.success,
+                "summary_chars": len(observation.summary),
+                "evidence_count": len(observation.evidence_ids),
+                "citation_count": len(observation.citation_ids),
+            }
+            if retrieval is not None:
+                observation_payload.update(
+                    {
+                        "knowledge_search_count": _knowledge_search_count(state),
+                        "query_fingerprint": _run_local_fingerprint(
+                            state, {"query": retrieval.query}
+                        ),
+                        "retrieval_strategy": retrieval.retrieval_strategy,
+                        "result_count": retrieval.result_count,
+                        "novel_evidence_count": retrieval.novel_evidence_count,
+                        "retrieval_fallback": bool(retrieval.fallback_reason),
+                    }
+                )
+            emit(AgentEventType.OBSERVATION_READY, observation_payload)
             emitted.add(AgentEventType.OBSERVATION_READY)
 
         if len(state.tool_calls) >= control.policy.max_tool_calls:

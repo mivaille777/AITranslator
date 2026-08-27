@@ -52,8 +52,6 @@ class AgentExecutionPolicy:
             raise ValueError("max_react_iterations must be positive")
         if self.max_knowledge_searches < 1:
             raise ValueError("max_knowledge_searches must be positive")
-        if self.max_knowledge_searches > self.max_tool_calls:
-            raise ValueError("max_knowledge_searches cannot exceed max_tool_calls")
         if self.react_decision_timeout_seconds <= 0:
             raise ValueError("react_decision_timeout_seconds must be positive")
         if self.max_observation_chars < 1:

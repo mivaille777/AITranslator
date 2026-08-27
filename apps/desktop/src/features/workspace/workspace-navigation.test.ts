@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { getWorkspaceRouteMeta, workspaceRoutes } from "./workspace-navigation"
+import {
+  getWorkspaceRouteMeta,
+  workspaceRoutes,
+  workspaceRouteUsesFixedHeight,
+} from "./workspace-navigation"
 
 describe("workspace navigation", () => {
   it("defines unique workspace paths", () => {
@@ -23,5 +27,12 @@ describe("workspace navigation", () => {
 
   it("falls back to Translation for unknown routes", () => {
     expect(getWorkspaceRouteMeta("/unknown").path).toBe("/translation")
+  })
+
+  it("reserves whole-workspace scrolling for chat's internal panes", () => {
+    expect(workspaceRouteUsesFixedHeight("/chat")).toBe(true)
+    expect(workspaceRouteUsesFixedHeight("/translation")).toBe(false)
+    expect(workspaceRouteUsesFixedHeight("/knowledge")).toBe(false)
+    expect(workspaceRouteUsesFixedHeight("/settings")).toBe(false)
   })
 })

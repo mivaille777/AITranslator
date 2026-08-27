@@ -60,7 +60,7 @@ class ClaimEvidenceVerification:
 
 @dataclass(frozen=True, slots=True)
 class ClaimEvidenceVerifierPolicy:
-    minimum_claim_chars: int = 12
+    minimum_claim_chars: int = 16
     minimum_support_score: float = 0.22
     minimum_citation_coverage: float = 1.0
     minimum_support_rate: float = 1.0

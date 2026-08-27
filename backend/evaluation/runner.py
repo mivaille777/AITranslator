@@ -28,6 +28,11 @@ class AgentEvaluationBatchResult:
     react_run_rate: float
     average_react_iterations: float
     average_tool_calls: float
+    average_knowledge_searches: float
+    average_query_reformulations: float
+    average_novel_evidence: float
+    no_novel_evidence_run_rate: float
+    retrieval_fallback_run_rate: float
     redundant_action_rate: float
     react_limit_rate: float
     grounded_rate: float
@@ -115,6 +120,21 @@ def evaluate_agent_batch(
             lambda item: item.react_iteration_count
         ),
         average_tool_calls=trajectory_average(lambda item: item.tool_call_count),
+        average_knowledge_searches=trajectory_average(
+            lambda item: item.knowledge_search_count
+        ),
+        average_query_reformulations=trajectory_average(
+            lambda item: item.query_reformulation_count
+        ),
+        average_novel_evidence=trajectory_average(
+            lambda item: item.novel_evidence_count
+        ),
+        no_novel_evidence_run_rate=trajectory_rate(
+            lambda item: item.no_novel_evidence_search_count > 0
+        ),
+        retrieval_fallback_run_rate=trajectory_rate(
+            lambda item: item.retrieval_fallback_count > 0
+        ),
         redundant_action_rate=trajectory_rate(
             lambda item: item.redundant_action_count > 0
         ),

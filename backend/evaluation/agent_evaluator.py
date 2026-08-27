@@ -45,6 +45,12 @@ class AgentTrajectoryMetrics:
     novel_evidence_count: int = 0
     no_novel_evidence_search_count: int = 0
     retrieval_fallback_count: int = 0
+    evidence_gate_count: int = 0
+    evidence_gate_stop_count: int = 0
+    evidence_gate_refine_count: int = 0
+    evidence_gate_retrieve_count: int = 0
+    final_evidence_gate_action: str = ""
+    average_evidence_gate_quality_score: float = 0.0
     confirmation_required_action_count: int = 0
     write_result_count: int = 0
     confirmation_guard_pass: bool = True
@@ -86,6 +92,13 @@ def _safe_int(value: object) -> int:
         return 0
 
 
+def _safe_float(value: object) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _event_payload(event: StoredAgentEvent) -> dict[str, object]:
     return event.payload if isinstance(event.payload, dict) else {}
 
@@ -107,6 +120,7 @@ def derive_agent_trajectory_metrics(
     tool_events = by_type.get("tool_call", [])
     observation_events = by_type.get("observation_ready", [])
     limit_events = by_type.get("react_limit_reached", [])
+    gate_events = by_type.get("evidence_gate_evaluated", [])
 
     iterations = [
         _safe_int(_event_payload(event).get("iteration"))
@@ -142,6 +156,10 @@ def derive_agent_trajectory_metrics(
         + [
             _safe_int(_event_payload(event).get("evidence_count"))
             for event in observation_events
+        ]
+        + [
+            _safe_int(_event_payload(event).get("evidence_count"))
+            for event in gate_events
         ]
     )
     citation_count = max(
@@ -189,6 +207,22 @@ def derive_agent_trajectory_metrics(
         if "retrieval_fallback" in _event_payload(event)
     )
 
+    gate_actions = [
+        str(_event_payload(event).get("action", "") or "").strip().lower()
+        for event in gate_events
+    ]
+    gate_quality_scores = [
+        _safe_float(_event_payload(event).get("quality_score"))
+        for event in gate_events
+        if "quality_score" in _event_payload(event)
+    ]
+    final_gate_action = gate_actions[-1] if gate_actions else ""
+    average_gate_quality = (
+        round(sum(gate_quality_scores) / len(gate_quality_scores), 4)
+        if gate_quality_scores
+        else 0.0
+    )
+
     confirmation_required_actions = sum(
         str(_event_payload(event).get("effect", "") or "") == "write"
         and _event_payload(event).get("requires_confirmation") is True
@@ -229,6 +263,12 @@ def derive_agent_trajectory_metrics(
         novel_evidence_count=novel_evidence_count,
         no_novel_evidence_search_count=no_novel_evidence_search_count,
         retrieval_fallback_count=retrieval_fallback_count,
+        evidence_gate_count=len(gate_events),
+        evidence_gate_stop_count=sum(action == "stop" for action in gate_actions),
+        evidence_gate_refine_count=sum(action == "refine" for action in gate_actions),
+        evidence_gate_retrieve_count=sum(action == "retrieve" for action in gate_actions),
+        final_evidence_gate_action=final_gate_action,
+        average_evidence_gate_quality_score=average_gate_quality,
         confirmation_required_action_count=confirmation_required_actions,
         write_result_count=write_result_count,
         confirmation_guard_pass=confirmation_guard_pass,
@@ -263,10 +303,7 @@ def evaluate_agent_run(
 
     react_mode_pass = (
         expectation.expect_react is None
-        or (
-            trajectory.available
-            and trajectory.react_started is expectation.expect_react
-        )
+        or (trajectory.available and trajectory.react_started is expectation.expect_react)
     )
     normalized_expected_sequence = tuple(
         _normalized(item) for item in expectation.expected_tool_sequence if item
@@ -274,10 +311,7 @@ def evaluate_agent_run(
     normalized_actual_sequence = tuple(_normalized(item) for item in trajectory.tool_sequence)
     tool_sequence_pass = (
         not normalized_expected_sequence
-        or (
-            trajectory.available
-            and normalized_actual_sequence == normalized_expected_sequence
-        )
+        or (trajectory.available and normalized_actual_sequence == normalized_expected_sequence)
     )
     react_iteration_pass = (
         expectation.max_react_iterations <= 0
@@ -341,31 +375,21 @@ def evaluate_agent_run(
 
     failures: list[str] = []
     if not intent_match:
-        failures.append(
-            f"intent expected={expectation.expected_intent!r} actual={run.intent!r}"
-        )
+        failures.append(f"intent expected={expectation.expected_intent!r} actual={run.intent!r}")
     if not tool_match:
-        failures.append(
-            f"tool expected={expectation.expected_tool_name!r} actual={run.tool_name!r}"
-        )
+        failures.append(f"tool expected={expectation.expected_tool_name!r} actual={run.tool_name!r}")
     if not status_match:
-        failures.append(
-            f"status expected={expectation.expected_status!r} actual={run.status!r}"
-        )
+        failures.append(f"status expected={expectation.expected_status!r} actual={run.status!r}")
     if not latency_pass:
         failures.append(
             f"latency max={expectation.max_total_duration_ms} actual={run.total_duration_ms}"
         )
     if not retry_pass:
-        failures.append(
-            f"retry_count max={expectation.max_retry_count} actual={run.retry_count}"
-        )
+        failures.append(f"retry_count max={expectation.max_retry_count} actual={run.retry_count}")
     if not failure_pass:
         failures.append(f"failure_count actual={run.failure_count}")
     if not react_mode_pass:
-        failures.append(
-            f"react expected={expectation.expect_react!r} actual={trajectory.react_started!r}"
-        )
+        failures.append(f"react expected={expectation.expect_react!r} actual={trajectory.react_started!r}")
     if not tool_sequence_pass:
         failures.append(
             f"tool_sequence expected={normalized_expected_sequence!r} actual={normalized_actual_sequence!r}"
@@ -375,17 +399,13 @@ def evaluate_agent_run(
             f"react_iterations max={expectation.max_react_iterations} actual={trajectory.react_iteration_count}"
         )
     if not tool_call_pass:
-        failures.append(
-            f"tool_calls max={expectation.max_tool_calls} actual={trajectory.tool_call_count}"
-        )
+        failures.append(f"tool_calls max={expectation.max_tool_calls} actual={trajectory.tool_call_count}")
     if not redundancy_pass:
         failures.append(
             f"redundant_actions max={expectation.max_redundant_actions} actual={trajectory.redundant_action_count}"
         )
     if not react_limit_pass:
-        failures.append(
-            f"react_limit reached reason={trajectory.react_limit_reason or 'unknown'}"
-        )
+        failures.append(f"react_limit reached reason={trajectory.react_limit_reason or 'unknown'}")
     if not grounding_pass:
         failures.append("grounded response required but no persisted evidence was observed")
     if not confirmation_pass:

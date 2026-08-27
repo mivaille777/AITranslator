@@ -59,6 +59,27 @@ class AgentReActDecision(AgentReActContractModel):
         return self
 
 
+class AgentRetrievalObservation(AgentReActContractModel):
+    """Compact retrieval metadata used by ReAct without exposing RAG internals."""
+
+    query: str = Field(default="", max_length=4_000)
+    retrieval_strategy: str = Field(default="", max_length=128)
+    result_count: int = Field(default=0, ge=0)
+    evidence_count: int = Field(default=0, ge=0)
+    citation_count: int = Field(default=0, ge=0)
+    novel_evidence_count: int = Field(default=0, ge=0)
+    fallback_reason: str = Field(default="", max_length=512)
+
+    @model_validator(mode="after")
+    def normalize_retrieval(self) -> "AgentRetrievalObservation":
+        self.query = self.query.strip()
+        self.retrieval_strategy = self.retrieval_strategy.strip()
+        self.fallback_reason = self.fallback_reason.strip()
+        if self.novel_evidence_count > self.evidence_count:
+            raise ValueError("novel_evidence_count cannot exceed evidence_count")
+        return self
+
+
 class AgentObservation(AgentReActContractModel):
     """Compact, model-safe result of one executed Agent action."""
 
@@ -70,6 +91,7 @@ class AgentObservation(AgentReActContractModel):
     error_code: str = ""
     evidence_ids: list[str] = Field(default_factory=list)
     citation_ids: list[str] = Field(default_factory=list)
+    retrieval: AgentRetrievalObservation | None = None
 
     @model_validator(mode="after")
     def normalize_observation(self) -> "AgentObservation":
@@ -83,6 +105,8 @@ class AgentObservation(AgentReActContractModel):
             raise ValueError("observation_id must not be empty")
         if not self.tool_name:
             raise ValueError("observations require tool_name")
+        if self.retrieval is not None and self.tool_name != "search_knowledge_base":
+            raise ValueError("retrieval metadata is only valid for knowledge search observations")
         return self
 
 
@@ -114,6 +138,7 @@ class AgentReActContext(AgentReActContractModel):
 
 __all__ = [
     "AgentObservation",
+    "AgentRetrievalObservation",
     "AgentReActContext",
     "AgentReActDecision",
     "AgentReActDecisionKind",

@@ -127,6 +127,7 @@ class AgentQualityResolvedResult:
     judge_verdict: AgentQualityVerdict
     final_verdict: AgentQualityVerdict
     average_score: float
+    human_reviewed: bool
     human_override: bool
     needs_human_review: bool
     critical_reason_codes: tuple[str, ...]
@@ -139,8 +140,13 @@ class AgentQualityBatchResult:
     review_cases: int
     failed_cases: int
     pass_rate: float
-    human_review_rate: float
+    judge_pass_rate: float
+    judge_review_rate: float
+    judge_fail_rate: float
+    human_reviewed_rate: float
+    pending_human_review_rate: float
     human_override_rate: float
+    human_agreement_rate: float
     average_score: float
     correctness_average: float
     groundedness_average: float
@@ -211,6 +217,7 @@ def resolve_quality_batch(
                 judge_verdict=judgement.verdict,
                 final_verdict=final_verdict,
                 average_score=judgement.average_score,
+                human_reviewed=review is not None,
                 human_override=review is not None and review.verdict != judgement.verdict,
                 needs_human_review=judgement.needs_human_review and review is None,
                 critical_reason_codes=tuple(judgement.critical_reason_codes),
@@ -221,8 +228,18 @@ def resolve_quality_batch(
     passed = sum(item.final_verdict == "pass" for item in resolved)
     review_count = sum(item.final_verdict == "review" for item in resolved)
     failed = sum(item.final_verdict == "fail" for item in resolved)
+    judge_passed = sum(item.judge_verdict == "pass" for item in resolved)
+    judge_review = sum(item.judge_verdict == "review" for item in resolved)
+    judge_failed = sum(item.judge_verdict == "fail" for item in resolved)
+    reviewed = sum(item.human_reviewed for item in resolved)
     overrides = sum(item.human_override for item in resolved)
+    agreements = sum(
+        item.human_reviewed and not item.human_override for item in resolved
+    )
     pending_human = sum(item.needs_human_review for item in resolved)
+
+    def rate(value: int, denominator: int = total) -> float:
+        return round(value / denominator, 4) if denominator else 0.0
 
     def average(name: str) -> float:
         values = dimensions[name]
@@ -233,9 +250,14 @@ def resolve_quality_batch(
         passed_cases=passed,
         review_cases=review_count,
         failed_cases=failed,
-        pass_rate=round(passed / total, 4) if total else 0.0,
-        human_review_rate=round(pending_human / total, 4) if total else 0.0,
-        human_override_rate=round(overrides / total, 4) if total else 0.0,
+        pass_rate=rate(passed),
+        judge_pass_rate=rate(judge_passed),
+        judge_review_rate=rate(judge_review),
+        judge_fail_rate=rate(judge_failed),
+        human_reviewed_rate=rate(reviewed),
+        pending_human_review_rate=rate(pending_human),
+        human_override_rate=rate(overrides),
+        human_agreement_rate=rate(agreements, reviewed),
         average_score=(
             round(sum(item.average_score for item in resolved) / total, 3)
             if total

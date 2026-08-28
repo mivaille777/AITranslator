@@ -7,14 +7,18 @@ from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
 from backend.rag.config import RagConfig
+from backend.rag.document_tree import DocumentTree, DocumentTreeBuilder
 from backend.rag.embeddings import EmbeddingProvider
 from backend.rag.index_manifest import IndexManifest, IndexManifestRecord
 from backend.rag.index_service import IndexDocumentResult, IndexService
+from backend.rag.models import NormalizedDocument
+from backend.rag.parsers import parse_document
 
 DEFAULT_KNOWLEDGE_MAX_FILE_BYTES = 100 * 1024 * 1024
 SUPPORTED_KNOWLEDGE_SUFFIXES = frozenset(
     {".pdf", ".docx", ".txt", ".md", ".html", ".htm"}
 )
+MAX_SECTION_PREVIEW_CHARS = 60_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,8 +38,46 @@ class KnowledgeRuntimeSnapshot:
     allowed_roots: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class KnowledgeSectionSnapshot:
+    section_id: str
+    heading: str
+    level: int
+    parent_section_id: str | None
+    section_path: tuple[str, ...]
+    page_start: int | None
+    page_end: int | None
+    block_count: int
+    has_equations: bool
+    has_tables: bool
+    has_figures: bool
+    reference_section: bool
+    synthetic: bool
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeDocumentOutlineSnapshot:
+    document_id: str
+    title: str
+    page_count: int
+    sections: tuple[KnowledgeSectionSnapshot, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeDocumentSectionSnapshot:
+    document_id: str
+    section_id: str
+    heading: str
+    level: int
+    section_path: tuple[str, ...]
+    page_start: int | None
+    page_end: int | None
+    text: str
+    truncated: bool
+
+
 class KnowledgeLibraryService:
-    """Safe local-file boundary over indexing and manifest operations."""
+    """Safe local-file boundary over indexing and academic workspace metadata."""
 
     def __init__(
         self,
@@ -54,6 +96,9 @@ class KnowledgeLibraryService:
         roots = allowed_roots or (Path.home(),)
         self._allowed_roots = tuple(Path(root).expanduser().resolve() for root in roots)
         self._max_file_bytes = max(1, int(max_file_bytes))
+        self._academic_cache: dict[
+            str, tuple[str, NormalizedDocument, DocumentTree]
+        ] = {}
 
     def validate_source_path(self, source_path: str | Path) -> Path:
         raw = str(source_path or "").strip()
@@ -78,9 +123,11 @@ class KnowledgeLibraryService:
         return resolved
 
     def import_document(self, source_path: str | Path) -> IndexDocumentResult:
-        return self._index_service.index_document(
+        result = self._index_service.index_document(
             self.validate_source_path(source_path)
         )
+        self._academic_cache.pop(result.document_id, None)
+        return result
 
     def list_documents(self) -> list[IndexManifestRecord]:
         return self._manifest.list_records()
@@ -93,10 +140,64 @@ class KnowledgeLibraryService:
         if record is None:
             return None
         path = self.validate_source_path(self._path_from_file_uri(record.source_uri))
-        return self._index_service.reindex_document(path)
+        result = self._index_service.reindex_document(path)
+        self._academic_cache.pop(record.document_id, None)
+        return result
 
     def delete_document(self, document_id: str) -> bool:
-        return self._index_service.delete_document(str(document_id or "").strip())
+        normalized_id = str(document_id or "").strip()
+        deleted = self._index_service.delete_document(normalized_id)
+        if deleted:
+            self._academic_cache.pop(normalized_id, None)
+        return deleted
+
+    def get_document_outline(
+        self,
+        document_id: str,
+    ) -> KnowledgeDocumentOutlineSnapshot | None:
+        loaded = self._load_academic_document(document_id)
+        if loaded is None:
+            return None
+        record, normalized, tree = loaded
+        sections = tuple(self._section_snapshot(section) for section in tree.sections)
+        return KnowledgeDocumentOutlineSnapshot(
+            document_id=record.document_id,
+            title=normalized.document.title or record.title,
+            page_count=len(normalized.pages),
+            sections=sections,
+        )
+
+    def get_document_section(
+        self,
+        document_id: str,
+        section_id: str,
+    ) -> KnowledgeDocumentSectionSnapshot | None:
+        loaded = self._load_academic_document(document_id)
+        if loaded is None:
+            return None
+        record, normalized, tree = loaded
+        normalized_section_id = str(section_id or "").strip()
+        section = next(
+            (item for item in tree.sections if item.node_id == normalized_section_id),
+            None,
+        )
+        if section is None:
+            return None
+        raw_text = normalized.text[section.start_char : section.end_char].strip()
+        truncated = len(raw_text) > MAX_SECTION_PREVIEW_CHARS
+        text = raw_text[:MAX_SECTION_PREVIEW_CHARS]
+        snapshot = self._section_snapshot(section)
+        return KnowledgeDocumentSectionSnapshot(
+            document_id=record.document_id,
+            section_id=section.node_id,
+            heading=section.heading,
+            level=section.level,
+            section_path=section.section_path,
+            page_start=snapshot.page_start,
+            page_end=snapshot.page_end,
+            text=text,
+            truncated=truncated,
+        )
 
     def runtime(self) -> KnowledgeRuntimeSnapshot:
         records = self.list_documents()
@@ -125,6 +226,62 @@ class KnowledgeLibraryService:
             allowed_roots=tuple(str(root) for root in self._allowed_roots),
         )
 
+    def _load_academic_document(
+        self,
+        document_id: str,
+    ) -> tuple[IndexManifestRecord, NormalizedDocument, DocumentTree] | None:
+        record = self.get_document(document_id)
+        if record is None:
+            return None
+        cached = self._academic_cache.get(record.document_id)
+        if cached is not None and cached[0] == record.content_hash:
+            return record, cached[1], cached[2]
+
+        path = self.validate_source_path(self._path_from_file_uri(record.source_uri))
+        normalized = parse_document(path)
+        normalized = normalized.model_copy(
+            update={
+                "document": normalized.document.model_copy(
+                    update={
+                        "document_id": record.document_id,
+                        "source_uri": record.source_uri,
+                    }
+                )
+            }
+        )
+        tree = DocumentTreeBuilder.build(normalized)
+        self._academic_cache[record.document_id] = (
+            record.content_hash,
+            normalized,
+            tree,
+        )
+        return record, normalized, tree
+
+    @staticmethod
+    def _section_snapshot(section) -> KnowledgeSectionSnapshot:
+        page_values = [
+            page
+            for paragraph in section.paragraphs
+            for page in (paragraph.page_start, paragraph.page_end)
+            if page is not None
+        ]
+        block_types = {paragraph.block_type for paragraph in section.paragraphs}
+        return KnowledgeSectionSnapshot(
+            section_id=section.node_id,
+            heading=section.heading,
+            level=section.level,
+            parent_section_id=section.parent_section_id,
+            section_path=section.section_path,
+            page_start=min(page_values) if page_values else None,
+            page_end=max(page_values) if page_values else None,
+            block_count=len(section.paragraphs),
+            has_equations="equation" in block_types,
+            has_tables=bool({"table", "table_caption"} & block_types),
+            has_figures="figure_caption" in block_types,
+            reference_section=bool(section.metadata.get("reference_section")),
+            synthetic=section.synthetic,
+        )
+
     @staticmethod
     def _path_from_file_uri(source_uri: str) -> Path:
         parsed = urlparse(source_uri)
@@ -140,7 +297,11 @@ class KnowledgeLibraryService:
 
 __all__ = [
     "DEFAULT_KNOWLEDGE_MAX_FILE_BYTES",
+    "MAX_SECTION_PREVIEW_CHARS",
     "SUPPORTED_KNOWLEDGE_SUFFIXES",
+    "KnowledgeDocumentOutlineSnapshot",
+    "KnowledgeDocumentSectionSnapshot",
     "KnowledgeLibraryService",
     "KnowledgeRuntimeSnapshot",
+    "KnowledgeSectionSnapshot",
 ]

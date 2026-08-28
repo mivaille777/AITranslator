@@ -11,16 +11,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from backend.evaluation.dataset import load_evaluation_dataset
-from backend.evaluation.live_benchmark import (
-    load_live_benchmark_cases,
-    run_live_benchmark,
-)
+from backend.evaluation.live_benchmark import load_live_benchmark_cases
 from backend.evaluation.quality_gate import (
     evaluate_regression_quality,
     load_quality_thresholds,
 )
 from backend.evaluation.regression_fixture import load_regression_fixture
 from backend.evaluation.runner import AgentEvaluationBatchResult, evaluate_agent_batch
+from backend.evaluation.stage14_suite import run_stage14_suite
 
 DEFAULT_LIVE_DATASET = "backend/evaluation/datasets/stage14_live.jsonl"
 DEFAULT_LIVE_THRESHOLDS = "backend/evaluation/datasets/stage14_quality_gate.json"
@@ -105,7 +103,7 @@ def _regression_diff(
 
 def _run_live(dataset: str, thresholds_path: str):
     live_cases = load_live_benchmark_cases(dataset)
-    suite = run_live_benchmark(live_cases)
+    suite = run_stage14_suite(live_cases)
     expectations = tuple(case.expectation for case in live_cases)
     batch = evaluate_agent_batch(
         expectations,

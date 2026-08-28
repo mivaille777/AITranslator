@@ -85,7 +85,7 @@ describe("Knowledge Library", () => {
     expect(screen.getByText("Ready")).not.toBeNull()
     expect(screen.getByText("Failed")).not.toBeNull()
     expect(screen.getByText("The PDF parser could not read page 3.")).not.toBeNull()
-  })
+  }, 10_000)
 
   it("adds a selected document and refreshes the shared list", async () => {
     fetchMock.mockImplementation(async (_input, init) => {

@@ -128,6 +128,7 @@ def test_registry_uses_dedicated_writing_owner_and_preserves_catalog_order() -> 
         "polish_selection",
         "save_research_note",
         "list_research_notes",
+        "search_research_notes",
         "get_research_note",
         "update_research_note",
         "define_terms",

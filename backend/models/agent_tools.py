@@ -96,6 +96,8 @@ class AgentRunRequest(ReadingContextPayload):
     style: str = Field(default="academic", min_length=1, max_length=64)
     conversation_id: str = Field(default="", max_length=128)
     confirmed_write_tools: list[str] = Field(default_factory=list, max_length=16)
+    knowledge_document_ids: list[str] = Field(default_factory=list, max_length=100)
+    research_source_ids: list[str] = Field(default_factory=list, max_length=100)
     request_id: int = Field(default=0, ge=0)
 
 

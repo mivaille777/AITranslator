@@ -13,6 +13,8 @@ export interface BuildAgentRunRequestInput {
   targetLanguage: string
   conversationId: string
   confirmedWriteTools?: string[]
+  knowledgeDocumentIds?: string[]
+  researchSourceIds?: string[]
 }
 
 export function buildAgentRunRequest({
@@ -27,6 +29,8 @@ export function buildAgentRunRequest({
   targetLanguage,
   conversationId,
   confirmedWriteTools = [],
+  knowledgeDocumentIds = [],
+  researchSourceIds = [],
 }: BuildAgentRunRequestInput): AgentRunRequest {
   return {
     ...context,
@@ -42,6 +46,8 @@ export function buildAgentRunRequest({
     style: "academic",
     conversation_id: conversationId,
     confirmed_write_tools: confirmedWriteTools,
+    knowledge_document_ids: knowledgeDocumentIds,
+    research_source_ids: researchSourceIds,
     request_id: requestId,
   }
 }

@@ -21,6 +21,8 @@ class AgentEvaluationBatchResult:
     intent_accuracy: float
     tool_accuracy: float
     status_accuracy: float
+    fallback_accuracy: float
+    evidence_gate_accuracy: float
     latency_pass_rate: float
     retry_pass_rate: float
     failure_pass_rate: float
@@ -57,6 +59,7 @@ def _missing_result(case: AgentEvaluationExpectation) -> AgentEvaluationResult:
         intent_match=False,
         tool_match=False,
         status_match=False,
+        fallback_match=False,
         latency_pass=False,
         retry_pass=False,
         failure_pass=False,
@@ -67,6 +70,7 @@ def _missing_result(case: AgentEvaluationExpectation) -> AgentEvaluationResult:
         redundancy_pass=False,
         react_limit_pass=False,
         grounding_pass=False,
+        evidence_gate_pass=False,
         grounding_verification_pass=False,
         confirmation_pass=False,
         trajectory=AgentTrajectoryMetrics(),
@@ -143,6 +147,8 @@ def evaluate_agent_batch(
         intent_accuracy=rate(lambda result: result.intent_match),
         tool_accuracy=rate(lambda result: result.tool_match),
         status_accuracy=rate(lambda result: result.status_match),
+        fallback_accuracy=rate(lambda result: result.fallback_match),
+        evidence_gate_accuracy=rate(lambda result: result.evidence_gate_pass),
         latency_pass_rate=rate(lambda result: result.latency_pass),
         retry_pass_rate=rate(lambda result: result.retry_pass),
         failure_pass_rate=rate(lambda result: result.failure_pass),

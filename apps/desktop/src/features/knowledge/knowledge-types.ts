@@ -48,6 +48,42 @@ export interface KnowledgeDocumentStatusResponse {
   error: string
 }
 
+export interface KnowledgeDocumentOutlineSection {
+  section_id: string
+  heading: string
+  level: number
+  parent_section_id: string | null
+  section_path: string[]
+  page_start: number | null
+  page_end: number | null
+  block_count: number
+  has_equations: boolean
+  has_tables: boolean
+  has_figures: boolean
+  reference_section: boolean
+  synthetic: boolean
+}
+
+export interface KnowledgeDocumentOutline {
+  document_id: string
+  title: string
+  page_count: number
+  section_count: number
+  sections: KnowledgeDocumentOutlineSection[]
+}
+
+export interface KnowledgeDocumentSection {
+  document_id: string
+  section_id: string
+  heading: string
+  level: number
+  section_path: string[]
+  page_start: number | null
+  page_end: number | null
+  text: string
+  truncated: boolean
+}
+
 export interface KnowledgeRuntime {
   enabled: boolean
   embedding_provider: string

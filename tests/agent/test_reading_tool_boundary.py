@@ -144,12 +144,13 @@ def test_registry_preserves_existing_tool_catalog_order_and_dispatch() -> None:
         "polish_selection",
         "save_research_note",
     ]
-    assert names[7:10] == [
+    assert names[7:11] == [
         "list_research_notes",
+        "search_research_notes",
         "get_research_note",
         "update_research_note",
     ]
-    assert names[10:13] == [
+    assert names[11:14] == [
         "define_terms",
         "analyze_equation",
         "summarize_current_section",

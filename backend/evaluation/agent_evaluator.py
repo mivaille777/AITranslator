@@ -13,6 +13,9 @@ class AgentEvaluationExpectation:
     expected_tool_name: str = ""
     expected_tool_sequence: tuple[str, ...] = ()
     expected_status: str = "completed"
+    expected_fallback_reason: str = ""
+    expected_final_evidence_gate_action: str = ""
+    expected_grounding_verification_pass: bool | None = None
     max_total_duration_ms: int = 0
     max_retry_count: int = 0
     require_zero_failures: bool = True
@@ -63,6 +66,7 @@ class AgentTrajectoryMetrics:
     average_citation_coverage: float = 0.0
     average_claim_support_rate: float = 0.0
     final_grounding_verification_passed: bool | None = None
+    final_grounding_fallback_applied: bool | None = None
     confirmation_required_action_count: int = 0
     write_result_count: int = 0
     confirmation_guard_pass: bool = True
@@ -78,6 +82,7 @@ class AgentEvaluationResult:
     intent_match: bool
     tool_match: bool
     status_match: bool
+    fallback_match: bool
     latency_pass: bool
     retry_pass: bool
     failure_pass: bool
@@ -88,6 +93,7 @@ class AgentEvaluationResult:
     redundancy_pass: bool
     react_limit_pass: bool
     grounding_pass: bool
+    evidence_gate_pass: bool
     grounding_verification_pass: bool
     confirmation_pass: bool
     trajectory: AgentTrajectoryMetrics
@@ -248,10 +254,12 @@ def derive_agent_trajectory_metrics(
         if "support_rate" in _event_payload(event)
     ]
     final_verification_passed: bool | None = None
+    final_fallback_applied: bool | None = None
     if verification_events:
-        final_verification_passed = (
-            _event_payload(verification_events[-1]).get("passed") is True
-        )
+        final_payload = _event_payload(verification_events[-1])
+        final_verification_passed = final_payload.get("passed") is True
+        if "fallback_applied" in final_payload:
+            final_fallback_applied = final_payload.get("fallback_applied") is True
 
     confirmation_required_actions = sum(
         str(_event_payload(event).get("effect", "") or "") == "write"
@@ -339,6 +347,7 @@ def derive_agent_trajectory_metrics(
             else 0.0
         ),
         final_grounding_verification_passed=final_verification_passed,
+        final_grounding_fallback_applied=final_fallback_applied,
         confirmation_required_action_count=confirmation_required_actions,
         write_result_count=write_result_count,
         confirmation_guard_pass=confirmation_guard_pass,
@@ -363,6 +372,11 @@ def evaluate_agent_run(
     status_match = (
         not expectation.expected_status
         or _normalized(run.status) == _normalized(expectation.expected_status)
+    )
+    fallback_match = (
+        not expectation.expected_fallback_reason
+        or _normalized(run.fallback_reason)
+        == _normalized(expectation.expected_fallback_reason)
     )
     latency_pass = (
         expectation.max_total_duration_ms <= 0
@@ -413,14 +427,35 @@ def evaluate_agent_run(
         not expectation.require_grounded_response
         or (trajectory.available and trajectory.grounded)
     )
-    grounding_verification_pass = (
-        not expectation.require_grounding_verification_pass
+    evidence_gate_pass = (
+        not expectation.expected_final_evidence_gate_action
         or (
+            trajectory.available
+            and _normalized(trajectory.final_evidence_gate_action)
+            == _normalized(expectation.expected_final_evidence_gate_action)
+        )
+    )
+
+    expected_verification = expectation.expected_grounding_verification_pass
+    if expected_verification is None and expectation.require_grounding_verification_pass:
+        expected_verification = True
+    if expected_verification is None:
+        grounding_verification_pass = True
+    elif expected_verification:
+        grounding_verification_pass = (
             trajectory.available
             and trajectory.grounding_verification_count > 0
             and trajectory.final_grounding_verification_passed is True
+            and trajectory.final_grounding_fallback_applied is False
         )
-    )
+    else:
+        grounding_verification_pass = (
+            trajectory.available
+            and trajectory.grounding_verification_count > 0
+            and trajectory.final_grounding_verification_passed is False
+            and trajectory.final_grounding_fallback_applied is True
+        )
+
     confirmation_pass = (
         not expectation.require_confirmation_guard
         or (trajectory.available and trajectory.confirmation_guard_pass)
@@ -434,6 +469,8 @@ def evaluate_agent_run(
         ("retry", retry_pass),
         ("failure", failure_pass),
     ]
+    if expectation.expected_fallback_reason:
+        named_checks.append(("fallback", fallback_match))
     if expectation.expect_react is not None:
         named_checks.append(("react_mode", react_mode_pass))
     if normalized_expected_sequence:
@@ -448,7 +485,9 @@ def evaluate_agent_run(
         named_checks.append(("react_limit", react_limit_pass))
     if expectation.require_grounded_response:
         named_checks.append(("grounding", grounding_pass))
-    if expectation.require_grounding_verification_pass:
+    if expectation.expected_final_evidence_gate_action:
+        named_checks.append(("evidence_gate", evidence_gate_pass))
+    if expected_verification is not None:
         named_checks.append(("grounding_verification", grounding_verification_pass))
     if expectation.require_confirmation_guard:
         named_checks.append(("confirmation", confirmation_pass))
@@ -460,6 +499,10 @@ def evaluate_agent_run(
         failures.append(f"tool expected={expectation.expected_tool_name!r} actual={run.tool_name!r}")
     if not status_match:
         failures.append(f"status expected={expectation.expected_status!r} actual={run.status!r}")
+    if not fallback_match:
+        failures.append(
+            f"fallback expected={expectation.expected_fallback_reason!r} actual={run.fallback_reason!r}"
+        )
     if not latency_pass:
         failures.append(
             f"latency max={expectation.max_total_duration_ms} actual={run.total_duration_ms}"
@@ -488,9 +531,18 @@ def evaluate_agent_run(
         failures.append(f"react_limit reached reason={trajectory.react_limit_reason or 'unknown'}")
     if not grounding_pass:
         failures.append("grounded response required but no persisted evidence was observed")
+    if not evidence_gate_pass:
+        failures.append(
+            "evidence gate action "
+            f"expected={expectation.expected_final_evidence_gate_action!r} "
+            f"actual={trajectory.final_evidence_gate_action!r}"
+        )
     if not grounding_verification_pass:
         failures.append(
-            "grounding verification required but final claim/citation verification did not pass"
+            "grounding verification outcome "
+            f"expected={expected_verification!r} "
+            f"actual={trajectory.final_grounding_verification_passed!r} "
+            f"fallback={trajectory.final_grounding_fallback_applied!r}"
         )
     if not confirmation_pass:
         failures.append("write confirmation guard was bypassed")
@@ -508,6 +560,7 @@ def evaluate_agent_run(
         intent_match=intent_match,
         tool_match=tool_match,
         status_match=status_match,
+        fallback_match=fallback_match,
         latency_pass=latency_pass,
         retry_pass=retry_pass,
         failure_pass=failure_pass,
@@ -518,6 +571,7 @@ def evaluate_agent_run(
         redundancy_pass=redundancy_pass,
         react_limit_pass=react_limit_pass,
         grounding_pass=grounding_pass,
+        evidence_gate_pass=evidence_gate_pass,
         grounding_verification_pass=grounding_verification_pass,
         confirmation_pass=confirmation_pass,
         trajectory=trajectory,

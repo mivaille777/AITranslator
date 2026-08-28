@@ -82,8 +82,12 @@ def _verdict_from_dimensions(
     if critical or average < 3.0:
         return "fail", False, critical
 
+    major_noncritical_issue = any(
+        scores[name] <= 2 for name in ("relevance", "completeness", "clarity")
+    )
     borderline = (
         model_requests_review
+        or major_noncritical_issue
         or average < 4.0
         or any(score == 3 for score in scores.values())
     )

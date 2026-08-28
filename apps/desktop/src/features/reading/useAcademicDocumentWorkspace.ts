@@ -64,7 +64,7 @@ export function useAcademicDocumentWorkspace(workspace: TranslationWorkspaceCont
     setPreferredSectionId(sectionId.trim())
   }
 
-  function useSectionInAgent() {
+  function attachSectionToAgent() {
     const section = sectionQuery.data
     if (!section || !activeDocument) return false
     const bounded = buildAcademicAgentText(section)
@@ -97,7 +97,7 @@ export function useAcademicDocumentWorkspace(workspace: TranslationWorkspaceCont
     sectionQuery,
     selectDocument,
     selectSection,
-    useSectionInAgent,
+    attachSectionToAgent,
     attachedContext: workspace.academicReadingContext,
   }
 }

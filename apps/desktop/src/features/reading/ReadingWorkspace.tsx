@@ -1,13 +1,16 @@
 import { BookOpenText } from "lucide-react"
 
 import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
+import AcademicDocumentWorkspacePanel from "./AcademicDocumentWorkspacePanel"
 import BrowserReadingContextPanel from "./BrowserReadingContextPanel"
+import { useAcademicDocumentWorkspace } from "./useAcademicDocumentWorkspace"
 
 export default function ReadingWorkspace({
   workspace,
 }: {
   workspace: TranslationWorkspaceController
 }) {
+  const academicWorkspace = useAcademicDocumentWorkspace(workspace)
   const selection = workspace.readingSelection
   const browserPage = workspace.browserPage
   const isBrowserSelection = selection?.source_kind === "browser"
@@ -18,6 +21,8 @@ export default function ReadingWorkspace({
 
   return (
     <div className="space-y-4">
+      <AcademicDocumentWorkspacePanel controller={academicWorkspace} />
+
       <BrowserReadingContextPanel
         browserStatus={workspace.browserStatus}
         readingSelection={selection}
@@ -35,13 +40,13 @@ export default function ReadingWorkspace({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                  Current selection
+                  External reading selection
                 </p>
                 <h2 className="mt-2 text-lg font-semibold tracking-tight text-slate-950">
-                  {selection ? `${selection.text.length} characters captured` : "No selection yet"}
+                  {selection ? `${selection.text.length} characters captured` : "No external selection yet"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Frozen evidence that can move into translation, chat, or research without changing source identity.
+                  Browser and desktop selections remain available alongside the academic document workspace.
                 </p>
               </div>
               {selection && (
@@ -61,9 +66,9 @@ export default function ReadingWorkspace({
                   <BookOpenText size={20} strokeWidth={1.6} />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Select text in any supported reading source.</p>
+                  <p className="text-sm font-medium text-slate-700">Select text in any supported external reading source.</p>
                   <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
-                    Browser DOM, browser PDF accessibility, Word COM, and generic desktop UIA all resolve into this same reading context.
+                    Browser DOM, browser PDF accessibility, Word COM, and generic desktop UIA still resolve into the same reading contract.
                   </p>
                 </div>
               </div>
@@ -85,7 +90,7 @@ export default function ReadingWorkspace({
 
           <aside className="border-t border-slate-200/70 bg-slate-50/55 p-6 lg:p-7 xl:border-l xl:border-t-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              Document metadata
+              External source metadata
             </p>
 
             {selection ? (
@@ -100,9 +105,9 @@ export default function ReadingWorkspace({
               </dl>
             ) : (
               <div className="mt-5 rounded-[18px] border border-slate-200/60 bg-white/65 p-4">
-                <p className="text-sm font-medium text-slate-700">Metadata follows the selection.</p>
+                <p className="text-sm font-medium text-slate-700">Metadata follows the external selection.</p>
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Title, source kind, application, page number, and local or web locator appear only when the resolver can support them reliably.
+                  Academic document metadata and outline are managed independently above.
                 </p>
               </div>
             )}

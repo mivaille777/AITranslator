@@ -124,6 +124,9 @@ export type QuickActionKey =
   | "reading_explain"
   | "reading_summarize"
   | "reading_section_role"
+  | "reading_define_terms"
+  | "reading_analyze_equation"
+  | "reading_section_summarize"
 
 export interface QuickActionRequest extends ReadingContextFields {
   action: QuickActionKey

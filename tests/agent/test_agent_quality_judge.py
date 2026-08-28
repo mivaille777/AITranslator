@@ -115,6 +115,16 @@ def test_borderline_score_forces_human_review() -> None:
     assert result.needs_human_review is True
 
 
+def test_major_noncritical_dimension_cannot_be_hidden_by_high_average() -> None:
+    service = AgentQualityJudgeService(FakeTextService(_response(completeness=2)))
+
+    result = service.judge(_sample())
+
+    assert result.average_score > 4.0
+    assert result.verdict == "review"
+    assert result.needs_human_review is True
+
+
 def test_prompt_injection_is_kept_inside_untrusted_evaluation_payload() -> None:
     text_service = FakeTextService(_response())
     service = AgentQualityJudgeService(text_service)
@@ -193,11 +203,54 @@ def test_human_review_overrides_final_verdict_without_mutating_judge_result() ->
 
     assert judgement.verdict == "review"
     assert batch.pass_rate == 1.0
-    assert batch.human_review_rate == 0.0
+    assert batch.judge_review_rate == 1.0
+    assert batch.human_reviewed_rate == 1.0
+    assert batch.pending_human_review_rate == 0.0
     assert batch.human_override_rate == 1.0
+    assert batch.human_agreement_rate == 0.0
     assert batch.results[0].judge_verdict == "review"
     assert batch.results[0].final_verdict == "pass"
+    assert batch.results[0].human_reviewed is True
     assert batch.results[0].human_override is True
+
+
+def test_human_agreement_is_measured_only_across_reviewed_cases() -> None:
+    pass_dimensions = [
+        AgentQualityDimension(name=name, score=5)
+        for name in (
+            "correctness",
+            "groundedness",
+            "relevance",
+            "completeness",
+            "clarity",
+            "safety",
+        )
+    ]
+    judgements = (
+        AgentQualityJudgement(
+            case_id="agree",
+            verdict="pass",
+            dimensions=pass_dimensions,
+        ),
+        AgentQualityJudgement(
+            case_id="not-reviewed",
+            verdict="pass",
+            dimensions=pass_dimensions,
+        ),
+    )
+    reviews = {
+        "agree": AgentHumanReview(
+            case_id="agree",
+            verdict="pass",
+            reviewer="reviewer-1",
+        )
+    }
+
+    batch = resolve_quality_batch(judgements, human_reviews=reviews)
+
+    assert batch.human_reviewed_rate == 0.5
+    assert batch.human_agreement_rate == 1.0
+    assert batch.human_override_rate == 0.0
 
 
 def test_close_is_lazy_and_only_closes_existing_service() -> None:

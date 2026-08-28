@@ -188,11 +188,13 @@ def test_research_definitions_encode_read_write_safety_policy() -> None:
     assert [definition.spec.name for definition in definitions] == [
         "save_research_note",
         "list_research_notes",
+        "search_research_notes",
         "get_research_note",
         "update_research_note",
     ]
     assert [definition.spec.effect for definition in definitions] == [
         "write",
+        "read",
         "read",
         "read",
         "write",
@@ -202,9 +204,11 @@ def test_research_definitions_encode_read_write_safety_policy() -> None:
         False,
         False,
         False,
+        False,
     ]
     assert [definition.spec.requires_confirmation for definition in definitions] == [
         True,
+        False,
         False,
         False,
         True,
@@ -213,12 +217,14 @@ def test_research_definitions_encode_read_write_safety_policy() -> None:
         False,
         True,
         True,
+        True,
         False,
     ]
     assert set(definitions[0].spec.input_schema) == {"user_note"}
     assert set(definitions[1].spec.input_schema) == {"limit"}
-    assert set(definitions[2].spec.input_schema) == {"note_id"}
-    assert set(definitions[3].spec.input_schema) == {"note_id", "user_note"}
+    assert set(definitions[2].spec.input_schema) == {"query"}
+    assert set(definitions[3].spec.input_schema) == {"note_id"}
+    assert set(definitions[4].spec.input_schema) == {"note_id", "user_note"}
 
 
 def test_registry_exposes_research_memory_without_exposing_delete() -> None:
@@ -238,6 +244,7 @@ def test_registry_exposes_research_memory_without_exposing_delete() -> None:
         "polish_selection",
         "save_research_note",
         "list_research_notes",
+        "search_research_notes",
         "get_research_note",
         "update_research_note",
         "define_terms",
@@ -260,5 +267,6 @@ def test_registry_exposes_research_memory_without_exposing_delete() -> None:
     assert loaded.data is not None and loaded.data["found"] is True
     assert updated.data is not None and updated.data["updated"] is True
     assert registry.allows_safe_retry("list_research_notes") is True
+    assert registry.allows_safe_retry("search_research_notes") is True
     assert registry.allows_safe_retry("get_research_note") is True
     assert registry.allows_safe_retry("update_research_note") is False

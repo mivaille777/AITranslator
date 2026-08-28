@@ -54,16 +54,22 @@ jobs:
         shell: pwsh
         run: .\scripts\test.ps1 -Install -PytestArgs '--junitxml=test-results/pytest.xml'
 
+      - name: Run Agent regression benchmark
+        shell: pwsh
+        run: python scripts/run_agent_regression_benchmark.py --report test-results/agent-regression.json
+
       - name: Run legacy application smoke test
         shell: pwsh
         run: python -m app.main --smoke-test
 
-      - name: Upload pytest report
+      - name: Upload Python test reports
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: ci-pytest-${{ github.run_id }}
-          path: test-results/pytest.xml
+          name: ci-python-${{ github.run_id }}
+          path: |
+            test-results/pytest.xml
+            test-results/agent-regression.json
           if-no-files-found: warn
           retention-days: 14
 

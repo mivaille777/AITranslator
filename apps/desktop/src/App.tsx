@@ -76,7 +76,10 @@ function App() {
               <Route path="/chat" element={<CompanionWorkspaceV2 />} />
               <Route path="/agent" element={<AgentWorkspace workspace={workspace} />} />
               <Route path="/knowledge" element={<KnowledgeRoute backendState={workspace.backendState} />} />
-              <Route path="/research" element={<ResearchRoute backendState={workspace.backendState} />} />
+              <Route
+                path="/research"
+                element={<ResearchRoute backendState={workspace.backendState} workspace={workspace} />}
+              />
               <Route path="/settings" element={<SettingsWorkspace workspace={workspace} />} />
               <Route path="*" element={<Navigate to="/translation" replace />} />
             </Routes>

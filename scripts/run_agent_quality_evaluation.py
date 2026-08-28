@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--require-resolved",
         action="store_true",
-        help="Exit non-zero while any case still requires human review.",
+        help="Exit non-zero while any final case verdict remains review.",
     )
     parser.add_argument(
         "--min-pass-rate",
@@ -84,16 +84,20 @@ def _write_judgements(
 def _alignment_failures(
     sample_ids: tuple[str, ...],
     judgement_ids: tuple[str, ...],
+    review_ids: tuple[str, ...] = (),
 ) -> tuple[str, ...]:
     failures: list[str] = []
     if len(judgement_ids) != len(set(judgement_ids)):
         failures.append("duplicate judgement case_id")
     missing = sorted(set(sample_ids) - set(judgement_ids))
     extra = sorted(set(judgement_ids) - set(sample_ids))
+    unknown_reviews = sorted(set(review_ids) - set(sample_ids))
     if missing:
         failures.append("missing judgements: " + ", ".join(missing))
     if extra:
         failures.append("unknown judgements: " + ", ".join(extra))
+    if unknown_reviews:
+        failures.append("unknown human reviews: " + ", ".join(unknown_reviews))
     return tuple(failures)
 
 
@@ -120,13 +124,20 @@ def main() -> int:
             _write_judgements(args.save_judgements, judgements)
 
     judgement_ids = tuple(item.case_id for item in judgements)
-    alignment_failures = _alignment_failures(sample_ids, judgement_ids)
     human_reviews = load_human_reviews(args.reviews) if args.reviews else {}
+    review_ids = tuple(human_reviews)
+    alignment_failures = _alignment_failures(
+        sample_ids,
+        judgement_ids,
+        review_ids,
+    )
     batch = resolve_quality_batch(judgements, human_reviews=human_reviews)
     pending_review_ids = [
-        item.case_id for item in batch.results if item.needs_human_review
+        item.case_id
+        for item in batch.results
+        if item.needs_human_review or item.final_verdict == "review"
     ]
-    unmatched_review_ids = sorted(set(human_reviews) - set(sample_ids))
+    unmatched_review_ids = sorted(set(review_ids) - set(sample_ids))
 
     passed = not alignment_failures
     if args.require_resolved and pending_review_ids:

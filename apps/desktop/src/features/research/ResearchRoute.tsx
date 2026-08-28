@@ -1,11 +1,19 @@
 import { LoaderCircle, ServerOff } from "lucide-react"
 
 import { EmptyState } from "../../shared/ui/EmptyState"
+import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
+import ResearchScopePanel from "./ResearchScopePanel"
 import ResearchWorkspace from "./ResearchWorkspace"
 
 type BackendState = "checking" | "connected" | "offline"
 
-export default function ResearchRoute({ backendState }: { backendState: BackendState }) {
+export default function ResearchRoute({
+  backendState,
+  workspace,
+}: {
+  backendState: BackendState
+  workspace: TranslationWorkspaceController
+}) {
   if (backendState === "checking") {
     return (
       <section className="ait-surface overflow-hidden p-7">
@@ -33,7 +41,12 @@ export default function ResearchRoute({ backendState }: { backendState: BackendS
     )
   }
 
-  return <ResearchWorkspace />
+  return (
+    <div className="space-y-4">
+      <ResearchScopePanel workspace={workspace} />
+      <ResearchWorkspace />
+    </div>
+  )
 }
 
 function SkeletonBlock({ className }: { className: string }) {

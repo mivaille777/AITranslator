@@ -89,6 +89,9 @@ class AgentToolRegistry:
             quick_action_service=shared_quick_action_service,
         )
         reading_definitions = build_reading_tool_definitions(reading_tools)
+        reading_by_name = {
+            definition.spec.name: definition for definition in reading_definitions
+        }
 
         writing_tool = WritingAgentTool(
             quick_action_service=shared_quick_action_service,
@@ -106,13 +109,20 @@ class AgentToolRegistry:
         )
         knowledge_definitions = build_knowledge_tool_definitions(knowledge_tools)
 
-        # Preserve the established planner/catalog ordering for all public tools.
+        # Keep the long-standing seven-tool prefix stable for route/planner and
+        # integration compatibility. Academic reading tools extend the catalog
+        # after the historical surface instead of reordering existing tools.
         self._definitions = (
-            reading_definitions[0],
+            reading_by_name["inspect_reading_context"],
             translation_definition,
-            *reading_definitions[1:],
+            reading_by_name["explain_selection"],
+            reading_by_name["summarize_selection"],
+            reading_by_name["analyze_section_role"],
             writing_definition,
             *research_definitions,
+            reading_by_name["define_terms"],
+            reading_by_name["analyze_equation"],
+            reading_by_name["summarize_current_section"],
             *knowledge_definitions,
         )
         self._definition_by_name = {

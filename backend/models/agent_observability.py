@@ -54,6 +54,9 @@ class AgentEvaluationRequest(BaseModel):
     expected_tool_name: str = Field(default="", max_length=128)
     expected_tool_sequence: list[str] = Field(default_factory=list, max_length=20)
     expected_status: str = Field(default="completed", max_length=64)
+    expected_fallback_reason: str = Field(default="", max_length=128)
+    expected_final_evidence_gate_action: str = Field(default="", max_length=32)
+    expected_grounding_verification_pass: bool | None = None
     max_total_duration_ms: int = Field(default=0, ge=0)
     max_retry_count: int = Field(default=0, ge=0, le=10)
     require_zero_failures: bool = True
@@ -103,6 +106,7 @@ class AgentTrajectoryMetricsResponse(BaseModel):
     average_citation_coverage: float = Field(ge=0.0, le=1.0)
     average_claim_support_rate: float = Field(ge=0.0, le=1.0)
     final_grounding_verification_passed: bool | None = None
+    final_grounding_fallback_applied: bool | None = None
     confirmation_required_action_count: int = Field(ge=0)
     write_result_count: int = Field(ge=0)
     confirmation_guard_pass: bool
@@ -117,6 +121,7 @@ class AgentEvaluationResponse(BaseModel):
     intent_match: bool
     tool_match: bool
     status_match: bool
+    fallback_match: bool
     latency_pass: bool
     retry_pass: bool
     failure_pass: bool
@@ -127,6 +132,7 @@ class AgentEvaluationResponse(BaseModel):
     redundancy_pass: bool
     react_limit_pass: bool
     grounding_pass: bool
+    evidence_gate_pass: bool
     grounding_verification_pass: bool
     confirmation_pass: bool
     trajectory: AgentTrajectoryMetricsResponse

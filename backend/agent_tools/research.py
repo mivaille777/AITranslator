@@ -11,10 +11,13 @@ from backend.agent_tools.base import (
     TypedAgentToolDefinition,
     typed_tool_definition,
 )
+from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
+from backend.rag.citation_service import build_evidence_citations
 
 _AGENT_DETAIL_TEXT_LIMIT = 3_000
 _AGENT_OUTPUT_SOURCE_LIMIT = 500
 _AGENT_OUTPUT_NOTE_LIMIT = 1_000
+_AGENT_SEARCH_EXCERPT_LIMIT = 1_200
 
 
 class SaveResearchNoteArgs(AgentToolModel):
@@ -29,6 +32,16 @@ class SaveResearchNotePlannerArgs(AgentToolModel):
 
 class ListResearchNotesArgs(AgentToolModel):
     limit: int = Field(default=5, ge=1, le=20)
+
+
+class SearchResearchNotesArgs(AgentToolModel):
+    query: str = Field(min_length=1, max_length=4_000)
+    source_ids: list[str] = Field(default_factory=list, max_length=100)
+    top_k: int = Field(default=8, ge=1, le=20)
+
+
+class SearchResearchNotesPlannerArgs(AgentToolModel):
+    query: str = Field(min_length=1, max_length=4_000)
 
 
 class GetResearchNoteArgs(AgentToolModel):
@@ -87,6 +100,27 @@ class ResearchNoteListResultData(AgentToolModel):
     count: int = Field(default=0, ge=0)
 
 
+class ResearchNoteSearchResultItem(AgentToolModel):
+    note_id: str = Field(max_length=128)
+    source_id: str = Field(max_length=128)
+    display_title: str = Field(max_length=1024)
+    resource_url: str = Field(default="", max_length=4096)
+    resource_title: str = Field(default="", max_length=1024)
+    section_heading: str = Field(default="", max_length=1024)
+    source_kind: str = Field(default="", max_length=128)
+    excerpt: str = Field(max_length=_AGENT_SEARCH_EXCERPT_LIMIT)
+    user_note: str = Field(default="", max_length=_AGENT_OUTPUT_NOTE_LIMIT)
+    score: float = Field(ge=0.0)
+
+
+class ResearchNoteSearchResultData(AgentToolModel):
+    query: str = Field(max_length=4_000)
+    results: list[ResearchNoteSearchResultItem] = Field(default_factory=list)
+    count: int = Field(default=0, ge=0)
+    evidence: list[AgentEvidenceItem] = Field(default_factory=list)
+    citations: list[AgentCitationRef] = Field(default_factory=list)
+
+
 class ResearchNoteLookupResultData(AgentToolModel):
     found: bool
     note: ResearchNoteDetailData | None = None
@@ -136,6 +170,44 @@ def _detail_data(note: Any) -> dict[str, Any]:
         "user_note": _bounded_text(getattr(note, "user_note", ""), _AGENT_DETAIL_TEXT_LIMIT),
         "conversation_id": _bounded_text(getattr(note, "conversation_id", ""), 128),
     }
+
+
+def _search_item(match: Any) -> dict[str, Any]:
+    note = match.note
+    source_text = _bounded_text(getattr(note, "source_text", ""), _AGENT_SEARCH_EXCERPT_LIMIT)
+    if not source_text:
+        source_text = _bounded_text(getattr(note, "ai_content", ""), _AGENT_SEARCH_EXCERPT_LIMIT)
+    return {
+        "note_id": _bounded_text(note.note_id, 128),
+        "source_id": _bounded_text(match.source_id, 128),
+        "display_title": _bounded_text(note.display_title, 1024),
+        "resource_url": _bounded_text(getattr(note, "resource_url", ""), 4096),
+        "resource_title": _bounded_text(getattr(note, "resource_title", ""), 1024),
+        "section_heading": _bounded_text(getattr(note, "section_heading", ""), 1024),
+        "source_kind": _bounded_text(getattr(note, "source_kind", ""), 128),
+        "excerpt": source_text,
+        "user_note": _bounded_text(getattr(note, "user_note", ""), _AGENT_OUTPUT_NOTE_LIMIT),
+        "score": max(0.0, float(match.score)),
+    }
+
+
+def _search_evidence(item: dict[str, Any]) -> AgentEvidenceItem:
+    note_id = str(item["note_id"])
+    return AgentEvidenceItem(
+        evidence_id=f"research-note:{note_id}",
+        source_type="research_note",
+        source_id=str(item["source_id"]),
+        title=str(item["display_title"]),
+        resource_url=str(item["resource_url"]),
+        location=str(item["section_heading"]),
+        excerpt=str(item["excerpt"]),
+        score=float(item["score"]),
+        metadata={
+            "note_id": note_id,
+            "source_kind": str(item["source_kind"]),
+            "has_user_annotation": bool(str(item["user_note"]).strip()),
+        },
+    )
 
 
 class ResearchAgentTools:
@@ -195,6 +267,46 @@ class ResearchAgentTools:
             effect="read",
             request_id=context.request_id,
             data={"notes": summaries, "count": len(summaries)},
+        )
+
+    def search_research_notes(
+        self,
+        context: AgentToolInvocationContext,
+        args: BaseModel,
+    ) -> AgentToolExecutionResult:
+        typed = cast(SearchResearchNotesArgs, args)
+        search = getattr(self._research_note_service, "search", None)
+        if not callable(search):
+            raise RuntimeError("Research-memory search is unavailable.")
+        matches = tuple(
+            search(
+                typed.query,
+                limit=typed.top_k,
+                source_ids=typed.source_ids,
+            )
+        )
+        results = [_search_item(match) for match in matches]
+        evidence = [_search_evidence(item) for item in results]
+        citations = build_evidence_citations(evidence)
+        if results:
+            output_text = "Research memory results:\n" + "\n".join(
+                f"- {item['display_title']} / {item['section_heading'] or 'unsectioned'}: {item['excerpt']}"
+                for item in results
+            )
+        else:
+            output_text = "No matching research notes found."
+        return AgentToolExecutionResult(
+            tool_name="search_research_notes",
+            output_text=output_text,
+            effect="read",
+            request_id=context.request_id,
+            data={
+                "query": typed.query,
+                "results": results,
+                "count": len(results),
+                "evidence": [item.model_dump(mode="json") for item in evidence],
+                "citations": [item.model_dump(mode="json") for item in citations],
+            },
         )
 
     def get_research_note(
@@ -288,6 +400,20 @@ def build_research_tool_definitions(
             retry_policy="safe",
         ),
         typed_tool_definition(
+            name="search_research_notes",
+            title="Search research notes",
+            description="Search persisted research memory for evidence relevant to the current question.",
+            category="research",
+            effect="read",
+            requires_reading_context=False,
+            requires_confirmation=False,
+            args_model=SearchResearchNotesArgs,
+            result_model=ResearchNoteSearchResultData,
+            executor=tools.search_research_notes,
+            planner_args_model=SearchResearchNotesPlannerArgs,
+            retry_policy="safe",
+        ),
+        typed_tool_definition(
             name="get_research_note",
             title="Get research note",
             description="Load one bounded persisted Research Note by note identifier.",
@@ -325,10 +451,14 @@ __all__ = [
     "ResearchNoteListResultData",
     "ResearchNoteLookupResultData",
     "ResearchNoteResultData",
+    "ResearchNoteSearchResultData",
+    "ResearchNoteSearchResultItem",
     "ResearchNoteSummaryData",
     "ResearchNoteUpdateResultData",
     "SaveResearchNoteArgs",
     "SaveResearchNotePlannerArgs",
+    "SearchResearchNotesArgs",
+    "SearchResearchNotesPlannerArgs",
     "UpdateResearchNoteArgs",
     "UpdateResearchNotePlannerArgs",
     "build_research_tool_definitions",

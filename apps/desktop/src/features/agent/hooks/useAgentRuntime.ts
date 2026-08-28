@@ -192,6 +192,8 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
       sourceLanguage: workspace.sourceLanguage,
       targetLanguage: workspace.targetLanguage,
       conversationId: conversationId.current,
+      knowledgeDocumentIds: workspace.researchRetrievalScope.knowledgeDocumentIds,
+      researchSourceIds: workspace.researchRetrievalScope.researchSourceIds,
     })
     lastPayload.current = payload
     execute(payload)

@@ -6,11 +6,13 @@ from pathlib import Path
 import pytest
 
 from backend.evaluation.qualitative import (
+    AgentHumanReview,
     AgentQualityJudgement,
     load_human_reviews,
     load_quality_samples,
     resolve_quality_batch,
 )
+from scripts.run_agent_quality_evaluation import _alignment_failures
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATASET = REPO_ROOT / "backend/evaluation/datasets/stage15_quality_smoke.jsonl"
@@ -81,3 +83,35 @@ def test_saved_judgement_cannot_claim_pass_when_major_completeness_issue_require
 
     with pytest.raises(ValueError, match="inconsistent with deterministic rubric policy"):
         AgentQualityJudgement.model_validate(payload)
+
+
+def test_human_review_may_remain_explicitly_unresolved() -> None:
+    judgement = next(
+        item for item in _fixture_judgements() if item.case_id == "quality-incomplete-answer"
+    )
+    review = AgentHumanReview(
+        case_id=judgement.case_id,
+        verdict="review",
+        reviewer="reviewer-1",
+        reason_codes=["needs_domain_expert"],
+    )
+
+    batch = resolve_quality_batch(
+        (judgement,),
+        human_reviews={judgement.case_id: review},
+    )
+
+    assert batch.review_cases == 1
+    assert batch.results[0].human_reviewed is True
+    assert batch.results[0].needs_human_review is False
+    assert batch.results[0].final_verdict == "review"
+
+
+def test_alignment_rejects_human_reviews_for_unknown_cases() -> None:
+    failures = _alignment_failures(
+        ("known",),
+        ("known",),
+        ("known", "unknown-review"),
+    )
+
+    assert failures == ("unknown human reviews: unknown-review",)

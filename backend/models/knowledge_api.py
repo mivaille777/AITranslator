@@ -56,6 +56,42 @@ class KnowledgeDocumentStatusResponse(KnowledgeApiModel):
     error: str = ""
 
 
+class KnowledgeDocumentOutlineSection(KnowledgeApiModel):
+    section_id: str
+    heading: str = ""
+    level: int = Field(default=0, ge=0)
+    parent_section_id: str | None = None
+    section_path: list[str] = Field(default_factory=list)
+    page_start: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
+    block_count: int = Field(default=0, ge=0)
+    has_equations: bool = False
+    has_tables: bool = False
+    has_figures: bool = False
+    reference_section: bool = False
+    synthetic: bool = False
+
+
+class KnowledgeDocumentOutlineResponse(KnowledgeApiModel):
+    document_id: str
+    title: str = ""
+    page_count: int = Field(default=0, ge=0)
+    section_count: int = Field(default=0, ge=0)
+    sections: list[KnowledgeDocumentOutlineSection] = Field(default_factory=list)
+
+
+class KnowledgeDocumentSectionResponse(KnowledgeApiModel):
+    document_id: str
+    section_id: str
+    heading: str = ""
+    level: int = Field(default=0, ge=0)
+    section_path: list[str] = Field(default_factory=list)
+    page_start: int | None = Field(default=None, ge=1)
+    page_end: int | None = Field(default=None, ge=1)
+    text: str = Field(default="", max_length=60_000)
+    truncated: bool = False
+
+
 class KnowledgeRuntimeResponse(KnowledgeApiModel):
     enabled: bool
     embedding_provider: str
@@ -77,7 +113,10 @@ __all__ = [
     "KnowledgeDocumentImportRequest",
     "KnowledgeDocumentImportResponse",
     "KnowledgeDocumentListResponse",
+    "KnowledgeDocumentOutlineResponse",
+    "KnowledgeDocumentOutlineSection",
     "KnowledgeDocumentResponse",
+    "KnowledgeDocumentSectionResponse",
     "KnowledgeDocumentStatusResponse",
     "KnowledgeRuntimeResponse",
 ]

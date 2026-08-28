@@ -11,6 +11,9 @@ from backend.evaluation.runner import AgentEvaluationBatchResult
 class AgentRegressionQualityThresholds:
     min_total_cases: int = 1
     min_pass_rate: float = 1.0
+    min_intent_accuracy: float = 0.0
+    min_tool_accuracy: float = 0.0
+    min_task_completion_rate: float = 0.0
     min_trajectory_case_rate: float = 1.0
     min_react_run_rate: float = 0.0
     min_grounded_rate: float = 0.0
@@ -18,6 +21,12 @@ class AgentRegressionQualityThresholds:
     min_confirmation_guard_rate: float = 1.0
     min_fallback_accuracy: float = 1.0
     min_evidence_gate_accuracy: float = 1.0
+    min_token_usage_available_rate: float = 0.0
+    max_fallback_rate: float = 1.0
+    max_tool_failure_rate: float = 1.0
+    max_retry_rate: float = 1.0
+    max_timeout_rate: float = 1.0
+    max_latency_p95_ms: int = 0
     max_redundant_action_rate: float = 0.0
     max_react_limit_rate: float = 0.0
 
@@ -51,6 +60,19 @@ def evaluate_regression_quality(
         "pass_rate": (
             batch.pass_rate >= thresholds.min_pass_rate,
             f"pass_rate min={thresholds.min_pass_rate} actual={batch.pass_rate}",
+        ),
+        "intent_accuracy": (
+            batch.intent_accuracy >= thresholds.min_intent_accuracy,
+            f"intent_accuracy min={thresholds.min_intent_accuracy} actual={batch.intent_accuracy}",
+        ),
+        "tool_accuracy": (
+            batch.tool_accuracy >= thresholds.min_tool_accuracy,
+            f"tool_accuracy min={thresholds.min_tool_accuracy} actual={batch.tool_accuracy}",
+        ),
+        "task_completion_rate": (
+            batch.task_completion_rate >= thresholds.min_task_completion_rate,
+            "task_completion_rate "
+            f"min={thresholds.min_task_completion_rate} actual={batch.task_completion_rate}",
         ),
         "trajectory_case_rate": (
             trajectory_rate >= thresholds.min_trajectory_case_rate,
@@ -86,6 +108,35 @@ def evaluate_regression_quality(
             batch.evidence_gate_accuracy >= thresholds.min_evidence_gate_accuracy,
             "evidence_gate_accuracy "
             f"min={thresholds.min_evidence_gate_accuracy} actual={batch.evidence_gate_accuracy}",
+        ),
+        "token_usage_available_rate": (
+            batch.token_usage_available_rate
+            >= thresholds.min_token_usage_available_rate,
+            "token_usage_available_rate "
+            f"min={thresholds.min_token_usage_available_rate} "
+            f"actual={batch.token_usage_available_rate}",
+        ),
+        "fallback_rate": (
+            batch.fallback_rate <= thresholds.max_fallback_rate,
+            f"fallback_rate max={thresholds.max_fallback_rate} actual={batch.fallback_rate}",
+        ),
+        "tool_failure_rate": (
+            batch.tool_failure_rate <= thresholds.max_tool_failure_rate,
+            "tool_failure_rate "
+            f"max={thresholds.max_tool_failure_rate} actual={batch.tool_failure_rate}",
+        ),
+        "retry_rate": (
+            batch.retry_rate <= thresholds.max_retry_rate,
+            f"retry_rate max={thresholds.max_retry_rate} actual={batch.retry_rate}",
+        ),
+        "timeout_rate": (
+            batch.timeout_rate <= thresholds.max_timeout_rate,
+            f"timeout_rate max={thresholds.max_timeout_rate} actual={batch.timeout_rate}",
+        ),
+        "latency_p95_ms": (
+            thresholds.max_latency_p95_ms <= 0
+            or batch.latency_p95_ms <= thresholds.max_latency_p95_ms,
+            f"latency_p95_ms max={thresholds.max_latency_p95_ms} actual={batch.latency_p95_ms}",
         ),
         "redundant_action_rate": (
             batch.redundant_action_rate <= thresholds.max_redundant_action_rate,

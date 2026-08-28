@@ -65,7 +65,7 @@ def test_registry_lists_safe_read_only_knowledge_tool_last() -> None:
     tool = registry.get_tool("search_knowledge_base")
 
     assert names[-1] == "search_knowledge_base"
-    assert names[:-1] == [
+    assert names[:10] == [
         "inspect_reading_context",
         "translate_selection",
         "explain_selection",
@@ -76,6 +76,11 @@ def test_registry_lists_safe_read_only_knowledge_tool_last() -> None:
         "list_research_notes",
         "get_research_note",
         "update_research_note",
+    ]
+    assert names[10:-1] == [
+        "define_terms",
+        "analyze_equation",
+        "summarize_current_section",
     ]
     assert tool is not None
     assert tool.category == "knowledge"

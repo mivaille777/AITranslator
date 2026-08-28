@@ -40,6 +40,9 @@ from backend.services.companion_chat_service import CompanionChatService
 from backend.services.grounded_synthesis_service import GroundedSynthesisService
 
 AgentLifecycleSink = Callable[[str, dict[str, Any]], None]
+_GROUNDED_RETRIEVAL_TOOLS = frozenset(
+    {"search_knowledge_base", "search_research_notes"}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +89,22 @@ def _route_to_plan(route: AgentRouteDecision) -> AgentPlan:
         action="answer",
         user_visible_reason=route.user_visible_reason,
     )
+
+
+def _trusted_scope_ids(value: Any, *, limit: int = 100) -> list[str]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        identifier = str(item or "").strip()
+        if not identifier or len(identifier) > 256 or identifier in seen:
+            continue
+        normalized.append(identifier)
+        seen.add(identifier)
+        if len(normalized) >= limit:
+            break
+    return normalized
 
 
 class ProductAgentService:
@@ -346,6 +365,15 @@ class ProductAgentService:
             "request_id": request_id,
             **validated_arguments,
         }
+        if spec.name == "search_knowledge_base":
+            trusted_document_ids = _trusted_scope_ids(payload.get("knowledge_document_ids", ()))
+            if trusted_document_ids:
+                execution_payload["document_ids"] = trusted_document_ids
+                execution_payload["document_scope"] = ""
+        elif spec.name == "search_research_notes":
+            trusted_source_ids = _trusted_scope_ids(payload.get("research_source_ids", ()))
+            if trusted_source_ids:
+                execution_payload["source_ids"] = trusted_source_ids
 
         tool_started = monotonic()
         if spec.effect == "write":
@@ -418,7 +446,7 @@ class ProductAgentService:
 
         trace_data = (
             {}
-            if tool_result.tool_name == "search_knowledge_base"
+            if tool_result.tool_name in _GROUNDED_RETRIEVAL_TOOLS
             else tool_result.data or {}
         )
         self._emit(
@@ -438,7 +466,7 @@ class ProductAgentService:
         return tool_result, False
 
     @staticmethod
-    def _knowledge_grounding(
+    def _retrieval_grounding(
         data: dict[str, Any] | None,
     ) -> tuple[list[AgentEvidenceItem], list[AgentCitationRef]]:
         payload = dict(data or {})
@@ -454,11 +482,13 @@ class ProductAgentService:
             CitationService().validate(citations, evidence)
         except Exception as exc:
             raise AgentToolError(
-                f"Knowledge tool returned invalid evidence or citations: {exc}",
+                f"Retrieval tool returned invalid evidence or citations: {exc}",
                 stage="synthesis",
-                fallback_reason="invalid_knowledge_citations",
+                fallback_reason="invalid_retrieval_citations",
             ) from exc
         return evidence, citations
+
+    _knowledge_grounding = _retrieval_grounding
 
     def _synthesize_grounded(
         self,
@@ -618,18 +648,18 @@ class ProductAgentService:
             },
             ensure_ascii=False,
         )
-        knowledge_results = [
+        grounded_results = [
             item
             for item in results
             if str(item.get("tool_name", "") or item.get("name", "") or "")
-            == "search_knowledge_base"
+            in _GROUNDED_RETRIEVAL_TOOLS
         ]
         evidence: list[AgentEvidenceItem] = []
         citations: list[AgentCitationRef] = []
-        if knowledge_results:
+        if grounded_results:
             seen_evidence: set[str] = set()
-            for item in knowledge_results:
-                item_evidence, _item_citations = self._knowledge_grounding(
+            for item in grounded_results:
+                item_evidence, _item_citations = self._retrieval_grounding(
                     dict(item.get("data", {}) or {})
                 )
                 for evidence_item in item_evidence:
@@ -772,8 +802,8 @@ class ProductAgentService:
 
         evidence: list[AgentEvidenceItem] = []
         citations: list[AgentCitationRef] = []
-        if tool_result.tool_name == "search_knowledge_base":
-            evidence, citations = self._knowledge_grounding(tool_result.data)
+        if tool_result.tool_name in _GROUNDED_RETRIEVAL_TOOLS:
+            evidence, citations = self._retrieval_grounding(tool_result.data)
 
         if tool_result.effect == "write" or skip_synthesis:
             return ProductAgentRunResult(
@@ -789,7 +819,7 @@ class ProductAgentService:
                 citations=tuple(citations),
             )
 
-        if tool_result.tool_name == "search_knowledge_base":
+        if tool_result.tool_name in _GROUNDED_RETRIEVAL_TOOLS:
             answer = self._synthesize_grounded(
                 payload=payload,
                 reading=reading,

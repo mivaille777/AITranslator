@@ -2,6 +2,8 @@ export {
   addKnowledgeDocument,
   deleteKnowledgeDocument,
   getKnowledgeDocument,
+  getKnowledgeDocumentOutline,
+  getKnowledgeDocumentSection,
   getKnowledgeDocumentStatus,
   getKnowledgeRuntime,
   listKnowledgeDocuments,

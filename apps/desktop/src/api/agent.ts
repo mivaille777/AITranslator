@@ -79,6 +79,8 @@ export interface AgentRunRequest extends ReadingContextFields {
   style?: string
   conversation_id?: string
   confirmed_write_tools?: string[]
+  knowledge_document_ids?: string[]
+  research_source_ids?: string[]
   request_id?: number
 }
 

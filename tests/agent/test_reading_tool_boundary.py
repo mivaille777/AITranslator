@@ -38,7 +38,6 @@ class StubResearchNoteService:
         raise AssertionError("research write should not run in Reading Tool tests")
 
 
-
 def reading_context() -> AgentToolInvocationContext:
     return AgentToolInvocationContext(
         source_text="Gaussian processes model uncertainty.",
@@ -56,7 +55,6 @@ def reading_context() -> AgentToolInvocationContext:
     )
 
 
-
 def test_inspect_reading_context_is_a_pure_read_tool() -> None:
     quick_action = StubQuickActionService()
     tools = ReadingAgentTools(quick_action_service=quick_action)
@@ -70,7 +68,6 @@ def test_inspect_reading_context_is_a_pure_read_tool() -> None:
     assert result.data["resource_title"] == "Control paper"
     assert result.data["section_heading"] == "Methods"
     assert quick_action.calls == []
-
 
 
 def test_reading_compute_tools_share_the_frozen_context_boundary() -> None:
@@ -101,7 +98,6 @@ def test_reading_compute_tools_share_the_frozen_context_boundary() -> None:
     assert analyzed.data == {"action": "reading_section_role"}
 
 
-
 def test_reading_definitions_expose_stable_public_contracts() -> None:
     definitions = build_reading_tool_definitions(
         ReadingAgentTools(quick_action_service=StubQuickActionService())
@@ -112,9 +108,15 @@ def test_reading_definitions_expose_stable_public_contracts() -> None:
         "explain_selection",
         "summarize_selection",
         "analyze_section_role",
+        "define_terms",
+        "analyze_equation",
+        "summarize_current_section",
     ]
     assert [definition.spec.effect for definition in definitions] == [
         "read",
+        "compute",
+        "compute",
+        "compute",
         "compute",
         "compute",
         "compute",
@@ -122,7 +124,6 @@ def test_reading_definitions_expose_stable_public_contracts() -> None:
     assert all(definition.spec.requires_reading_context for definition in definitions)
     assert all(definition.spec.requires_confirmation is False for definition in definitions)
     assert all(definition.allows_safe_retry for definition in definitions)
-
 
 
 def test_registry_preserves_existing_tool_catalog_order_and_dispatch() -> None:
@@ -133,7 +134,8 @@ def test_registry_preserves_existing_tool_catalog_order_and_dispatch() -> None:
         research_note_service=StubResearchNoteService(),
     )
 
-    assert [tool.name for tool in registry.list_tools()][:7] == [
+    names = [tool.name for tool in registry.list_tools()]
+    assert names[:7] == [
         "inspect_reading_context",
         "translate_selection",
         "explain_selection",
@@ -141,6 +143,11 @@ def test_registry_preserves_existing_tool_catalog_order_and_dispatch() -> None:
         "analyze_section_role",
         "polish_selection",
         "save_research_note",
+    ]
+    assert names[7:10] == [
+        "define_terms",
+        "analyze_equation",
+        "summarize_current_section",
     ]
 
     result = registry.execute(

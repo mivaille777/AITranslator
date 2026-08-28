@@ -145,6 +145,11 @@ def test_registry_preserves_existing_tool_catalog_order_and_dispatch() -> None:
         "save_research_note",
     ]
     assert names[7:10] == [
+        "list_research_notes",
+        "get_research_note",
+        "update_research_note",
+    ]
+    assert names[10:13] == [
         "define_terms",
         "analyze_equation",
         "summarize_current_section",

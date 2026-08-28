@@ -12,6 +12,8 @@ from backend.models.quick_actions import (
 from backend.models.research import (
     ResearchNoteDeleteResponse,
     ResearchNoteDetailResponse,
+    ResearchNoteSearchResponse,
+    ResearchNoteSearchResultResponse,
     ResearchNoteUpdateRequest,
     ResearchSourceProfileResponse,
     ResearchSourceSectionResponse,
@@ -99,6 +101,38 @@ def research_workspace(
         sources=[_source_summary(item) for item in sources],
         notes=[_detail(note) for note in notes],
     )
+
+
+@router.get("/search", response_model=ResearchNoteSearchResponse)
+def search_research_memory(
+    service: ResearchNoteServiceDependency,
+    q: str = Query(min_length=1, max_length=4_000),
+    limit: int = Query(default=8, ge=1, le=20),
+    source_id: list[str] = Query(default=[]),
+) -> ResearchNoteSearchResponse:
+    try:
+        matches = service.search(q, limit=limit, source_ids=source_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+    results = [
+        ResearchNoteSearchResultResponse(
+            note_id=match.note.note_id,
+            source_id=match.source_id,
+            display_title=match.note.display_title,
+            excerpt=(match.note.source_text or match.note.ai_content)[:1200].strip(),
+            resource_url=match.note.resource_url,
+            resource_title=match.note.resource_title,
+            section_heading=match.note.section_heading,
+            source_kind=match.note.source_kind,
+            user_note=match.note.user_note[:1000].strip(),
+            score=match.score,
+        )
+        for match in matches
+    ]
+    return ResearchNoteSearchResponse(query=q, count=len(results), results=results)
 
 
 @router.get("/sources/{source_id}", response_model=ResearchSourceProfileResponse)

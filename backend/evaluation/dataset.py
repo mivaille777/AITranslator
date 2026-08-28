@@ -48,6 +48,15 @@ def load_evaluation_dataset(path: str | Path) -> tuple[AgentEvaluationExpectatio
                     str(item).strip() for item in raw_sequence if str(item).strip()
                 ),
                 expected_status=str(payload.get("expected_status", "completed") or "completed"),
+                expected_fallback_reason=str(
+                    payload.get("expected_fallback_reason", "") or ""
+                ),
+                expected_final_evidence_gate_action=str(
+                    payload.get("expected_final_evidence_gate_action", "") or ""
+                ),
+                expected_grounding_verification_pass=_optional_bool(
+                    payload.get("expected_grounding_verification_pass")
+                ),
                 max_total_duration_ms=max(0, int(payload.get("max_total_duration_ms", 0) or 0)),
                 max_retry_count=max(0, int(payload.get("max_retry_count", 0) or 0)),
                 require_zero_failures=bool(payload.get("require_zero_failures", True)),
@@ -86,6 +95,9 @@ def write_evaluation_dataset(
                 "expected_tool_name": case.expected_tool_name,
                 "expected_tool_sequence": list(case.expected_tool_sequence),
                 "expected_status": case.expected_status,
+                "expected_fallback_reason": case.expected_fallback_reason,
+                "expected_final_evidence_gate_action": case.expected_final_evidence_gate_action,
+                "expected_grounding_verification_pass": case.expected_grounding_verification_pass,
                 "max_total_duration_ms": case.max_total_duration_ms,
                 "max_retry_count": case.max_retry_count,
                 "require_zero_failures": case.require_zero_failures,

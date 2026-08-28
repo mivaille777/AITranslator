@@ -93,6 +93,7 @@ def test_agent_tool_catalog_declares_side_effect_boundaries() -> None:
         "polish_selection",
         "save_research_note",
         "list_research_notes",
+        "search_research_notes",
         "get_research_note",
         "update_research_note",
         "define_terms",
@@ -106,6 +107,8 @@ def test_agent_tool_catalog_declares_side_effect_boundaries() -> None:
     assert tools["save_research_note"].requires_confirmation is True
     assert tools["list_research_notes"].effect == "read"
     assert tools["list_research_notes"].requires_confirmation is False
+    assert tools["search_research_notes"].effect == "read"
+    assert tools["search_research_notes"].requires_confirmation is False
     assert tools["get_research_note"].effect == "read"
     assert tools["get_research_note"].requires_confirmation is False
     assert tools["update_research_note"].effect == "write"

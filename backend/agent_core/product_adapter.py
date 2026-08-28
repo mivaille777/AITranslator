@@ -25,6 +25,7 @@ _UI_MODE_BY_TOOL = {
     "polish_selection": "assistant",
     "save_research_note": "note",
     "inspect_reading_context": "assistant",
+    "search_research_notes": "research",
     "search_knowledge_base": "research",
 }
 
@@ -42,6 +43,22 @@ def _structured(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     return {"value": value}
+
+
+def _scope_values(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        identifier = str(item or "").strip()
+        if not identifier or identifier in seen:
+            continue
+        normalized.append(identifier)
+        seen.add(identifier)
+        if len(normalized) >= 100:
+            break
+    return normalized
 
 
 class ProductAgentRuntimeAdapter:
@@ -83,6 +100,8 @@ class ProductAgentRuntimeAdapter:
             "conversation_id": state.conversation.conversation_id,
             "history": history,
             "confirmed_write_tools": [str(item) for item in confirmed if str(item).strip()],
+            "knowledge_document_ids": _scope_values(context.get("knowledge_document_ids", ())),
+            "research_source_ids": _scope_values(context.get("research_source_ids", ())),
             "request_id": max(0, int(context.get("request_id", 0) or 0)),
         }
 

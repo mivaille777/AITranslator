@@ -27,7 +27,7 @@ export default function AcademicDocumentWorkspacePanel({
     sectionQuery,
     selectDocument,
     selectSection,
-    useSectionInAgent,
+    attachSectionToAgent,
     attachedContext,
   } = controller
 
@@ -165,7 +165,7 @@ export default function AcademicDocumentWorkspacePanel({
                 </div>
                 <button
                   type="button"
-                  onClick={() => useSectionInAgent()}
+                  onClick={() => attachSectionToAgent()}
                   className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition ${
                     attached
                       ? "border-emerald-200 bg-emerald-50 text-emerald-700"

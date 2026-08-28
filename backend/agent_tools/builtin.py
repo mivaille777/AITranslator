@@ -29,12 +29,7 @@ from backend.agent_tools.writing import (
 
 
 class BuiltinAgentToolExecutors:
-    """Compatibility container for pre-Stage-10.4 tool-builder callers.
-
-    Production registry assembly no longer executes capabilities through this
-    class. It only retains service references so the legacy combined builder can
-    reproduce the historical seven-tool catalog for older integrations/tests.
-    """
+    """Compatibility container for pre-Stage-10.4 tool-builder callers."""
 
     def __init__(
         self,
@@ -51,12 +46,11 @@ def build_builtin_tool_definitions(
     *,
     translation_definition: TypedAgentToolDefinition | None = None,
 ) -> tuple[TypedAgentToolDefinition, ...]:
-    """Compatibility builder over the dedicated capability definitions.
+    """Reproduce the historical seven-tool catalog for legacy callers.
 
-    Without ``translation_definition`` this preserves the old Stage 10.3
-    behavior of returning only the remaining writing definition. When an older
-    Stage 10.1 caller injects Translation, the historical seven-tool catalog is
-    reconstructed entirely from dedicated capability owners.
+    Production ``AgentToolRegistry`` receives all current reading capabilities.
+    This compatibility helper intentionally keeps the pre-academic-reading
+    surface stable so older integrations do not silently gain new tools.
     """
 
     writing_definition = build_writing_tool_definition(
@@ -68,13 +62,18 @@ def build_builtin_tool_definitions(
     reading_definitions = build_reading_tool_definitions(
         ReadingAgentTools(quick_action_service=executors._quick_action_service)
     )
+    reading_by_name = {
+        definition.spec.name: definition for definition in reading_definitions
+    }
     research_definitions = build_research_tool_definitions(
         ResearchAgentTools(research_note_service=executors._research_note_service)
     )
     return (
-        reading_definitions[0],
+        reading_by_name["inspect_reading_context"],
         translation_definition,
-        *reading_definitions[1:],
+        reading_by_name["explain_selection"],
+        reading_by_name["summarize_selection"],
+        reading_by_name["analyze_section_role"],
         writing_definition,
         research_definitions[0],
     )

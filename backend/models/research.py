@@ -59,6 +59,25 @@ class ResearchNoteDetailResponse(BaseModel):
     conversation_id: str = ""
 
 
+class ResearchNoteSearchResultResponse(BaseModel):
+    note_id: str
+    source_id: str
+    display_title: str
+    excerpt: str
+    resource_url: str = ""
+    resource_title: str = ""
+    section_heading: str = ""
+    source_kind: str = ""
+    user_note: str = ""
+    score: float = Field(ge=0.0)
+
+
+class ResearchNoteSearchResponse(BaseModel):
+    query: str
+    count: int = Field(ge=0)
+    results: list[ResearchNoteSearchResultResponse] = Field(default_factory=list)
+
+
 class ResearchWorkspaceResponse(BaseModel):
     total: int
     sources: list[ResearchSourceSummaryResponse]

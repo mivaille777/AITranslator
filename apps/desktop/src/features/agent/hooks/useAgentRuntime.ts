@@ -39,18 +39,31 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     }
   }, [])
 
+  const academic = workspace.academicReadingContext
   const reading = workspace.readingSelection
-  const sourceText = (reading?.text || workspace.sourceText).trim()
+  const sourceText = (academic?.text || reading?.text || workspace.sourceText).trim()
   const context = useMemo<ReadingContextFields>(
-    () => ({
-      resource_url: reading?.resource_url || workspace.browserPage?.url || "",
-      resource_title: reading?.resource_title || workspace.browserPage?.title || "",
-      section_heading: reading?.section_heading || workspace.browserPage?.heading || "",
-      context_before: reading?.context_before || "",
-      context_after: reading?.context_after || "",
-      source_kind: reading?.source_kind || (workspace.browserPage ? "browser_dom" : "desktop"),
-    }),
-    [reading, workspace.browserPage],
+    () => {
+      if (academic) {
+        return {
+          resource_url: academic.resource_url,
+          resource_title: academic.resource_title,
+          section_heading: academic.section_heading,
+          context_before: academic.context_before,
+          context_after: academic.context_after,
+          source_kind: academic.source_kind,
+        }
+      }
+      return {
+        resource_url: reading?.resource_url || workspace.browserPage?.url || "",
+        resource_title: reading?.resource_title || workspace.browserPage?.title || "",
+        section_heading: reading?.section_heading || workspace.browserPage?.heading || "",
+        context_before: reading?.context_before || "",
+        context_after: reading?.context_after || "",
+        source_kind: reading?.source_kind || (workspace.browserPage ? "browser_dom" : "desktop"),
+      }
+    },
+    [academic, reading, workspace.browserPage],
   )
 
   const viewState = useMemo(
@@ -163,7 +176,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     if (!userMessage || pending) return
     if (!sourceText) {
       setFallbackReason("")
-      setErrorMessage("Capture a reading selection or enter source text before running the Agent.")
+      setErrorMessage("Capture a reading selection or choose an academic section before running the Agent.")
       return
     }
 

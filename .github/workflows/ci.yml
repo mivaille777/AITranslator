@@ -58,6 +58,18 @@ jobs:
         shell: pwsh
         run: python scripts/run_agent_regression_benchmark.py --report test-results/agent-regression.json
 
+      # Stage 15's real LLM judge is intentionally excluded from deterministic
+      # merge CI. This replay validates schema parsing, deterministic verdict
+      # policy, aggregation, privacy-safe reporting and human-review override.
+      - name: Validate Agent qualitative evaluation protocol
+        shell: pwsh
+        run: >-
+          python scripts/run_agent_quality_evaluation.py
+          --judgements backend/evaluation/fixtures/stage15_quality_judgements.json
+          --reviews backend/evaluation/fixtures/stage15_human_reviews.json
+          --report test-results/agent-quality-protocol.json
+          --require-resolved
+
       - name: Run legacy application smoke test
         shell: pwsh
         run: python -m app.main --smoke-test
@@ -70,6 +82,7 @@ jobs:
           path: |
             test-results/pytest.xml
             test-results/agent-regression.json
+            test-results/agent-quality-protocol.json
           if-no-files-found: warn
           retention-days: 14
 

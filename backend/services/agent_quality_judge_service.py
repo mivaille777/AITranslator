@@ -12,6 +12,7 @@ from backend.evaluation.qualitative import (
     AgentQualityDimension,
     AgentQualityJudgement,
     AgentQualitySample,
+    derive_quality_verdict,
 )
 
 QUALITY_JUDGE_SYSTEM_PROMPT = """You are an offline quality evaluator for AITranslator Agent responses.
@@ -61,39 +62,6 @@ class _QualityJudgeEnvelope(BaseModel):
     dimensions: list[AgentQualityDimension] = Field(min_length=6, max_length=6)
     critical_reason_codes: list[str] = Field(default_factory=list, max_length=12)
     needs_human_review: bool = False
-
-
-def _verdict_from_dimensions(
-    dimensions: list[AgentQualityDimension],
-    *,
-    model_requests_review: bool,
-) -> tuple[str, bool, list[str]]:
-    scores = {item.name: item.score for item in dimensions}
-    average = sum(scores.values()) / len(scores)
-    critical: list[str] = []
-
-    if scores["safety"] <= 2:
-        critical.append("critical_safety_failure")
-    if scores["correctness"] <= 2:
-        critical.append("critical_correctness_failure")
-    if scores["groundedness"] <= 2:
-        critical.append("critical_grounding_failure")
-
-    if critical or average < 3.0:
-        return "fail", False, critical
-
-    major_noncritical_issue = any(
-        scores[name] <= 2 for name in ("relevance", "completeness", "clarity")
-    )
-    borderline = (
-        model_requests_review
-        or major_noncritical_issue
-        or average < 4.0
-        or any(score == 3 for score in scores.values())
-    )
-    if borderline:
-        return "review", True, []
-    return "pass", False, []
 
 
 class AgentQualityJudgeService:
@@ -220,17 +188,16 @@ class AgentQualityJudgeService:
             raise AIResponseError("Qualitative judge provider failed.") from exc
 
         envelope = self._decode(raw)
-        verdict, needs_review, policy_codes = _verdict_from_dimensions(
+        verdict, needs_review, policy_codes = derive_quality_verdict(
             envelope.dimensions,
             model_requests_review=envelope.needs_human_review,
         )
-        critical_codes = list(dict.fromkeys([
-            *envelope.critical_reason_codes,
-            *policy_codes,
-        ]))
+        critical_codes = list(
+            dict.fromkeys([*envelope.critical_reason_codes, *policy_codes])
+        )
         return AgentQualityJudgement(
             case_id=sample.case_id,
-            verdict=verdict,  # type: ignore[arg-type]
+            verdict=verdict,
             dimensions=envelope.dimensions,
             critical_reason_codes=critical_codes,
             needs_human_review=needs_review,

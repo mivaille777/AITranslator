@@ -22,6 +22,7 @@ from backend.evaluation.stage14_suite import run_stage14_suite
 
 DEFAULT_LIVE_DATASET = "backend/evaluation/datasets/stage14_live.jsonl"
 DEFAULT_LIVE_THRESHOLDS = "backend/evaluation/datasets/stage14_quality_gate.json"
+DEFAULT_LIVE_BASELINE = "backend/evaluation/datasets/stage14_baseline.json"
 DEFAULT_FIXTURE_DATASET = "backend/evaluation/datasets/regression.jsonl"
 DEFAULT_FIXTURE = "backend/evaluation/fixtures/regression_traces.json"
 DEFAULT_FIXTURE_THRESHOLDS = "backend/evaluation/datasets/regression_quality_gate.json"
@@ -144,6 +145,7 @@ def main() -> int:
     if args.mode == "fixture":
         dataset = args.dataset or DEFAULT_FIXTURE_DATASET
         thresholds_path = args.thresholds or DEFAULT_FIXTURE_THRESHOLDS
+        baseline_path = args.baseline
         batch, quality, metadata = _run_fixture(
             dataset,
             args.fixture,
@@ -152,9 +154,10 @@ def main() -> int:
     else:
         dataset = args.dataset or DEFAULT_LIVE_DATASET
         thresholds_path = args.thresholds or DEFAULT_LIVE_THRESHOLDS
+        baseline_path = args.baseline or DEFAULT_LIVE_BASELINE
         batch, quality, metadata = _run_live(dataset, thresholds_path)
 
-    baseline = _load_baseline(args.baseline)
+    baseline = _load_baseline(baseline_path)
     passed = bool(metadata["fixture_alignment_pass"]) and quality.passed
     report = {
         "passed": passed,
@@ -162,7 +165,7 @@ def main() -> int:
         "dataset": str(dataset),
         "fixture": str(args.fixture) if args.mode == "fixture" else "",
         "thresholds": str(thresholds_path),
-        "baseline": str(args.baseline or ""),
+        "baseline": str(baseline_path or ""),
         **metadata,
         "regression_diff": _regression_diff(batch, baseline),
         "quality_gate": asdict(quality),

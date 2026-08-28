@@ -34,6 +34,11 @@ export interface AcademicReadingContext {
   source_kind: "knowledge_document"
 }
 
+export interface ResearchRetrievalScope {
+  knowledgeDocumentIds: string[]
+  researchSourceIds: string[]
+}
+
 export interface TranslationWorkspaceController {
   backendState: BackendState
   backendService: string
@@ -46,6 +51,7 @@ export interface TranslationWorkspaceController {
   browserPage: BrowserPage | null
   readingSelection: ReadingSelection | null
   academicReadingContext: AcademicReadingContext | null
+  researchRetrievalScope: ResearchRetrievalScope
   sourceText: string
   sourceLanguage: string
   targetLanguage: string
@@ -66,6 +72,11 @@ export interface TranslationWorkspaceController {
   clear: () => void
   useLatestSelection: () => void
   useAcademicReadingContext: (context: AcademicReadingContext) => void
+  setResearchRetrievalScope: (scope: ResearchRetrievalScope) => void
+}
+
+function normalizeScopeIds(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(0, 100)
 }
 
 export function useTranslationWorkspace(): TranslationWorkspaceController {
@@ -76,6 +87,10 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
   const [translationError, setTranslationError] = useState("")
   const [academicReadingContext, setAcademicReadingContext] =
     useState<AcademicReadingContext | null>(null)
+  const [researchRetrievalScope, setResearchRetrievalScopeState] = useState<ResearchRetrievalScope>({
+    knowledgeDocumentIds: [],
+    researchSourceIds: [],
+  })
   const [followBrowserSelection, setFollowBrowserSelection] = useState(true)
   const [autoTranslateSelection, setAutoTranslateSelection] = useState(false)
   const lastSelectionId = useRef("")
@@ -253,6 +268,13 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     setTranslationError("")
   }
 
+  function setResearchRetrievalScope(scope: ResearchRetrievalScope) {
+    setResearchRetrievalScopeState({
+      knowledgeDocumentIds: normalizeScopeIds(scope.knowledgeDocumentIds),
+      researchSourceIds: normalizeScopeIds(scope.researchSourceIds),
+    })
+  }
+
   return {
     backendState,
     backendService: healthQuery.data?.service ?? "aitrans-backend",
@@ -265,6 +287,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     browserPage,
     readingSelection,
     academicReadingContext,
+    researchRetrievalScope,
     sourceText,
     sourceLanguage,
     targetLanguage,
@@ -285,5 +308,6 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     clear,
     useLatestSelection,
     useAcademicReadingContext,
+    setResearchRetrievalScope,
   }
 }

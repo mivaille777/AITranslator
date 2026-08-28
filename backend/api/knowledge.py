@@ -12,7 +12,10 @@ from backend.models.knowledge_api import (
     KnowledgeDocumentImportRequest,
     KnowledgeDocumentImportResponse,
     KnowledgeDocumentListResponse,
+    KnowledgeDocumentOutlineResponse,
+    KnowledgeDocumentOutlineSection,
     KnowledgeDocumentResponse,
+    KnowledgeDocumentSectionResponse,
     KnowledgeDocumentStatusResponse,
     KnowledgeRuntimeResponse,
 )
@@ -129,6 +132,83 @@ def get_knowledge_document(
     service: KnowledgeLibraryDependency,
 ) -> KnowledgeDocumentResponse:
     return _document(_record_or_404(document_id, service))
+
+
+@router.get(
+    "/documents/{document_id}/outline",
+    response_model=KnowledgeDocumentOutlineResponse,
+)
+def get_knowledge_document_outline(
+    document_id: str,
+    service: KnowledgeLibraryDependency,
+) -> KnowledgeDocumentOutlineResponse:
+    _record_or_404(document_id, service)
+    try:
+        outline = service.get_document_outline(document_id)
+    except (FileNotFoundError, PermissionError, ValueError) as exc:
+        _raise_path_error(exc)
+    if outline is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge document not found.",
+        )
+    sections = [
+        KnowledgeDocumentOutlineSection(
+            section_id=section.section_id,
+            heading=section.heading,
+            level=section.level,
+            parent_section_id=section.parent_section_id,
+            section_path=list(section.section_path),
+            page_start=section.page_start,
+            page_end=section.page_end,
+            block_count=section.block_count,
+            has_equations=section.has_equations,
+            has_tables=section.has_tables,
+            has_figures=section.has_figures,
+            reference_section=section.reference_section,
+            synthetic=section.synthetic,
+        )
+        for section in outline.sections
+    ]
+    return KnowledgeDocumentOutlineResponse(
+        document_id=outline.document_id,
+        title=outline.title,
+        page_count=outline.page_count,
+        section_count=len(sections),
+        sections=sections,
+    )
+
+
+@router.get(
+    "/documents/{document_id}/sections/{section_id}",
+    response_model=KnowledgeDocumentSectionResponse,
+)
+def get_knowledge_document_section(
+    document_id: str,
+    section_id: str,
+    service: KnowledgeLibraryDependency,
+) -> KnowledgeDocumentSectionResponse:
+    _record_or_404(document_id, service)
+    try:
+        section = service.get_document_section(document_id, section_id)
+    except (FileNotFoundError, PermissionError, ValueError) as exc:
+        _raise_path_error(exc)
+    if section is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Knowledge document section not found.",
+        )
+    return KnowledgeDocumentSectionResponse(
+        document_id=section.document_id,
+        section_id=section.section_id,
+        heading=section.heading,
+        level=section.level,
+        section_path=list(section.section_path),
+        page_start=section.page_start,
+        page_end=section.page_end,
+        text=section.text,
+        truncated=section.truncated,
+    )
 
 
 @router.delete(

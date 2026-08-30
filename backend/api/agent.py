@@ -27,7 +27,11 @@ from backend.agent_core.reliability import AgentRunControl
 from backend.agent_core.runtime import AgentRuntime
 from backend.agent_core.state import AgentState
 from backend.api.agent_dependencies import get_agent_runtime
-from backend.api.dependencies import get_agent_tool_registry
+from backend.api.dependencies import (
+    get_agent_tool_registry,
+    get_research_note_service,
+    get_research_workspace_service,
+)
 from backend.models.agent_tools import (
     AgentPlan,
     AgentRunRequest,
@@ -44,6 +48,8 @@ from backend.services.agent_tool_registry import (
     AgentToolExecutionResult,
     AgentToolRegistry,
 )
+from backend.services.research_note_service import ResearchNoteService, research_source_id
+from backend.services.research_workspace_service import ResearchWorkspaceService
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 AgentToolRegistryDependency = Annotated[
@@ -53,6 +59,14 @@ AgentToolRegistryDependency = Annotated[
 AgentRuntimeDependency = Annotated[
     AgentRuntime,
     Depends(get_agent_runtime),
+]
+ResearchWorkspaceDependency = Annotated[
+    ResearchWorkspaceService,
+    Depends(get_research_workspace_service),
+]
+ResearchNoteDependency = Annotated[
+    ResearchNoteService,
+    Depends(get_research_note_service),
 ]
 
 
@@ -74,7 +88,32 @@ def _state_tool_response(result: dict[str, Any]) -> AgentToolExecuteResponse:
     return AgentToolExecuteResponse.model_validate(payload)
 
 
-def _state_from_run_request(payload: AgentRunRequest) -> AgentState:
+def _workspace_research_source_ids(
+    note_ids: tuple[str, ...],
+    research_notes: ResearchNoteService,
+) -> list[str]:
+    source_ids: list[str] = []
+    seen: set[str] = set()
+    for note_id in note_ids:
+        note = research_notes.get(note_id)
+        if note is None:
+            continue
+        source_id = research_source_id(note)
+        if not source_id or source_id in seen:
+            continue
+        seen.add(source_id)
+        source_ids.append(source_id)
+        if len(source_ids) >= 100:
+            break
+    return source_ids
+
+
+def _state_from_run_request(
+    payload: AgentRunRequest,
+    *,
+    workspace_service: ResearchWorkspaceService | None = None,
+    research_notes: ResearchNoteService | None = None,
+) -> AgentState:
     context = payload.model_dump(
         exclude={
             "session_id",
@@ -83,6 +122,22 @@ def _state_from_run_request(payload: AgentRunRequest) -> AgentState:
             "source_text",
         }
     )
+    workspace_id = payload.workspace_id.strip()
+    if workspace_id:
+        if workspace_service is None or research_notes is None:
+            raise ValueError("Research workspace context is unavailable.")
+        workspace = workspace_service.get(workspace_id)
+        if workspace is None:
+            raise ValueError("Research workspace not found.")
+        # A selected Workspace is authoritative. Client-side temporary scopes are
+        # ignored so the Agent receives the persisted research-project context.
+        context["workspace_id"] = workspace_id
+        context["knowledge_document_ids"] = list(workspace.document_ids)
+        context["research_source_ids"] = _workspace_research_source_ids(
+            workspace.note_ids,
+            research_notes,
+        )
+
     kwargs: dict[str, Any] = {
         "session_id": payload.session_id,
         "user_input": payload.user_message,
@@ -92,6 +147,33 @@ def _state_from_run_request(payload: AgentRunRequest) -> AgentState:
     if payload.trace_id.strip():
         kwargs["trace_id"] = payload.trace_id.strip()
     return AgentState(**kwargs)
+
+
+def _associate_workspace_result(
+    payload: AgentRunRequest,
+    state: AgentState,
+    workspace_service: ResearchWorkspaceService | None,
+) -> None:
+    workspace_id = payload.workspace_id.strip()
+    if not workspace_id or workspace_service is None:
+        return
+    if workspace_service.get(workspace_id) is None:
+        return
+
+    conversation_id = state.conversation.conversation_id.strip()
+    if conversation_id:
+        workspace_service.attach_conversation(workspace_id, conversation_id)
+
+    for raw_result in reversed(state.tool_results):
+        if str(raw_result.get("tool_name", "") or "") != "save_research_note":
+            continue
+        data = raw_result.get("data", {})
+        if not isinstance(data, dict):
+            continue
+        note_id = str(data.get("note_id", "") or "").strip()
+        if note_id:
+            workspace_service.attach_note(workspace_id, note_id)
+        break
 
 
 def _run_response(state: AgentState) -> AgentRunResponse:
@@ -123,9 +205,22 @@ def _run_response(state: AgentState) -> AgentRunResponse:
     )
 
 
-def _execute_runtime(payload: AgentRunRequest, runtime: AgentRuntime) -> AgentState:
+def _execute_runtime(
+    payload: AgentRunRequest,
+    runtime: AgentRuntime,
+    *,
+    workspace_service: ResearchWorkspaceService | None = None,
+    research_notes: ResearchNoteService | None = None,
+) -> AgentState:
     try:
-        return runtime.execute(_state_from_run_request(payload))
+        state = _state_from_run_request(
+            payload,
+            workspace_service=workspace_service,
+            research_notes=research_notes,
+        )
+        result = runtime.execute(state)
+        _associate_workspace_result(payload, result, workspace_service)
+        return result
     except AgentConversationBusyError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -234,16 +329,32 @@ def execute_agent_tool(
 def run_product_agent(
     payload: AgentRunRequest,
     runtime: AgentRuntimeDependency,
+    workspace_service: ResearchWorkspaceDependency,
+    research_notes: ResearchNoteDependency,
 ) -> AgentRunResponse:
-    return _run_response(_execute_runtime(payload, runtime))
+    return _run_response(
+        _execute_runtime(
+            payload,
+            runtime,
+            workspace_service=workspace_service,
+            research_notes=research_notes,
+        )
+    )
 
 
 @router.post("/run/trace", response_model=AgentRunTraceResponse)
 def run_product_agent_trace(
     payload: AgentRunRequest,
     runtime: AgentRuntimeDependency,
+    workspace_service: ResearchWorkspaceDependency,
+    research_notes: ResearchNoteDependency,
 ) -> AgentRunTraceResponse:
-    state = _execute_runtime(payload, runtime)
+    state = _execute_runtime(
+        payload,
+        runtime,
+        workspace_service=workspace_service,
+        research_notes=research_notes,
+    )
     return _trace_response(state, runtime)
 
 
@@ -251,6 +362,8 @@ def run_product_agent_trace(
 async def stream_product_agent(
     websocket: WebSocket,
     runtime: AgentRuntimeDependency,
+    workspace_service: ResearchWorkspaceDependency,
+    research_notes: ResearchNoteDependency,
 ) -> None:
     """Stream bounded Agent lifecycle events with cooperative cancellation."""
 
@@ -282,7 +395,15 @@ async def stream_product_agent(
 
         try:
             payload = AgentRunRequest.model_validate(incoming.get("request"))
-        except ValidationError as exc:
+            state = _state_from_run_request(
+                payload,
+                workspace_service=workspace_service,
+                research_notes=research_notes,
+            )
+        except (ValidationError, ValueError) as exc:
+            message = str(exc)
+            if isinstance(exc, ValidationError) and exc.errors():
+                message = str(exc.errors()[0].get("msg") or "Invalid Agent request.")
             await websocket.send_json(
                 {
                     "type": "error",
@@ -291,14 +412,13 @@ async def stream_product_agent(
                     "run_id": "",
                     "trace_id": "",
                     "code": "invalid_request",
-                    "message": str(exc.errors()[0].get("msg") if exc.errors() else "Invalid Agent request."),
+                    "message": message or "Invalid Agent request.",
                 }
             )
             return
 
         request_id = payload.request_id
         session_id = payload.session_id
-        state = _state_from_run_request(payload)
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         loop = asyncio.get_running_loop()
 
@@ -335,6 +455,7 @@ async def stream_product_agent(
                     event_sink=observe,
                     control=control,
                 )
+                _associate_workspace_result(payload, result_state, workspace_service)
                 trace = _trace_response(result_state, runtime)
                 enqueue(
                     {
@@ -403,13 +524,6 @@ async def stream_product_agent(
                     }
                 )
                 return "cancel_requested"
-
-        async def send_events() -> str:
-            while True:
-                event = await queue.get()
-                await websocket.send_json(event)
-                if event.get("type") in {"done", "error", "cancelled"}:
-                    return str(event.get("type"))
 
         producer_task = asyncio.create_task(asyncio.to_thread(produce))
         producer_task.add_done_callback(_consume_background_task)

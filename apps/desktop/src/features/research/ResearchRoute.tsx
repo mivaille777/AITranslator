@@ -2,6 +2,7 @@ import { LoaderCircle, ServerOff } from "lucide-react"
 
 import { EmptyState } from "../../shared/ui/EmptyState"
 import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
+import ResearchProjectPanel from "./ResearchProjectPanel"
 import ResearchScopePanel from "./ResearchScopePanel"
 import ResearchWorkspace from "./ResearchWorkspace"
 
@@ -43,6 +44,7 @@ export default function ResearchRoute({
 
   return (
     <div className="space-y-4">
+      <ResearchProjectPanel workspace={workspace} />
       <ResearchScopePanel workspace={workspace} />
       <ResearchWorkspace />
     </div>

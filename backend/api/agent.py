@@ -349,8 +349,8 @@ def execute_agent_tool(
 def run_product_agent(
     payload: AgentRunRequest,
     runtime: AgentRuntimeDependency,
-    workspace_service: ResearchWorkspaceDependency,
-    research_notes: ResearchNoteDependency,
+    workspace_service: ResearchWorkspaceDependency = None,
+    research_notes: ResearchNoteDependency = None,
 ) -> AgentRunResponse:
     return _run_response(
         _execute_runtime(
@@ -366,8 +366,8 @@ def run_product_agent(
 def run_product_agent_trace(
     payload: AgentRunRequest,
     runtime: AgentRuntimeDependency,
-    workspace_service: ResearchWorkspaceDependency,
-    research_notes: ResearchNoteDependency,
+    workspace_service: ResearchWorkspaceDependency = None,
+    research_notes: ResearchNoteDependency = None,
 ) -> AgentRunTraceResponse:
     state = _execute_runtime(
         payload,

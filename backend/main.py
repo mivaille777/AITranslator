@@ -35,6 +35,8 @@ from backend.api.rag_model_dependencies import close_rag_model_manager
 from backend.api.rag_models import router as rag_models_router
 from backend.api.reading import router as reading_router
 from backend.api.research import router as research_router
+from backend.api.research_memory import router as research_memory_router
+from backend.api.research_memory_dependencies import close_research_memory_service
 from backend.api.translation import router as translation_router
 from backend.api.translation_cascade import router as translation_cascade_router
 
@@ -76,6 +78,7 @@ async def lifespan(_: FastAPI):
         close_quick_action_service()
         close_translation_service()
         close_agent_trace_store_service()
+        close_research_memory_service()
         close_rag_runtime()
         close_rag_model_manager()
 
@@ -83,7 +86,7 @@ async def lifespan(_: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="AITranslator API",
-        version="0.16.0",
+        version="0.17.0",
         description="Local API boundary for the AITranslator WebReBuild desktop client.",
         lifespan=lifespan,
     )
@@ -103,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(overlay_router)
     app.include_router(quick_actions_router)
     app.include_router(research_router)
+    app.include_router(research_memory_router)
     app.include_router(knowledge_router)
     app.include_router(rag_models_router)
     app.include_router(agent_router)

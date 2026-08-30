@@ -79,9 +79,9 @@ class ResearchNoteService:
     """Application boundary around the existing SQLite research-note store.
 
     When the supplied text still matches the unified reading resolver, missing
-    source metadata is filled from that frozen selection. This lets Browser DOM,
-    PDF/UIA, Word COM and generic UIA evidence enter the same Research Note path
-    without teaching the note store about capture-provider details.
+    source metadata is filled from that frozen selection. Stage 16 optionally
+    associates newly saved notes/conversations with a Research Workspace without
+    changing the underlying note schema.
     """
 
     def __init__(
@@ -89,9 +89,11 @@ class ResearchNoteService:
         store: ResearchNoteStore | Any | None = None,
         *,
         reading_resolver: Any | None = None,
+        workspace_service: Any | None = None,
     ) -> None:
         self._store = store or ResearchNoteStore()
         self._reading_resolver = reading_resolver
+        self._workspace_service = workspace_service
 
     def _resolved_fields(
         self,
@@ -166,10 +168,8 @@ class ResearchNoteService:
         ai_action: str = "",
         user_note: str = "",
         conversation_id: str = "",
+        workspace_id: str = "",
     ) -> ResearchNoteSaveResult:
-        # Language fields are part of the shared reading-context HTTP contract.
-        # ResearchNoteStore does not persist them independently because the
-        # selected source/translation already carry the relevant language data.
         _ = (source_language, target_language)
         (
             source_text,
@@ -203,13 +203,22 @@ class ResearchNoteService:
                 source_kind=source_kind,
             ),
         )
-        return self._store.save_context(
+        result = self._store.save_context(
             context,
             ai_content=ai_content,
             ai_action=ai_action,
             user_note=user_note,
             conversation_id=conversation_id,
         )
+        workspace = str(workspace_id or "").strip()
+        service = self._workspace_service
+        if workspace and service is not None:
+            if not service.attach_note(workspace, result.note.note_id):
+                raise ValueError("Research workspace not found.")
+            conversation = str(conversation_id or "").strip()
+            if conversation:
+                service.attach_conversation(workspace, conversation)
+        return result
 
     def list_recent(self, *, limit: int = 5) -> tuple[ResearchNote, ...]:
         return tuple(self._store.list_recent(limit=limit))
@@ -220,13 +229,13 @@ class ResearchNoteService:
         *,
         limit: int = _RESEARCH_SEARCH_DEFAULT_LIMIT,
         source_ids: tuple[str, ...] | list[str] = (),
+        note_ids: tuple[str, ...] | list[str] = (),
     ) -> tuple[ResearchNoteSearchMatch, ...]:
         """Rank persisted research memory without invoking an LLM.
 
-        The first implementation deliberately scans the bounded local note set
-        instead of adding another embedding index. This keeps research-memory
-        retrieval deterministic, cheap and independent from the document RAG
-        index while still respecting an optional trusted source scope.
+        ``source_ids`` remains available for the Stage 13 user-selected source
+        scope. ``note_ids`` is a narrower runtime-only Stage 16 scope resolved
+        from a Research Workspace and is never exposed to the planner.
         """
 
         normalized_query = _search_text(query)
@@ -242,9 +251,16 @@ class ResearchNoteService:
             for source_id in source_ids
             if str(source_id or "").strip()
         }
+        trusted_notes = {
+            str(note_id or "").strip()
+            for note_id in note_ids
+            if str(note_id or "").strip()
+        }
         tokens = _query_tokens(normalized_query)
         matches: list[ResearchNoteSearchMatch] = []
         for note in self.list_recent(limit=_RESEARCH_SEARCH_SCAN_LIMIT):
+            if trusted_notes and note.note_id not in trusted_notes:
+                continue
             source_id = research_source_id(note)
             if trusted_sources and source_id not in trusted_sources:
                 continue

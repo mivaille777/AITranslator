@@ -22,6 +22,7 @@ from backend.services.product_agent_service import ProductAgentService
 from backend.services.quick_action_service import QuickActionService
 from backend.services.reading_selection_resolver import ReadingSelectionResolver
 from backend.services.research_note_service import ResearchNoteService
+from backend.services.research_workspace_service import ResearchWorkspaceService
 from backend.services.translation_service import TranslationService
 
 _translation_service: TranslationService | None = None
@@ -34,6 +35,8 @@ _overlay_state_service: OverlayStateService | None = None
 _overlay_state_service_lock = Lock()
 _quick_action_service: QuickActionService | None = None
 _quick_action_service_lock = Lock()
+_research_workspace_service: ResearchWorkspaceService | None = None
+_research_workspace_service_lock = Lock()
 _research_note_service: ResearchNoteService | None = None
 _research_note_service_lock = Lock()
 _companion_handoff_service: CompanionHandoffService | None = None
@@ -138,6 +141,22 @@ def close_quick_action_service() -> None:
         service.close()
 
 
+def get_research_workspace_service() -> ResearchWorkspaceService:
+    global _research_workspace_service
+    if _research_workspace_service is not None:
+        return _research_workspace_service
+    with _research_workspace_service_lock:
+        if _research_workspace_service is None:
+            _research_workspace_service = ResearchWorkspaceService()
+        return _research_workspace_service
+
+
+def close_research_workspace_service() -> None:
+    global _research_workspace_service
+    with _research_workspace_service_lock:
+        _research_workspace_service = None
+
+
 def get_research_note_service() -> ResearchNoteService:
     global _research_note_service
     if _research_note_service is not None:
@@ -145,7 +164,8 @@ def get_research_note_service() -> ResearchNoteService:
     with _research_note_service_lock:
         if _research_note_service is None:
             _research_note_service = ResearchNoteService(
-                reading_resolver=get_reading_selection_resolver()
+                reading_resolver=get_reading_selection_resolver(),
+                workspace_service=get_research_workspace_service(),
             )
         return _research_note_service
 
@@ -251,6 +271,7 @@ def get_product_agent_service() -> ProductAgentService:
             _product_agent_service = build_routed_product_agent_service(
                 registry=get_agent_tool_registry(),
                 resolver=get_reading_selection_resolver(),
+                workspace_service=get_research_workspace_service(),
             )
         return _product_agent_service
 

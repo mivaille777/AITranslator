@@ -9,6 +9,7 @@ import {
   streamAgentRun,
   type AgentStreamHandle,
 } from "../../../api/agent-stream"
+import { attachResearchProjectMember } from "../../../api/research"
 import type { ReadingContextFields } from "../../../api/types"
 import type { TranslationWorkspaceController } from "../../translation/useTranslationWorkspace"
 import { deriveAgentDecision } from "../decision/agent-decision"
@@ -105,6 +106,30 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
     }
   }
 
+  function associateTraceWithWorkspace(nextTrace: AgentRunTraceResponse) {
+    const workspaceId = workspace.activeResearchWorkspaceId.trim()
+    if (!workspaceId) return
+
+    const operations: Promise<unknown>[] = []
+    const nextConversationId = nextTrace.run.conversation_id.trim()
+    if (nextConversationId) {
+      operations.push(
+        attachResearchProjectMember(workspaceId, "conversation", nextConversationId),
+      )
+    }
+
+    if (nextTrace.run.tool_result?.tool_name === "save_research_note") {
+      const noteId = String(nextTrace.run.tool_result.data.note_id ?? "").trim()
+      if (noteId) {
+        operations.push(attachResearchProjectMember(workspaceId, "note", noteId))
+      }
+    }
+
+    if (operations.length > 0) {
+      void Promise.allSettled(operations)
+    }
+  }
+
   function execute(payload: AgentRunRequest) {
     streamHandle.current?.close()
     streamHandle.current = null
@@ -142,6 +167,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
 
         if (event.type === "done") {
           rememberConversation(event.trace.run.conversation_id || "")
+          associateTraceWithWorkspace(event.trace)
           setTrace(event.trace)
           setLiveEvents(event.trace.events)
           setFallbackReason("")
@@ -192,6 +218,7 @@ export function useAgentRuntime(workspace: TranslationWorkspaceController) {
       sourceLanguage: workspace.sourceLanguage,
       targetLanguage: workspace.targetLanguage,
       conversationId: conversationId.current,
+      workspaceId: workspace.activeResearchWorkspaceId,
       knowledgeDocumentIds: workspace.researchRetrievalScope.knowledgeDocumentIds,
       researchSourceIds: workspace.researchRetrievalScope.researchSourceIds,
     })

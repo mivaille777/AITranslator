@@ -37,6 +37,7 @@ class ListResearchNotesArgs(AgentToolModel):
 class SearchResearchNotesArgs(AgentToolModel):
     query: str = Field(min_length=1, max_length=4_000)
     source_ids: list[str] = Field(default_factory=list, max_length=100)
+    note_ids: list[str] = Field(default_factory=list, max_length=100)
     top_k: int = Field(default=8, ge=1, le=20)
 
 
@@ -228,6 +229,7 @@ class ResearchAgentTools:
             ai_action=context.ai_action,
             user_note=typed.user_note,
             conversation_id=typed.conversation_id,
+            workspace_id=context.workspace_id,
         )
         note = result.note
         return AgentToolExecutionResult(
@@ -253,14 +255,15 @@ class ResearchAgentTools:
         typed = cast(ListResearchNotesArgs, args)
         notes = tuple(self._research_note_service.list_recent(limit=typed.limit))
         summaries = [_summary_data(note) for note in notes]
-        if summaries:
-            lines = [
+        output_text = (
+            "Recent research notes:\n"
+            + "\n".join(
                 f"- {item['note_id']}: {item['display_title']} — {item['excerpt']}"
                 for item in summaries
-            ]
-            output_text = "Recent research notes:\n" + "\n".join(lines)
-        else:
-            output_text = "No research notes found."
+            )
+            if summaries
+            else "No research notes found."
+        )
         return AgentToolExecutionResult(
             tool_name="list_research_notes",
             output_text=output_text,
@@ -283,18 +286,21 @@ class ResearchAgentTools:
                 typed.query,
                 limit=typed.top_k,
                 source_ids=typed.source_ids,
+                note_ids=typed.note_ids,
             )
         )
         results = [_search_item(match) for match in matches]
         evidence = [_search_evidence(item) for item in results]
         citations = build_evidence_citations(evidence)
-        if results:
-            output_text = "Research memory results:\n" + "\n".join(
+        output_text = (
+            "Research memory results:\n"
+            + "\n".join(
                 f"- {item['display_title']} / {item['section_heading'] or 'unsectioned'}: {item['excerpt']}"
                 for item in results
             )
-        else:
-            output_text = "No matching research notes found."
+            if results
+            else "No matching research notes found."
+        )
         return AgentToolExecutionResult(
             tool_name="search_research_notes",
             output_text=output_text,
@@ -324,16 +330,14 @@ class ResearchAgentTools:
                 request_id=context.request_id,
                 data={"found": False, "note": None},
             )
-
         detail = _detail_data(note)
-        output_text = (
-            f"Research note {typed.note_id}: {detail['display_title']}\n"
-            f"Source excerpt: {_bounded_text(detail['source_text'], _AGENT_OUTPUT_SOURCE_LIMIT)}\n"
-            f"User note: {_bounded_text(detail['user_note'], _AGENT_OUTPUT_NOTE_LIMIT)}"
-        )
         return AgentToolExecutionResult(
             tool_name="get_research_note",
-            output_text=output_text,
+            output_text=(
+                f"Research note {typed.note_id}: {detail['display_title']}\n"
+                f"Source excerpt: {_bounded_text(detail['source_text'], _AGENT_OUTPUT_SOURCE_LIMIT)}\n"
+                f"User note: {_bounded_text(detail['user_note'], _AGENT_OUTPUT_NOTE_LIMIT)}"
+            ),
             effect="read",
             request_id=context.request_id,
             data={"found": True, "note": detail},
@@ -345,10 +349,7 @@ class ResearchAgentTools:
         args: BaseModel,
     ) -> AgentToolExecutionResult:
         typed = cast(UpdateResearchNoteArgs, args)
-        note = self._research_note_service.update_user_note(
-            typed.note_id,
-            typed.user_note,
-        )
+        note = self._research_note_service.update_user_note(typed.note_id, typed.user_note)
         if note is None:
             return AgentToolExecutionResult(
                 tool_name="update_research_note",
@@ -357,7 +358,6 @@ class ResearchAgentTools:
                 request_id=context.request_id,
                 data={"updated": False, "note": None},
             )
-
         detail = _detail_data(note)
         return AgentToolExecutionResult(
             tool_name="update_research_note",

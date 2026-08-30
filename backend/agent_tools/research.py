@@ -223,14 +223,16 @@ class ResearchAgentTools:
         args: BaseModel,
     ) -> AgentToolExecutionResult:
         typed = cast(SaveResearchNoteArgs, args)
-        result = self._research_note_service.save(
+        save_payload = {
             **context.reading_payload(),
-            ai_content=typed.ai_content,
-            ai_action=context.ai_action,
-            user_note=typed.user_note,
-            conversation_id=typed.conversation_id,
-            workspace_id=context.workspace_id,
-        )
+            "ai_content": typed.ai_content,
+            "ai_action": context.ai_action,
+            "user_note": typed.user_note,
+            "conversation_id": typed.conversation_id,
+        }
+        if context.workspace_id:
+            save_payload["workspace_id"] = context.workspace_id
+        result = self._research_note_service.save(**save_payload)
         note = result.note
         return AgentToolExecutionResult(
             tool_name="save_research_note",
@@ -281,14 +283,13 @@ class ResearchAgentTools:
         search = getattr(self._research_note_service, "search", None)
         if not callable(search):
             raise RuntimeError("Research-memory search is unavailable.")
-        matches = tuple(
-            search(
-                typed.query,
-                limit=typed.top_k,
-                source_ids=typed.source_ids,
-                note_ids=typed.note_ids,
-            )
-        )
+        search_payload: dict[str, Any] = {
+            "limit": typed.top_k,
+            "source_ids": typed.source_ids,
+        }
+        if typed.note_ids:
+            search_payload["note_ids"] = typed.note_ids
+        matches = tuple(search(typed.query, **search_payload))
         results = [_search_item(match) for match in matches]
         evidence = [_search_evidence(item) for item in results]
         citations = build_evidence_citations(evidence)

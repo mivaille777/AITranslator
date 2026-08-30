@@ -27,6 +27,7 @@ class AgentToolInvocationContext(AgentToolModel):
     source_kind: str = Field(default="desktop", max_length=128)
     style: str = Field(default="academic", min_length=1, max_length=64)
     ai_action: str = Field(default="", max_length=128)
+    workspace_id: str = Field(default="", max_length=128)
     request_id: int = Field(default=0, ge=0)
 
     def reading_payload(self) -> dict[str, Any]:

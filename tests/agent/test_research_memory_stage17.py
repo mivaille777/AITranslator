@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.ai.chat.models import ChatContext
 from app.ai.errors import AIResponseError
 from app.research.memory import (
     ResearchMemoryClaimDraft,
@@ -192,7 +193,7 @@ def test_reextracting_note_atomically_replaces_claims_without_duplicate_extracti
     assert "Gaussian-process" in gp.aliases
 
 
-def test_extractor_requires_verbatim_source_evidence() -> None:
+def test_extractor_requires_verbatim_source_evidence(tmp_path: Path) -> None:
     response = json.dumps(
         {
             "claims": [
@@ -208,20 +209,13 @@ def test_extractor_requires_verbatim_source_evidence() -> None:
         }
     )
     service = ResearchMemoryExtractionService(_FakeTextService(response))
-    note_store = ResearchNoteStore(storage_path=Path("test-stage17-extractor.sqlite3"))
-    try:
-        note = note_store.save_context(
-            __import__("app.ai.chat.models", fromlist=["ChatContext"]).ChatContext(
-                source_text="The proposed method reduces the terminal error.",
-            )
-        ).note
-        with pytest.raises(AIResponseError, match="verbatim source excerpt"):
-            service.extract(note)
-    finally:
-        try:
-            note_store.storage_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+    note_store = ResearchNoteStore(storage_path=tmp_path / "notes.sqlite3")
+    note = note_store.save_context(
+        ChatContext(source_text="The proposed method reduces the terminal error.")
+    ).note
+
+    with pytest.raises(AIResponseError, match="verbatim source excerpt"):
+        service.extract(note)
 
 
 def test_extractor_accepts_grounded_entities_and_relations(tmp_path: Path) -> None:

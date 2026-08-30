@@ -11,7 +11,7 @@ const context = {
   source_kind: "browser_dom",
 }
 
-describe("Stage 9.2 Agent run request", () => {
+describe("Agent run request", () => {
   it("builds the main-surface request from runtime-owned state", () => {
     const request = buildAgentRunRequest({
       context,
@@ -35,6 +35,7 @@ describe("Stage 9.2 Agent run request", () => {
       request_id: 4,
       style: "academic",
       conversation_id: "conversation-1",
+      workspace_id: "",
       confirmed_write_tools: [],
     })
   })
@@ -55,5 +56,27 @@ describe("Stage 9.2 Agent run request", () => {
     })
 
     expect(request.confirmed_write_tools).toEqual(["save_research_note"])
+  })
+
+  it("carries the active Research Workspace separately from temporary scopes", () => {
+    const request = buildAgentRunRequest({
+      context,
+      sessionId: "agent-session-1",
+      traceId: "trace-stage16",
+      requestId: 6,
+      userMessage: "Compare my project evidence",
+      sourceText: "source",
+      translatedText: "",
+      sourceLanguage: "en",
+      targetLanguage: "zh-CN",
+      conversationId: "conversation-1",
+      workspaceId: "workspace-16",
+      knowledgeDocumentIds: ["temporary-doc"],
+      researchSourceIds: ["temporary-source"],
+    })
+
+    expect(request.workspace_id).toBe("workspace-16")
+    expect(request.knowledge_document_ids).toEqual(["temporary-doc"])
+    expect(request.research_source_ids).toEqual(["temporary-source"])
   })
 })

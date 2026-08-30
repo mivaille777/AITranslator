@@ -46,6 +46,7 @@ _CONTEXT_FIELDS = (
     "source_kind",
     "style",
     "ai_action",
+    "workspace_id",
     "request_id",
 )
 
@@ -109,9 +110,6 @@ class AgentToolRegistry:
         )
         knowledge_definitions = build_knowledge_tool_definitions(knowledge_tools)
 
-        # Keep the long-standing seven-tool prefix stable for route/planner and
-        # integration compatibility. Academic reading tools extend the catalog
-        # after the historical surface instead of reordering existing tools.
         self._definitions = (
             reading_by_name["inspect_reading_context"],
             translation_definition,
@@ -162,7 +160,6 @@ class AgentToolRegistry:
 
     @staticmethod
     def _context_payload(payload: dict[str, Any]) -> dict[str, Any]:
-        """Compatibility helper retained for existing tests/integrations."""
         return AgentToolRegistry._invocation_context(payload).reading_payload()
 
     def execute(self, name: str, **payload: Any) -> AgentToolExecutionResult:

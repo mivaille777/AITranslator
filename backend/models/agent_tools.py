@@ -58,6 +58,7 @@ class AgentToolExecuteRequest(ReadingContextPayload):
     ai_content: str = Field(default="", max_length=30_000)
     ai_action: str = Field(default="", max_length=128)
     conversation_id: str = Field(default="", max_length=128)
+    workspace_id: str = Field(default="", max_length=128)
     request_id: int = Field(default=0, ge=0)
 
 
@@ -95,6 +96,7 @@ class AgentRunRequest(ReadingContextPayload):
     user_message: str = Field(min_length=1, max_length=20_000)
     style: str = Field(default="academic", min_length=1, max_length=64)
     conversation_id: str = Field(default="", max_length=128)
+    workspace_id: str = Field(default="", max_length=128)
     confirmed_write_tools: list[str] = Field(default_factory=list, max_length=16)
     knowledge_document_ids: list[str] = Field(default_factory=list, max_length=100)
     research_source_ids: list[str] = Field(default_factory=list, max_length=100)

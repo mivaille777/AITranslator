@@ -271,7 +271,6 @@ def get_product_agent_service() -> ProductAgentService:
             _product_agent_service = build_routed_product_agent_service(
                 registry=get_agent_tool_registry(),
                 resolver=get_reading_selection_resolver(),
-                workspace_service=get_research_workspace_service(),
             )
         return _product_agent_service
 

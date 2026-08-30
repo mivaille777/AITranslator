@@ -108,6 +108,18 @@ def _workspace_research_source_ids(
     return source_ids
 
 
+def _empty_workspace_scope_id(workspace_id: str, kind: str) -> str:
+    """Return an impossible persisted-resource id that keeps an empty scope closed.
+
+    Existing retrieval Tools interpret an empty list as global scope. A selected
+    Research Workspace must never widen to global just because it currently has
+    zero members, so the trusted API boundary supplies a non-empty sentinel that
+    cannot match generated document/source identifiers.
+    """
+
+    return f"__workspace_empty_scope__:{kind}:{workspace_id}"
+
+
 def _state_from_run_request(
     payload: AgentRunRequest,
     *,
@@ -131,12 +143,20 @@ def _state_from_run_request(
             raise ValueError("Research workspace not found.")
         # A selected Workspace is authoritative. Client-side temporary scopes are
         # ignored so the Agent receives the persisted research-project context.
-        context["workspace_id"] = workspace_id
-        context["knowledge_document_ids"] = list(workspace.document_ids)
-        context["research_source_ids"] = _workspace_research_source_ids(
+        # Empty project membership must remain an empty scope rather than falling
+        # through to the legacy global-search meaning of an empty list.
+        document_ids = list(workspace.document_ids)
+        research_source_ids = _workspace_research_source_ids(
             workspace.note_ids,
             research_notes,
         )
+        context["workspace_id"] = workspace_id
+        context["knowledge_document_ids"] = document_ids or [
+            _empty_workspace_scope_id(workspace_id, "document")
+        ]
+        context["research_source_ids"] = research_source_ids or [
+            _empty_workspace_scope_id(workspace_id, "research")
+        ]
 
     kwargs: dict[str, Any] = {
         "session_id": payload.session_id,

@@ -194,6 +194,29 @@ def test_agent_workspace_scope_overrides_client_temporary_scope(tmp_path: Path) 
     assert "client-source-should-be-ignored" not in state.browser_context["research_source_ids"]
 
 
+def test_empty_agent_workspace_scope_stays_closed_instead_of_becoming_global(
+    tmp_path: Path,
+) -> None:
+    workspaces = _workspace_service(tmp_path)
+    notes = _note_service(tmp_path, workspaces)
+    workspace_id = workspaces.create(name="Empty trusted scope").workspace.workspace_id
+
+    state = _state_from_run_request(
+        _request(workspace_id=workspace_id),
+        workspace_service=workspaces,
+        research_notes=notes,
+    )
+
+    document_scope = state.browser_context["knowledge_document_ids"]
+    research_scope = state.browser_context["research_source_ids"]
+    assert len(document_scope) == 1
+    assert len(research_scope) == 1
+    assert document_scope[0].startswith("__workspace_empty_scope__:document:")
+    assert research_scope[0].startswith("__workspace_empty_scope__:research:")
+    assert "client-doc-should-be-ignored" not in document_scope
+    assert "client-source-should-be-ignored" not in research_scope
+
+
 def test_agent_rejects_missing_workspace_instead_of_falling_back_global(
     tmp_path: Path,
 ) -> None:

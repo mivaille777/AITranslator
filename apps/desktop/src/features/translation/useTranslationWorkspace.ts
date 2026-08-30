@@ -51,6 +51,7 @@ export interface TranslationWorkspaceController {
   browserPage: BrowserPage | null
   readingSelection: ReadingSelection | null
   academicReadingContext: AcademicReadingContext | null
+  activeResearchWorkspaceId: string
   researchRetrievalScope: ResearchRetrievalScope
   sourceText: string
   sourceLanguage: string
@@ -72,6 +73,7 @@ export interface TranslationWorkspaceController {
   clear: () => void
   useLatestSelection: () => void
   useAcademicReadingContext: (context: AcademicReadingContext) => void
+  setActiveResearchWorkspaceId: (workspaceId: string) => void
   setResearchRetrievalScope: (scope: ResearchRetrievalScope) => void
 }
 
@@ -87,6 +89,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
   const [translationError, setTranslationError] = useState("")
   const [academicReadingContext, setAcademicReadingContext] =
     useState<AcademicReadingContext | null>(null)
+  const [activeResearchWorkspaceId, setActiveResearchWorkspaceIdState] = useState("")
   const [researchRetrievalScope, setResearchRetrievalScopeState] = useState<ResearchRetrievalScope>({
     knowledgeDocumentIds: [],
     researchSourceIds: [],
@@ -268,6 +271,10 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     setTranslationError("")
   }
 
+  function setActiveResearchWorkspaceId(workspaceId: string) {
+    setActiveResearchWorkspaceIdState(workspaceId.trim())
+  }
+
   function setResearchRetrievalScope(scope: ResearchRetrievalScope) {
     setResearchRetrievalScopeState({
       knowledgeDocumentIds: normalizeScopeIds(scope.knowledgeDocumentIds),
@@ -287,6 +294,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     browserPage,
     readingSelection,
     academicReadingContext,
+    activeResearchWorkspaceId,
     researchRetrievalScope,
     sourceText,
     sourceLanguage,
@@ -308,6 +316,7 @@ export function useTranslationWorkspace(): TranslationWorkspaceController {
     clear,
     useLatestSelection,
     useAcademicReadingContext,
+    setActiveResearchWorkspaceId,
     setResearchRetrievalScope,
   }
 }

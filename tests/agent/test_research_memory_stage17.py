@@ -347,7 +347,11 @@ def test_deleting_derived_memory_preserves_original_note(tmp_path: Path) -> None
 
 
 def test_fastapi_mounts_stage17_structured_memory_routes() -> None:
-    paths = {route.path for route in create_app().routes}
+    paths = {
+        path
+        for route in create_app().routes
+        if (path := getattr(route, "path", ""))
+    }
 
     assert "/api/research/workspaces/{workspace_id}/memory" in paths
     assert "/api/research/workspaces/{workspace_id}/memory/search" in paths

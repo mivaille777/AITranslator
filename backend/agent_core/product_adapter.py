@@ -26,6 +26,7 @@ _UI_MODE_BY_TOOL = {
     "save_research_note": "note",
     "inspect_reading_context": "assistant",
     "search_research_notes": "research",
+    "search_research_memory": "research",
     "search_knowledge_base": "research",
 }
 
@@ -97,6 +98,7 @@ class ProductAgentRuntimeAdapter:
             "context_after": str(context.get("context_after", "") or ""),
             "source_kind": str(context.get("source_kind", "desktop") or "desktop"),
             "style": str(context.get("style", "academic") or "academic"),
+            "workspace_id": str(context.get("workspace_id", "") or "").strip(),
             "conversation_id": state.conversation.conversation_id,
             "history": history,
             "confirmed_write_tools": [str(item) for item in confirmed if str(item).strip()],

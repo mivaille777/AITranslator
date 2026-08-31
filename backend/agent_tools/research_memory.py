@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+from collections import defaultdict
+from typing import Any, cast
+
+from pydantic import BaseModel, Field
+
+from backend.agent_tools.base import (
+    AgentToolExecutionResult,
+    AgentToolInvocationContext,
+    AgentToolModel,
+    TypedAgentToolDefinition,
+    typed_tool_definition,
+)
+from backend.models.agent_runtime import AgentCitationRef, AgentEvidenceItem
+from backend.rag.citation_service import build_evidence_citations
+
+_AGENT_MEMORY_TEXT_LIMIT = 1_200
+_AGENT_MEMORY_RESULT_LIMIT = 20
+
+
+class SearchResearchMemoryArgs(AgentToolModel):
+    query: str = Field(min_length=1, max_length=4_000)
+    top_k: int = Field(default=8, ge=1, le=_AGENT_MEMORY_RESULT_LIMIT)
+
+
+class SearchResearchMemoryPlannerArgs(AgentToolModel):
+    query: str = Field(min_length=1, max_length=4_000)
+
+
+class ResearchMemoryAgentSearchItem(AgentToolModel):
+    kind: str = Field(max_length=32)
+    item_id: str = Field(max_length=128)
+    note_id: str = Field(default="", max_length=128)
+    title: str = Field(default="", max_length=1024)
+    text: str = Field(max_length=_AGENT_MEMORY_TEXT_LIMIT)
+    score: float = Field(ge=0.0)
+    claim_id: str = Field(default="", max_length=128)
+    entity_id: str = Field(default="", max_length=128)
+    grounded_evidence_ids: list[str] = Field(default_factory=list, max_length=32)
+
+
+class ResearchMemoryAgentSearchData(AgentToolModel):
+    workspace_id: str = Field(default="", max_length=128)
+    query: str = Field(max_length=4_000)
+    results: list[ResearchMemoryAgentSearchItem] = Field(default_factory=list)
+    count: int = Field(default=0, ge=0)
+    grounded_result_count: int = Field(default=0, ge=0)
+    evidence: list[AgentEvidenceItem] = Field(default_factory=list)
+    citations: list[AgentCitationRef] = Field(default_factory=list)
+
+
+def _bounded(value: object, limit: int) -> str:
+    text = str(value or "").replace("\x00", "").strip()
+    return text if len(text) <= limit else text[:limit].rstrip()
+
+
+class ResearchMemoryAgentTool:
+    """Read-only Agent boundary over workspace-scoped structured research memory."""
+
+    def __init__(
+        self,
+        *,
+        research_memory_service: Any | None,
+        research_note_service: Any,
+    ) -> None:
+        self._research_memory = research_memory_service
+        self._research_notes = research_note_service
+
+    @staticmethod
+    def _evidence_ids_by_result(snapshot: Any, results: tuple[Any, ...]) -> dict[str, list[str]]:
+        evidence_by_claim: dict[str, list[str]] = defaultdict(list)
+        for evidence in snapshot.evidence:
+            if evidence.claim_id:
+                evidence_by_claim[evidence.claim_id].append(evidence.evidence_id)
+
+        relation_claims_by_entity: dict[str, set[str]] = defaultdict(set)
+        for relation in snapshot.relations:
+            if not relation.claim_id:
+                continue
+            relation_claims_by_entity[relation.source_entity_id].add(relation.claim_id)
+            relation_claims_by_entity[relation.target_entity_id].add(relation.claim_id)
+
+        mapping: dict[str, list[str]] = {}
+        for result in results:
+            identifiers: list[str] = []
+            if result.kind == "evidence":
+                identifiers.append(result.item_id)
+            elif result.kind in {"claim", "relation"} and result.claim_id:
+                identifiers.extend(evidence_by_claim.get(result.claim_id, ()))
+            elif result.kind == "entity" and result.entity_id:
+                for claim_id in sorted(relation_claims_by_entity.get(result.entity_id, ())):
+                    identifiers.extend(evidence_by_claim.get(claim_id, ()))
+            mapping[result.item_id] = list(dict.fromkeys(identifiers))[:32]
+        return mapping
+
+    def search_research_memory(
+        self,
+        context: AgentToolInvocationContext,
+        args: BaseModel,
+    ) -> AgentToolExecutionResult:
+        typed = cast(SearchResearchMemoryArgs, args)
+        workspace_id = context.workspace_id.strip()
+        service = self._research_memory
+        if not workspace_id:
+            return AgentToolExecutionResult(
+                tool_name="search_research_memory",
+                output_text="Structured research memory requires an active Research Workspace.",
+                effect="read",
+                request_id=context.request_id,
+                data={
+                    "workspace_id": "",
+                    "query": typed.query,
+                    "results": [],
+                    "count": 0,
+                    "grounded_result_count": 0,
+                    "evidence": [],
+                    "citations": [],
+                },
+            )
+        if service is None:
+            raise RuntimeError("Structured research-memory search is unavailable.")
+
+        results = tuple(
+            service.search(
+                workspace_id=workspace_id,
+                query=typed.query,
+                limit=typed.top_k,
+            )
+        )
+        snapshot = service.snapshot(workspace_id=workspace_id, limit=500)
+        evidence_ids_by_result = self._evidence_ids_by_result(snapshot, results)
+        evidence_by_id = {item.evidence_id: item for item in snapshot.evidence}
+
+        score_by_evidence: dict[str, float] = {}
+        for result in results:
+            for evidence_id in evidence_ids_by_result.get(result.item_id, ()): 
+                score_by_evidence[evidence_id] = max(
+                    score_by_evidence.get(evidence_id, 0.0),
+                    max(0.0, float(result.score)),
+                )
+
+        evidence: list[AgentEvidenceItem] = []
+        for evidence_id, score in sorted(
+            score_by_evidence.items(),
+            key=lambda item: (item[1], item[0]),
+            reverse=True,
+        ):
+            source = evidence_by_id.get(evidence_id)
+            if source is None:
+                continue
+            note = self._research_notes.get(source.note_id)
+            if note is None:
+                continue
+            evidence.append(
+                AgentEvidenceItem(
+                    evidence_id=f"research-memory:{source.evidence_id}",
+                    source_type="research_memory",
+                    source_id=source.note_id,
+                    title=_bounded(note.display_title, 1024),
+                    resource_url=_bounded(getattr(note, "resource_url", ""), 4096),
+                    location=_bounded(getattr(note, "section_heading", ""), 1024),
+                    excerpt=_bounded(source.excerpt, _AGENT_MEMORY_TEXT_LIMIT),
+                    score=score,
+                    metadata={
+                        "workspace_id": workspace_id,
+                        "note_id": source.note_id,
+                        "claim_id": source.claim_id,
+                        "structured_evidence_id": source.evidence_id,
+                        "source_kind": _bounded(getattr(note, "source_kind", ""), 128),
+                        "source_verified": True,
+                    },
+                )
+            )
+
+        citations = build_evidence_citations(evidence)
+        public_evidence_ids = {
+            raw_id: f"research-memory:{raw_id}" for raw_id in score_by_evidence
+        }
+        items: list[dict[str, Any]] = []
+        grounded_result_count = 0
+        for result in results:
+            raw_ids = evidence_ids_by_result.get(result.item_id, ())
+            grounded_ids = [
+                public_evidence_ids[evidence_id]
+                for evidence_id in raw_ids
+                if evidence_id in public_evidence_ids
+            ]
+            if grounded_ids:
+                grounded_result_count += 1
+            items.append(
+                {
+                    "kind": _bounded(result.kind, 32),
+                    "item_id": _bounded(result.item_id, 128),
+                    "note_id": _bounded(result.note_id, 128),
+                    "title": _bounded(result.title, 1024),
+                    "text": _bounded(result.text, _AGENT_MEMORY_TEXT_LIMIT),
+                    "score": max(0.0, float(result.score)),
+                    "claim_id": _bounded(result.claim_id, 128),
+                    "entity_id": _bounded(result.entity_id, 128),
+                    "grounded_evidence_ids": grounded_ids[:32],
+                }
+            )
+
+        output_text = (
+            "Structured research memory results:\n"
+            + "\n".join(
+                f"- [{item['kind']}] {item['title'] or item['item_id']}: {item['text']}"
+                for item in items
+            )
+            if items
+            else "No matching structured research memory found in the active Workspace."
+        )
+        return AgentToolExecutionResult(
+            tool_name="search_research_memory",
+            output_text=output_text,
+            effect="read",
+            request_id=context.request_id,
+            data={
+                "workspace_id": workspace_id,
+                "query": typed.query,
+                "results": items,
+                "count": len(items),
+                "grounded_result_count": grounded_result_count,
+                "evidence": [item.model_dump(mode="json") for item in evidence],
+                "citations": [item.model_dump(mode="json") for item in citations],
+            },
+        )
+
+
+def build_research_memory_tool_definition(
+    tool: ResearchMemoryAgentTool,
+) -> TypedAgentToolDefinition:
+    return typed_tool_definition(
+        name="search_research_memory",
+        title="Search structured research memory",
+        description=(
+            "Search Claim–Evidence–Entity–Relation memory inside the active Research Workspace. "
+            "The runtime supplies the trusted Workspace; the Agent controls only the high-level query."
+        ),
+        category="research",
+        effect="read",
+        requires_reading_context=False,
+        requires_confirmation=False,
+        args_model=SearchResearchMemoryArgs,
+        result_model=ResearchMemoryAgentSearchData,
+        executor=tool.search_research_memory,
+        planner_args_model=SearchResearchMemoryPlannerArgs,
+        retry_policy="safe",
+    )
+
+
+__all__ = [
+    "ResearchMemoryAgentSearchData",
+    "ResearchMemoryAgentSearchItem",
+    "ResearchMemoryAgentTool",
+    "SearchResearchMemoryArgs",
+    "SearchResearchMemoryPlannerArgs",
+    "build_research_memory_tool_definition",
+]

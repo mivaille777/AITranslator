@@ -108,13 +108,15 @@ class AgentToolRegistry:
             research_note_service=shared_research_note_service,
         )
         research_definitions = build_research_tool_definitions(research_tools)
-        research_memory_tool = ResearchMemoryAgentTool(
-            research_memory_service=research_memory_service,
-            research_note_service=shared_research_note_service,
-        )
-        research_memory_definition = build_research_memory_tool_definition(
-            research_memory_tool
-        )
+        research_memory_definitions: tuple[TypedAgentToolDefinition, ...] = ()
+        if research_memory_service is not None:
+            research_memory_tool = ResearchMemoryAgentTool(
+                research_memory_service=research_memory_service,
+                research_note_service=shared_research_note_service,
+            )
+            research_memory_definitions = (
+                build_research_memory_tool_definition(research_memory_tool),
+            )
 
         knowledge_tools = KnowledgeAgentTools(
             retrieval_service=retrieval_service,
@@ -130,7 +132,7 @@ class AgentToolRegistry:
             reading_by_name["analyze_section_role"],
             writing_definition,
             *research_definitions,
-            research_memory_definition,
+            *research_memory_definitions,
             reading_by_name["define_terms"],
             reading_by_name["analyze_equation"],
             reading_by_name["summarize_current_section"],

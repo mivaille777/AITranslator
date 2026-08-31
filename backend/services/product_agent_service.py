@@ -41,7 +41,7 @@ from backend.services.grounded_synthesis_service import GroundedSynthesisService
 
 AgentLifecycleSink = Callable[[str, dict[str, Any]], None]
 _GROUNDED_RETRIEVAL_TOOLS = frozenset(
-    {"search_knowledge_base", "search_research_notes"}
+    {"search_knowledge_base", "search_research_notes", "search_research_memory"}
 )
 
 
@@ -365,6 +365,9 @@ class ProductAgentService:
             "request_id": request_id,
             **validated_arguments,
         }
+        workspace_id = str(payload.get("workspace_id", "") or "").strip()
+        if workspace_id:
+            execution_payload["workspace_id"] = workspace_id
         if spec.name == "search_knowledge_base":
             trusted_document_ids = _trusted_scope_ids(payload.get("knowledge_document_ids", ()))
             if trusted_document_ids:

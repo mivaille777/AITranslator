@@ -20,6 +20,10 @@ from backend.agent_tools.research import (
     ResearchAgentTools,
     build_research_tool_definitions,
 )
+from backend.agent_tools.research_memory import (
+    ResearchMemoryAgentTool,
+    build_research_memory_tool_definition,
+)
 from backend.agent_tools.translation import (
     TranslationAgentTool,
     build_translation_tool_definition,
@@ -67,6 +71,7 @@ class AgentToolRegistry:
         translation_fallback_service: TranslationFallbackService | Any | None = None,
         quick_action_service: QuickActionService | Any | None = None,
         research_note_service: ResearchNoteService | Any | None = None,
+        research_memory_service: Any | None = None,
         retrieval_service: Any | None = None,
         query_planner: Any | None = None,
     ) -> None:
@@ -103,6 +108,13 @@ class AgentToolRegistry:
             research_note_service=shared_research_note_service,
         )
         research_definitions = build_research_tool_definitions(research_tools)
+        research_memory_tool = ResearchMemoryAgentTool(
+            research_memory_service=research_memory_service,
+            research_note_service=shared_research_note_service,
+        )
+        research_memory_definition = build_research_memory_tool_definition(
+            research_memory_tool
+        )
 
         knowledge_tools = KnowledgeAgentTools(
             retrieval_service=retrieval_service,
@@ -118,6 +130,7 @@ class AgentToolRegistry:
             reading_by_name["analyze_section_role"],
             writing_definition,
             *research_definitions,
+            research_memory_definition,
             reading_by_name["define_terms"],
             reading_by_name["analyze_equation"],
             reading_by_name["summarize_current_section"],

@@ -141,6 +141,7 @@ class ResearchMemoryAgentTool:
                 )
 
         evidence: list[AgentEvidenceItem] = []
+        available_public_evidence_ids: dict[str, str] = {}
         for evidence_id, score in sorted(
             score_by_evidence.items(),
             key=lambda item: (item[1], item[0]),
@@ -152,9 +153,11 @@ class ResearchMemoryAgentTool:
             note = self._research_notes.get(source.note_id)
             if note is None:
                 continue
+            public_id = f"research-memory:{source.evidence_id}"
+            available_public_evidence_ids[source.evidence_id] = public_id
             evidence.append(
                 AgentEvidenceItem(
-                    evidence_id=f"research-memory:{source.evidence_id}",
+                    evidence_id=public_id,
                     source_type="research_memory",
                     source_id=source.note_id,
                     title=_bounded(note.display_title, 1024),
@@ -174,17 +177,14 @@ class ResearchMemoryAgentTool:
             )
 
         citations = build_evidence_citations(evidence)
-        public_evidence_ids = {
-            raw_id: f"research-memory:{raw_id}" for raw_id in score_by_evidence
-        }
         items: list[dict[str, Any]] = []
         grounded_result_count = 0
         for result in results:
             raw_ids = evidence_ids_by_result.get(result.item_id, ())
             grounded_ids = [
-                public_evidence_ids[evidence_id]
+                available_public_evidence_ids[evidence_id]
                 for evidence_id in raw_ids
-                if evidence_id in public_evidence_ids
+                if evidence_id in available_public_evidence_ids
             ]
             if grounded_ids:
                 grounded_result_count += 1

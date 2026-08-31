@@ -134,7 +134,7 @@ class ResearchMemoryAgentTool:
 
         score_by_evidence: dict[str, float] = {}
         for result in results:
-            for evidence_id in evidence_ids_by_result.get(result.item_id, ()): 
+            for evidence_id in evidence_ids_by_result.get(result.item_id, ()):
                 score_by_evidence[evidence_id] = max(
                     score_by_evidence.get(evidence_id, 0.0),
                     max(0.0, float(result.score)),

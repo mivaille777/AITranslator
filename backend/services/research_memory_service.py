@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import re
 from typing import Any
 
@@ -8,8 +9,18 @@ from app.research.memory import (
     ResearchMemorySnapshot,
     ResearchMemoryStore,
 )
+from app.research.memory_reliability import ResearchMemoryReliabilityStore
 from app.research.notes import ResearchNote
 from backend.models.research_memory import ResearchMemorySearchResult
+from backend.models.research_memory_reliability import (
+    ResearchMemoryConflictGroup,
+    ResearchMemoryReliabilitySummary,
+    ResearchMemoryReliableSearchResult,
+    ResearchMemorySourceStatus,
+)
+from backend.services.research_memory_reliability_service import (
+    ResearchMemoryReliabilityService,
+)
 
 _SEARCH_TOKEN_RE = re.compile(r"[\w-]+", re.UNICODE)
 _DEFAULT_SEARCH_LIMIT = 12
@@ -44,6 +55,16 @@ def _score(value: object, *, query: str, tokens: tuple[str, ...], weight: float)
     return score
 
 
+def _default_reliability_store(memory_store: Any) -> ResearchMemoryReliabilityStore:
+    storage_path = getattr(memory_store, "storage_path", None)
+    if storage_path is None:
+        return ResearchMemoryReliabilityStore()
+    path = Path(storage_path)
+    return ResearchMemoryReliabilityStore(
+        storage_path=path.with_name(f"{path.stem}_reliability.sqlite3")
+    )
+
+
 class ResearchMemoryService:
     """Workspace-scoped application boundary for Stage 17 structured memory."""
 
@@ -54,11 +75,18 @@ class ResearchMemoryService:
         research_note_service: Any,
         workspace_service: Any,
         extraction_service: Any,
+        reliability_store: ResearchMemoryReliabilityStore | Any | None = None,
+        reliability_service: ResearchMemoryReliabilityService | Any | None = None,
     ) -> None:
         self._store = store or ResearchMemoryStore()
         self._research_notes = research_note_service
         self._workspaces = workspace_service
         self._extractor = extraction_service
+        self._reliability = reliability_service or ResearchMemoryReliabilityService(
+            memory_store=self._store,
+            research_note_service=self._research_notes,
+            revision_store=reliability_store or _default_reliability_store(self._store),
+        )
 
     def _workspace_note(self, workspace_id: str, note_id: str) -> ResearchNote:
         workspace = str(workspace_id or "").strip()
@@ -75,6 +103,18 @@ class ResearchMemoryService:
             raise ValueError("Research note not found.")
         return note
 
+    def _record_source_revision(self, *, workspace_id: str, note: ResearchNote) -> None:
+        try:
+            self._reliability.record_source_revision(
+                workspace_id=workspace_id,
+                note_id=note.note_id,
+                source_fingerprint=str(getattr(note, "fingerprint", "") or ""),
+            )
+        except RuntimeError:
+            # Reliability metadata is derived. Failure degrades to legacy_unknown
+            # instead of failing the primary structured-memory write.
+            return
+
     def persist_extraction(
         self,
         *,
@@ -83,31 +123,41 @@ class ResearchMemoryService:
         extraction: ResearchMemoryExtractionDraft,
     ):
         note = self._workspace_note(workspace_id, note_id)
-        return self._store.replace_note_memory(
+        record = self._store.replace_note_memory(
             workspace_id=workspace_id,
             note_id=note_id,
             source_text=note.source_text,
             extraction=extraction,
         )
+        self._record_source_revision(workspace_id=workspace_id, note=note)
+        return record
 
     def extract_note(self, *, workspace_id: str, note_id: str):
         note = self._workspace_note(workspace_id, note_id)
         extraction = self._extractor.extract(note)
-        return self._store.replace_note_memory(
+        record = self._store.replace_note_memory(
             workspace_id=workspace_id,
             note_id=note_id,
             source_text=note.source_text,
             extraction=extraction,
         )
+        self._record_source_revision(workspace_id=workspace_id, note=note)
+        return record
 
     def delete_note_memory(self, *, workspace_id: str, note_id: str) -> bool:
         self._workspace_note(workspace_id, note_id)
-        return bool(
+        deleted = bool(
             self._store.delete_note_memory(
                 workspace_id=workspace_id,
                 note_id=note_id,
             )
         )
+        if deleted:
+            self._reliability.delete_source_revision(
+                workspace_id=workspace_id,
+                note_id=note_id,
+            )
+        return deleted
 
     def snapshot(self, *, workspace_id: str, limit: int = 100) -> ResearchMemorySnapshot:
         workspace = str(workspace_id or "").strip()
@@ -240,6 +290,49 @@ class ResearchMemoryService:
             reverse=True,
         )
         return tuple(results[:bounded_limit])
+
+    def search_reliable(
+        self,
+        *,
+        workspace_id: str,
+        query: str,
+        limit: int = _DEFAULT_SEARCH_LIMIT,
+    ) -> tuple[ResearchMemoryReliableSearchResult, ...]:
+        results = self.search(workspace_id=workspace_id, query=query, limit=limit)
+        snapshot = self.snapshot(workspace_id=workspace_id, limit=500)
+        return self._reliability.enrich_results(
+            workspace_id=workspace_id,
+            results=results,
+            snapshot=snapshot,
+        )
+
+    def source_status(
+        self,
+        *,
+        workspace_id: str,
+        note_id: str,
+    ) -> ResearchMemorySourceStatus:
+        return self._reliability.source_status(
+            workspace_id=workspace_id,
+            note_id=note_id,
+        )
+
+    def conflict_groups(
+        self,
+        *,
+        workspace_id: str,
+    ) -> tuple[ResearchMemoryConflictGroup, ...]:
+        snapshot = self.snapshot(workspace_id=workspace_id, limit=500)
+        return self._reliability.conflict_groups(
+            workspace_id=workspace_id,
+            snapshot=snapshot,
+        )
+
+    def reliability_summary(
+        self,
+        results: tuple[ResearchMemoryReliableSearchResult, ...],
+    ) -> ResearchMemoryReliabilitySummary:
+        return self._reliability.summarize(results)
 
     def close(self) -> None:
         close = getattr(self._extractor, "close", None)

@@ -98,7 +98,6 @@ class ResearchMemoryReliabilityService:
         snapshot: Any | None = None,
     ) -> tuple[ResearchMemoryConflictGroup, ...]:
         memory = snapshot or self._memory_store.snapshot(workspace_id=workspace_id, limit=500)
-        entities = {item.entity_id: item for item in memory.entities}
         grouped: dict[tuple[str, str], list[Any]] = defaultdict(list)
 
         for relation in memory.relations:
@@ -156,7 +155,10 @@ class ResearchMemoryReliabilityService:
 
         note_ids: list[str] = []
         for relation in snapshot.relations:
-            if relation.source_entity_id != result.entity_id and relation.target_entity_id != result.entity_id:
+            if (
+                relation.source_entity_id != result.entity_id
+                and relation.target_entity_id != result.entity_id
+            ):
                 continue
             if not relation.claim_id or relation.claim_id not in evidence_claims:
                 continue

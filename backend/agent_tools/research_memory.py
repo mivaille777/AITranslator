@@ -37,6 +37,11 @@ class ResearchMemoryAgentSearchItem(AgentToolModel):
     score: float = Field(ge=0.0)
     claim_id: str = Field(default="", max_length=128)
     entity_id: str = Field(default="", max_length=128)
+    source_status: str = Field(default="legacy_unknown", max_length=32)
+    groundable: bool = False
+    conflicted: bool = False
+    reason_codes: list[str] = Field(default_factory=list, max_length=32)
+    conflict_group_ids: list[str] = Field(default_factory=list, max_length=32)
     grounded_evidence_ids: list[str] = Field(default_factory=list, max_length=32)
 
 
@@ -46,6 +51,11 @@ class ResearchMemoryAgentSearchData(AgentToolModel):
     results: list[ResearchMemoryAgentSearchItem] = Field(default_factory=list)
     count: int = Field(default=0, ge=0)
     grounded_result_count: int = Field(default=0, ge=0)
+    fresh_result_count: int = Field(default=0, ge=0)
+    legacy_unknown_result_count: int = Field(default=0, ge=0)
+    stale_result_count: int = Field(default=0, ge=0)
+    orphaned_result_count: int = Field(default=0, ge=0)
+    conflicted_result_count: int = Field(default=0, ge=0)
     evidence: list[AgentEvidenceItem] = Field(default_factory=list)
     citations: list[AgentCitationRef] = Field(default_factory=list)
 
@@ -94,6 +104,13 @@ class ResearchMemoryAgentTool:
             mapping[result.item_id] = list(dict.fromkeys(identifiers))[:32]
         return mapping
 
+    @staticmethod
+    def _source_status(service: Any, *, workspace_id: str, note_id: str) -> str:
+        getter = getattr(service, "source_status", None)
+        if not callable(getter):
+            return "legacy_unknown"
+        return str(getter(workspace_id=workspace_id, note_id=note_id) or "legacy_unknown")
+
     def search_research_memory(
         self,
         context: AgentToolInvocationContext,
@@ -114,6 +131,11 @@ class ResearchMemoryAgentTool:
                     "results": [],
                     "count": 0,
                     "grounded_result_count": 0,
+                    "fresh_result_count": 0,
+                    "legacy_unknown_result_count": 0,
+                    "stale_result_count": 0,
+                    "orphaned_result_count": 0,
+                    "conflicted_result_count": 0,
                     "evidence": [],
                     "citations": [],
                 },
@@ -121,13 +143,29 @@ class ResearchMemoryAgentTool:
         if service is None:
             raise RuntimeError("Structured research-memory search is unavailable.")
 
-        results = tuple(
-            service.search(
-                workspace_id=workspace_id,
-                query=typed.query,
-                limit=typed.top_k,
+        reliability_by_result: dict[str, Any] = {}
+        reliable_search = getattr(service, "search_reliable", None)
+        if callable(reliable_search):
+            reliable_results = tuple(
+                reliable_search(
+                    workspace_id=workspace_id,
+                    query=typed.query,
+                    limit=typed.top_k,
+                )
             )
-        )
+            results = tuple(item.result for item in reliable_results)
+            reliability_by_result = {
+                item.result.item_id: item.reliability for item in reliable_results
+            }
+        else:
+            results = tuple(
+                service.search(
+                    workspace_id=workspace_id,
+                    query=typed.query,
+                    limit=typed.top_k,
+                )
+            )
+
         snapshot = service.snapshot(workspace_id=workspace_id, limit=500)
         evidence_ids_by_result = self._evidence_ids_by_result(snapshot, results)
         evidence_by_id = {item.evidence_id: item for item in snapshot.evidence}
@@ -149,6 +187,13 @@ class ResearchMemoryAgentTool:
         ):
             source = evidence_by_id.get(evidence_id)
             if source is None:
+                continue
+            source_status = self._source_status(
+                service,
+                workspace_id=workspace_id,
+                note_id=source.note_id,
+            )
+            if source_status in {"stale", "orphaned"}:
                 continue
             note = self._research_notes.get(source.note_id)
             if note is None:
@@ -172,6 +217,7 @@ class ResearchMemoryAgentTool:
                         "structured_evidence_id": source.evidence_id,
                         "source_kind": _bounded(getattr(note, "source_kind", ""), 128),
                         "source_verified": True,
+                        "memory_source_status": source_status,
                     },
                 )
             )
@@ -179,7 +225,23 @@ class ResearchMemoryAgentTool:
         citations = build_evidence_citations(evidence)
         items: list[dict[str, Any]] = []
         grounded_result_count = 0
+        status_counts: dict[str, int] = defaultdict(int)
+        conflicted_result_count = 0
         for result in results:
+            reliability = reliability_by_result.get(result.item_id)
+            source_status = str(
+                getattr(reliability, "source_status", "legacy_unknown") or "legacy_unknown"
+            )
+            conflicted = bool(getattr(reliability, "conflicted", False))
+            groundable = bool(getattr(reliability, "groundable", False))
+            reason_codes = list(getattr(reliability, "reason_codes", ()) or ())[:32]
+            conflict_group_ids = list(
+                getattr(reliability, "conflict_group_ids", ()) or ()
+            )[:32]
+            status_counts[source_status] += 1
+            if conflicted:
+                conflicted_result_count += 1
+
             raw_ids = evidence_ids_by_result.get(result.item_id, ())
             grounded_ids = [
                 available_public_evidence_ids[evidence_id]
@@ -188,6 +250,7 @@ class ResearchMemoryAgentTool:
             ]
             if grounded_ids:
                 grounded_result_count += 1
+                groundable = True
             items.append(
                 {
                     "kind": _bounded(result.kind, 32),
@@ -198,19 +261,43 @@ class ResearchMemoryAgentTool:
                     "score": max(0.0, float(result.score)),
                     "claim_id": _bounded(result.claim_id, 128),
                     "entity_id": _bounded(result.entity_id, 128),
+                    "source_status": _bounded(source_status, 32),
+                    "groundable": groundable,
+                    "conflicted": conflicted,
+                    "reason_codes": [_bounded(item, 128) for item in reason_codes],
+                    "conflict_group_ids": [
+                        _bounded(item, 64) for item in conflict_group_ids
+                    ],
                     "grounded_evidence_ids": grounded_ids[:32],
                 }
             )
 
-        output_text = (
-            "Structured research memory results:\n"
-            + "\n".join(
-                f"- [{item['kind']}] {item['title'] or item['item_id']}: {item['text']}"
-                for item in items
-            )
-            if items
-            else "No matching structured research memory found in the active Workspace."
-        )
+        if items:
+            lines = []
+            for item in items:
+                flags = [item["source_status"]]
+                if item["conflicted"]:
+                    flags.append("conflict")
+                if not item["groundable"]:
+                    flags.append("not-groundable")
+                lines.append(
+                    f"- [{item['kind']} | {', '.join(flags)}] "
+                    f"{item['title'] or item['item_id']}: {item['text']}"
+                )
+            output_text = "Structured research memory results:\n" + "\n".join(lines)
+            if conflicted_result_count:
+                output_text += (
+                    "\nReliability warning: conflicting single-value structured relations are "
+                    "present. Treat them as competing evidence rather than one settled fact."
+                )
+            if status_counts.get("stale", 0) or status_counts.get("orphaned", 0):
+                output_text += (
+                    "\nReliability warning: stale or orphaned structured hits are not eligible "
+                    "for grounded citations."
+                )
+        else:
+            output_text = "No matching structured research memory found in the active Workspace."
+
         return AgentToolExecutionResult(
             tool_name="search_research_memory",
             output_text=output_text,
@@ -222,6 +309,11 @@ class ResearchMemoryAgentTool:
                 "results": items,
                 "count": len(items),
                 "grounded_result_count": grounded_result_count,
+                "fresh_result_count": status_counts.get("fresh", 0),
+                "legacy_unknown_result_count": status_counts.get("legacy_unknown", 0),
+                "stale_result_count": status_counts.get("stale", 0),
+                "orphaned_result_count": status_counts.get("orphaned", 0),
+                "conflicted_result_count": conflicted_result_count,
                 "evidence": [item.model_dump(mode="json") for item in evidence],
                 "citations": [item.model_dump(mode="json") for item in citations],
             },
@@ -236,7 +328,8 @@ def build_research_memory_tool_definition(
         title="Search structured research memory",
         description=(
             "Search Claim–Evidence–Entity–Relation memory inside the active Research Workspace. "
-            "The runtime supplies the trusted Workspace; the Agent controls only the high-level query."
+            "The runtime supplies the trusted Workspace; the Agent controls only the high-level query. "
+            "Freshness and structured-relation conflicts are evaluated deterministically by the runtime."
         ),
         category="research",
         effect="read",

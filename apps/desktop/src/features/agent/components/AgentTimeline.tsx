@@ -45,7 +45,7 @@ export function AgentTimeline({
   const stages = deriveAgentTimelineStages(activities, running)
 
   return (
-    <AITPanel className="p-5">
+    <AITPanel className="min-h-0 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
@@ -105,7 +105,7 @@ export function AgentTimeline({
             Start an Agent task to see decisions, tool actions, observations, retries, and the final result here.
           </div>
         ) : (
-          <ol className="space-y-2" aria-label="Agent runtime events">
+          <ol className="ait-scroll-panel max-h-[420px] space-y-2 overflow-y-auto overscroll-contain pr-1" aria-label="Agent runtime events">
             {activities.map((item) => (
               <li
                 key={`${item.sequence}-${item.eventType}`}

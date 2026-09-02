@@ -41,7 +41,12 @@ from backend.services.grounded_synthesis_service import GroundedSynthesisService
 
 AgentLifecycleSink = Callable[[str, dict[str, Any]], None]
 _GROUNDED_RETRIEVAL_TOOLS = frozenset(
-    {"search_knowledge_base", "search_research_notes", "search_research_memory"}
+    {
+        "search_knowledge_base",
+        "search_research_notes",
+        "search_research_memory",
+        "analyze_cross_document_research",
+    }
 )
 
 

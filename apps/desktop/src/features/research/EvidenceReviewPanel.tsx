@@ -80,8 +80,8 @@ export default function EvidenceReviewPanel({
         ) : null}
       </div>
 
-      <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
-        <div className="min-h-0 space-y-3">
+      <div className="grid gap-4 p-5 lg:h-[clamp(500px,64vh,720px)] lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)] lg:grid-rows-[minmax(0,1fr)]">
+        <div className="ait-scroll-panel min-h-0 space-y-3 lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
           {reviewQuery.isLoading ? <p className="text-xs text-slate-400">Loading Evidence Ledger…</p> : null}
           {reviewQuery.isError ? <p className="text-xs text-rose-600">Unable to load Evidence Review.</p> : null}
           {snapshot?.items.length === 0 ? (
@@ -130,7 +130,7 @@ export default function EvidenceReviewPanel({
           })}
         </div>
 
-        <aside className="rounded-xl border border-slate-200/70 bg-slate-50/55 p-4">
+        <aside className="ait-scroll-panel min-h-0 rounded-xl border border-slate-200/70 bg-slate-50/55 p-4 lg:overflow-y-auto lg:overscroll-contain">
           <div className="flex items-center gap-2 text-slate-600">
             <FileSearch size={14} />
             <p className="text-xs font-semibold">Literature synthesis</p>

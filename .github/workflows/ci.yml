@@ -14,9 +14,6 @@ on:
 permissions:
   contents: read
 
-# Keep only the newest CI for each event/source pair. Push and pull_request
-# workflows must not share the same concurrency group because a branch push
-# can otherwise cancel the PR check that is required before merging to main.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
@@ -66,13 +63,14 @@ jobs:
         shell: pwsh
         run: python scripts/run_evidence_ledger_regression.py --report test-results/evidence-ledger-regression.json
 
+      - name: Run Evidence Review & Synthesis benchmark
+        shell: pwsh
+        run: python scripts/run_evidence_review_regression.py --report test-results/evidence-review-regression.json
+
       - name: Run Agent regression benchmark
         shell: pwsh
         run: python scripts/run_agent_regression_benchmark.py --report test-results/agent-regression.json
 
-      # Stage 15's real LLM judge is intentionally excluded from deterministic
-      # merge CI. This replay validates schema parsing, deterministic verdict
-      # policy, aggregation, privacy-safe reporting and human-review override.
       - name: Validate Agent qualitative evaluation protocol
         shell: pwsh
         run: >-
@@ -96,6 +94,7 @@ jobs:
             test-results/research-memory-regression.json
             test-results/cross-document-research-regression.json
             test-results/evidence-ledger-regression.json
+            test-results/evidence-review-regression.json
             test-results/agent-regression.json
             test-results/agent-quality-protocol.json
           if-no-files-found: warn
@@ -145,9 +144,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # `cargo check` does not run the final MSVC link step. Building the shell
-      # catches missing Windows SDK import libraries (for example advapi32.lib
-      # or dwmapi.lib) and validates the same stage used by local Tauri dev.
       - name: Build and link Tauri shell
         shell: pwsh
         run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --no-default-features

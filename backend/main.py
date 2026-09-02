@@ -28,6 +28,8 @@ from backend.api.dependencies import (
 )
 from backend.api.evidence_ledger import router as evidence_ledger_router
 from backend.api.evidence_ledger_dependencies import close_evidence_ledger_service
+from backend.api.evidence_review import router as evidence_review_router
+from backend.api.evidence_review_dependencies import close_evidence_review_service
 from backend.api.health import router as health_router
 from backend.api.knowledge import router as knowledge_router
 from backend.api.knowledge_dependencies import close_rag_runtime
@@ -80,6 +82,7 @@ async def lifespan(_: FastAPI):
         close_quick_action_service()
         close_translation_service()
         close_agent_trace_store_service()
+        close_evidence_review_service()
         close_evidence_ledger_service()
         close_research_memory_service()
         close_rag_runtime()
@@ -111,6 +114,7 @@ def create_app() -> FastAPI:
     app.include_router(research_router)
     app.include_router(research_memory_router)
     app.include_router(evidence_ledger_router)
+    app.include_router(evidence_review_router)
     app.include_router(knowledge_router)
     app.include_router(rag_models_router)
     app.include_router(agent_router)

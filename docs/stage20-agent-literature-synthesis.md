@@ -9,7 +9,8 @@ Evidence Ledger
   -> live provenance revalidation
   -> human Review Gate
   -> deterministic synthesis plan
-  -> resolve allowed evidence IDs from live Research Memory
+  -> validate allowed provenance IDs against live Research Memory
+  -> build model context from review-gated Ledger statements only
   -> bounded grounded context
   -> LLM synthesis
   -> Claim–Evidence Verification
@@ -17,6 +18,8 @@ Evidence Ledger
 ```
 
 The model does **not** run RAG or decide which ledger entries are admissible. It receives only entries that already passed both the human review decision and the current machine provenance status.
+
+A strict Stage 20.1 boundary also applies between the Evidence Ledger and Research Memory: Research Memory is consulted only to confirm that a ledger provenance link still exists, still points to the expected note, and still has a usable source status. The original Research Memory/RAG excerpt is **not** copied into the model-visible `AgentEvidenceItem.excerpt`. This prevents the model from introducing a fact that happened to be present in the same raw snippet but was never admitted through the Review Gate.
 
 ## Admission rules
 
@@ -29,7 +32,9 @@ Immediately before generation, every provenance link is resolved against live St
 
 ## Grounding and fallback
 
-Each allowed provenance link becomes an `AgentEvidenceItem` with a program-owned citation label. The existing `GroundedSynthesisService` builds a bounded context and the existing `AgentClaimEvidenceVerifier` enforces citation coverage and lexical evidence support.
+Each allowed provenance link becomes an `AgentEvidenceItem`, but its citable text is the corresponding review-gated Evidence Ledger statement rather than the original RAG snippet. Stable note/document metadata remains attached for provenance and program-owned citation labels.
+
+The existing `GroundedSynthesisService` then builds a bounded context and the existing `AgentClaimEvidenceVerifier` enforces citation coverage and lexical evidence support against those admitted ledger statements.
 
 If the provider is unavailable, the context cannot be built, or verification fails, the generated text is not released. The API returns the deterministic Stage 20 synthesis instead and marks the result as `fallback`.
 

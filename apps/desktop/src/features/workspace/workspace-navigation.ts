@@ -15,16 +15,6 @@ export interface WorkspaceRouteMeta {
 
 export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
   {
-    path: "/translation",
-    label: "Translation",
-    description: "Translate manual input or the latest reading selection.",
-  },
-  {
-    path: "/reading",
-    label: "Reading",
-    description: "Inspect the active selection, document identity, section, and nearby context.",
-  },
-  {
     path: "/chat",
     label: "AI Chat",
     description: "Continue reasoning from a frozen reading or research context.",
@@ -35,14 +25,24 @@ export const workspaceRoutes: readonly WorkspaceRouteMeta[] = [
     description: "Run Agent tasks with visible context, execution trace, tool activity, and results.",
   },
   {
-    path: "/knowledge",
-    label: "Knowledge",
-    description: "Import local documents and manage their retrieval index.",
+    path: "/reading",
+    label: "Reading",
+    description: "Inspect the active selection, document identity, section, and nearby context.",
   },
   {
     path: "/research",
     label: "Research",
     description: "Browse saved reading evidence and reopen it as chat context.",
+  },
+  {
+    path: "/knowledge",
+    label: "Knowledge",
+    description: "Import local documents and manage their retrieval index.",
+  },
+  {
+    path: "/translation",
+    label: "Translation",
+    description: "Translate manual input or the latest reading selection.",
   },
   {
     path: "/settings",

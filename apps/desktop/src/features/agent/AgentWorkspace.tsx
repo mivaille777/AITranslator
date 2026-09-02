@@ -13,7 +13,7 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
   const runtime = useAgentRuntime(workspace)
 
   return (
-    <section aria-label="Agent Workspace" className="space-y-4">
+    <section aria-label="Agent Workspace" className="space-y-4 pb-2">
       <div className="ait-surface overflow-hidden p-5 sm:p-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-2xl">
@@ -89,15 +89,17 @@ export function AgentWorkspace({ workspace }: { workspace: TranslationWorkspaceC
         currentRunId={runtime.viewState.runId}
       />
 
-      <AgentInputComposer
-        value={runtime.prompt}
-        onChange={runtime.setPrompt}
-        onSubmit={runtime.submitPrompt}
-        onCancel={runtime.cancelRun}
-        disabled={runtime.pending}
-        busy={runtime.pending}
-        cancelling={runtime.cancelRequested}
-      />
+      <div className="sticky bottom-0 z-20 rounded-[18px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_-12px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+        <AgentInputComposer
+          value={runtime.prompt}
+          onChange={runtime.setPrompt}
+          onSubmit={runtime.submitPrompt}
+          onCancel={runtime.cancelRun}
+          disabled={runtime.pending}
+          busy={runtime.pending}
+          cancelling={runtime.cancelRequested}
+        />
+      </div>
     </section>
   )
 }

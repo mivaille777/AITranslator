@@ -76,7 +76,7 @@ export default function KnowledgeLibraryPanel({ library }: { library: KnowledgeL
         ) : visibleDocuments.length === 0 ? (
           <div className="p-7"><EmptyState title="No documents match this filter" description="Try a different search term or document type." /></div>
         ) : (
-          <div aria-label="Knowledge documents">
+          <div className="ait-scroll-panel max-h-[min(58vh,680px)] overflow-y-auto overscroll-contain" aria-label="Knowledge documents">
             {visibleDocuments.map((document) => <KnowledgeDocumentRow key={document.document_id} document={document} deleting={deleteMutation.isPending && deleteMutation.variables === document.document_id} reindexing={reindexMutation.isPending && reindexMutation.variables === document.document_id} onOpen={() => setSelected(document)} onReveal={() => { setOpenError(""); void desktop.files.openEvidenceSource(document.source_uri).catch((error: unknown) => setOpenError(errorMessage(error))) }} onRemove={() => setRemoveTarget(document)} onReindex={() => reindexMutation.mutate(document.document_id)} />)}
           </div>
         )}

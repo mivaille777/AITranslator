@@ -245,7 +245,7 @@ function ScopeColumn({
         <p className="text-xs font-semibold">{title}</p>
       </div>
       <p className="mt-1 text-[11px] leading-5 text-slate-400">{description}</p>
-      <div className="mt-3 max-h-48 space-y-1.5 overflow-y-auto pr-1">
+      <div className="ait-scroll-panel mt-3 max-h-48 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
         {visibleItems.length === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-[11px] text-slate-400">
             {emptyText}

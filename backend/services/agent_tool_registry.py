@@ -12,6 +12,10 @@ from backend.agent_tools.cross_document_research import (
     CrossDocumentResearchAgentTool,
     build_cross_document_research_tool_definition,
 )
+from backend.agent_tools.evidence_ledger import (
+    EvidenceLedgerAgentTools,
+    build_evidence_ledger_tool_definitions,
+)
 from backend.agent_tools.knowledge import (
     KnowledgeAgentTools,
     build_knowledge_tool_definitions,
@@ -77,6 +81,7 @@ class AgentToolRegistry:
         research_note_service: ResearchNoteService | Any | None = None,
         research_memory_service: Any | None = None,
         cross_document_research_service: Any | None = None,
+        evidence_ledger_service: Any | None = None,
         retrieval_service: Any | None = None,
         query_planner: Any | None = None,
     ) -> None:
@@ -137,6 +142,17 @@ class AgentToolRegistry:
                 build_cross_document_research_tool_definition(cross_document_tool),
             )
 
+        evidence_ledger_definitions: tuple[TypedAgentToolDefinition, ...] = ()
+        if research_memory_service is not None and evidence_ledger_service is not None:
+            evidence_ledger_tools = EvidenceLedgerAgentTools(
+                evidence_ledger_service=evidence_ledger_service,
+                research_memory_service=research_memory_service,
+                research_note_service=shared_research_note_service,
+            )
+            evidence_ledger_definitions = build_evidence_ledger_tool_definitions(
+                evidence_ledger_tools
+            )
+
         knowledge_tools = KnowledgeAgentTools(
             retrieval_service=retrieval_service,
             query_planner=query_planner,
@@ -153,6 +169,7 @@ class AgentToolRegistry:
             *research_definitions,
             *research_memory_definitions,
             *cross_document_definitions,
+            *evidence_ledger_definitions,
             reading_by_name["define_terms"],
             reading_by_name["analyze_equation"],
             reading_by_name["summarize_current_section"],

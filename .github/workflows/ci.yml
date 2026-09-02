@@ -58,6 +58,10 @@ jobs:
         shell: pwsh
         run: python scripts/run_research_memory_regression.py --report test-results/research-memory-regression.json
 
+      - name: Run Cross-document Research benchmark
+        shell: pwsh
+        run: python scripts/run_cross_document_research_regression.py --report test-results/cross-document-research-regression.json
+
       - name: Run Agent regression benchmark
         shell: pwsh
         run: python scripts/run_agent_regression_benchmark.py --report test-results/agent-regression.json
@@ -86,6 +90,7 @@ jobs:
           path: |
             test-results/pytest.xml
             test-results/research-memory-regression.json
+            test-results/cross-document-research-regression.json
             test-results/agent-regression.json
             test-results/agent-quality-protocol.json
           if-no-files-found: warn

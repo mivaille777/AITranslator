@@ -22,9 +22,11 @@ class AgentLiteratureSynthesisService:
 
     The model never performs retrieval here. Review policy first decides which
     ledger entries may be used; their stable provenance IDs are then resolved
-    against live Stage 17 Research Memory. The final model answer is passed
-    through the existing deterministic claim/citation verifier. Any model or
-    grounding failure degrades to the Stage 20 deterministic synthesis plan.
+    against live Stage 17 Research Memory only to confirm provenance existence,
+    source identity, and freshness. Raw Research Memory excerpts are never
+    exposed to the model. The final model answer is passed through the existing
+    deterministic claim/citation verifier. Any model or grounding failure
+    degrades to the Stage 20 deterministic synthesis plan.
     """
 
     def __init__(
@@ -157,17 +159,25 @@ class AgentLiteratureSynthesisService:
                     else ""
                 )
                 rank += 1
+
+                # Stage 20.1's hard boundary is the reviewed ledger statement.
+                # Research Memory is consulted above only to revalidate the
+                # provenance link and source freshness. Its original excerpt is
+                # deliberately not copied into AgentEvidenceItem.excerpt; doing
+                # so would allow the model to synthesize an unreviewed fact that
+                # merely happened to share a source snippet with an accepted
+                # ledger claim.
                 composite_excerpt = (
                     f"Review-gated ledger claim ({synthesis_item.bucket}; provenance role={link.role}): "
                     f"{synthesis_item.statement}\n"
-                    f"Source evidence: {source.excerpt}"
+                    f"Source evidence: {synthesis_item.statement}"
                 )
                 result.append(
                     AgentEvidenceItem(
                         evidence_id=(
                             f"reviewed:{synthesis_item.entry_id}:{link.evidence_id}:{link.role}"
                         ),
-                        source_type="research_memory",
+                        source_type="evidence_ledger",
                         source_id=link.document_id,
                         title=title,
                         resource_url=resource_url,
@@ -187,6 +197,7 @@ class AgentLiteratureSynthesisService:
                             "provenance_role": link.role,
                             "machine_status": synthesis_item.machine_status,
                             "review_status": synthesis_item.review_status,
+                            "raw_source_excerpt_exposed": False,
                         },
                     )
                 )

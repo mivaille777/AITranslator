@@ -54,6 +54,10 @@ jobs:
         shell: pwsh
         run: .\scripts\test.ps1 -Install -PytestArgs '--junitxml=test-results/pytest.xml'
 
+      - name: Run Research Memory reliability benchmark
+        shell: pwsh
+        run: python scripts/run_research_memory_regression.py --report test-results/research-memory-regression.json
+
       - name: Run Agent regression benchmark
         shell: pwsh
         run: python scripts/run_agent_regression_benchmark.py --report test-results/agent-regression.json
@@ -81,6 +85,7 @@ jobs:
           name: ci-python-${{ github.run_id }}
           path: |
             test-results/pytest.xml
+            test-results/research-memory-regression.json
             test-results/agent-regression.json
             test-results/agent-quality-protocol.json
           if-no-files-found: warn

@@ -84,9 +84,9 @@ jobs:
           --report test-results/agent-quality-protocol.json
           --require-resolved
 
-      - name: Run legacy application smoke test
+      - name: Run FastAPI smoke test
         shell: pwsh
-        run: python -m app.main --smoke-test
+        run: python -c "from backend.main import create_app; assert create_app().title == 'AITranslator API'"
 
       - name: Upload Python test reports
         if: always()

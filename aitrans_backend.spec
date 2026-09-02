@@ -47,7 +47,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["docling", "pytest", "pytestqt"],
+    excludes=["docling", "pytest"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

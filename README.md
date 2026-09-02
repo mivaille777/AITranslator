@@ -235,7 +235,7 @@ Human approve / reject
 open_translation UI Tool
 ```
 
-翻译界面被视为 Agent 可以申请使用的 Workspace Capability。Qt Controller 是 UI Tool 的确定性执行器，LangGraph 不直接操作 QWidget。
+翻译界面被视为 Agent 可以申请使用的 Workspace Capability。React/Tauri UI Bridge 是 UI Tool 的确定性执行器，LangGraph 不直接操作桌面渲染层。
 
 ### Agent Tool Graph
 
@@ -310,7 +310,7 @@ API Key 不会写入普通应用配置文件；配置过的 Windows Credential M
 ```text
 Python >= 3.11, < 3.13
 推荐 / 主要验证版本：Python 3.11
-PySide6 6.7.3
+Node.js + Rust（用于 React/Tauri 桌面端）
 ```
 
 PowerShell：
@@ -362,18 +362,6 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 docs/STARTUP_AND_ARCHITECTURE.md
 ```
 
-如果只运行旧版 PySide6 原生入口，仍可使用：
-
-```powershell
-python -m app.main
-```
-
-生产入口 smoke test：
-
-```powershell
-python -m app.main --smoke-test
-```
-
 ## Tests
 
 本地测试入口：
@@ -391,7 +379,6 @@ python -m app.main --smoke-test
 测试脚本会：
 
 - 检查 Python 3.11；
-- 设置 `QT_QPA_PLATFORM=offscreen`；
 - 运行完整 pytest；
 - 排除 `tests/manual`。
 

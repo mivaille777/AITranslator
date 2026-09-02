@@ -193,6 +193,37 @@ def test_deleted_source_note_becomes_orphaned_and_is_not_citable(tmp_path: Path)
     assert result.data["citations"] == []
 
 
+def test_detached_workspace_note_is_not_citable(tmp_path: Path) -> None:
+    workspaces, notes, memory, _revisions = _services(tmp_path)
+    workspace_id = workspaces.create(name="Detached").workspace.workspace_id
+    note = _persist_relation(
+        notes=notes,
+        memory=memory,
+        workspace_id=workspace_id,
+        predicate="defined_as",
+        target="Method A",
+    )
+    assert workspaces.detach_note(workspace_id, note.note_id) is True
+    assert notes.get(note.note_id) is not None
+    tool = ResearchMemoryAgentTool(
+        research_memory_service=memory,
+        research_note_service=notes,
+    )
+
+    result = tool.search_research_memory(
+        AgentToolInvocationContext(workspace_id=workspace_id),
+        SearchResearchMemoryArgs(query="Controller Method A"),
+    )
+
+    assert memory.source_status(workspace_id=workspace_id, note_id=note.note_id) == "detached"
+    assert result.data is not None
+    assert result.data["detached_result_count"] > 0
+    assert result.data["grounded_result_count"] == 0
+    assert result.data["evidence"] == []
+    assert result.data["citations"] == []
+    assert "Workspace-detached" in result.output_text
+
+
 def test_legacy_extraction_without_revision_remains_usable_but_not_fresh(tmp_path: Path) -> None:
     workspaces, notes, memory, revisions = _services(tmp_path)
     workspace_id = workspaces.create(name="Legacy").workspace.workspace_id
@@ -277,6 +308,27 @@ def test_multi_value_relation_does_not_create_false_conflict(tmp_path: Path) -> 
         workspace_id=workspace_id,
         predicate="uses",
         target="Method B",
+    )
+
+    assert memory.conflict_groups(workspace_id=workspace_id) == ()
+
+
+def test_taxonomic_is_a_relation_allows_multiple_targets(tmp_path: Path) -> None:
+    workspaces, notes, memory, _revisions = _services(tmp_path)
+    workspace_id = workspaces.create(name="Taxonomy").workspace.workspace_id
+    _persist_relation(
+        notes=notes,
+        memory=memory,
+        workspace_id=workspace_id,
+        predicate="is_a",
+        target="Control method",
+    )
+    _persist_relation(
+        notes=notes,
+        memory=memory,
+        workspace_id=workspace_id,
+        predicate="is_a",
+        target="Optimization method",
     )
 
     assert memory.conflict_groups(workspace_id=workspace_id) == ()

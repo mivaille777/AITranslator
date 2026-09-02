@@ -9,6 +9,12 @@ describe("AI Chat nested scroll layout", () => {
     expect(companionLayoutClassNames.shell).toContain("xl:overflow-hidden")
   })
 
+  it("uses a two-column intermediate desktop layout before the full inspector layout", () => {
+    expect(companionLayoutClassNames.shell).toContain("min-[960px]:grid-cols-[200px_minmax(0,1fr)]")
+    expect(companionLayoutClassNames.shell).toContain("xl:grid-cols-[220px_minmax(0,1fr)_280px]")
+    expect(companionLayoutClassNames.contextPanel).toContain("min-[960px]:col-span-2")
+  })
+
   it("gives history, context, and messages their own scroll ownership", () => {
     expect(companionLayoutClassNames.historyPanel).toContain("min-h-0")
     expect(companionLayoutClassNames.historyScroller).toContain("flex-1")

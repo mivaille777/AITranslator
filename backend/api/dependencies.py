@@ -246,15 +246,25 @@ def get_agent_tool_registry() -> AgentToolRegistry:
         return _agent_tool_registry
     with _agent_tool_registry_lock:
         if _agent_tool_registry is None:
-            # Local import avoids a module cycle: research-memory dependencies reuse
+            # Local imports avoid a module cycle: research-memory dependencies reuse
             # the Research Note and Workspace singletons defined in this module.
             from backend.api.research_memory_dependencies import get_research_memory_service
+            from backend.services.cross_document_research_service import (
+                CrossDocumentResearchService,
+            )
 
+            research_note_service = get_research_note_service()
+            research_memory_service = get_research_memory_service()
+            cross_document_service = CrossDocumentResearchService(
+                research_memory_service=research_memory_service,
+                research_note_service=research_note_service,
+            )
             _agent_tool_registry = AgentToolRegistry(
                 translation_service=get_translation_service(),
                 quick_action_service=get_quick_action_service(),
-                research_note_service=get_research_note_service(),
-                research_memory_service=get_research_memory_service(),
+                research_note_service=research_note_service,
+                research_memory_service=research_memory_service,
+                cross_document_research_service=cross_document_service,
                 retrieval_service=get_retrieval_service(),
                 query_planner=build_rag_query_planner(),
             )

@@ -295,13 +295,7 @@ browser_extension/aitrans_selection_bridge
 python -m pip install -e ".[dev]"
 ```
 
-可以临时通过环境变量配置 DeepSeek API Key：
-
-```powershell
-$env:DEEPSEEK_API_KEY="your_api_key"
-```
-
-API Key 不会写入普通应用配置文件；配置过的 Windows Credential Manager 凭据优先于临时环境变量。
+在桌面端的 **Settings → Cloud LLM** 中选择供应商、填写模型与地址，并输入 API Key。密钥只会从桌面端写入当前 Windows 用户的 Credential Manager，不经过本地后端 API、不写入 TOML，也不会通过环境变量读取。
 
 ## Development Environment
 

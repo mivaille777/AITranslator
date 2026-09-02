@@ -1,14 +1,12 @@
-"""Local-only API for configuring the active LLM provider and credential."""
+"""Local-only API for non-secret active LLM provider configuration."""
 
 from __future__ import annotations
 
-import os
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, status
 
 from app.ai.client import SUPPORTED_DEEPSEEK_MODELS
-from app.ai.errors import AIConfigurationError
 from app.ai.factory import (
     AI_PROVIDER_LABELS,
     DEFAULT_AI_PROVIDER,
@@ -16,7 +14,6 @@ from app.ai.factory import (
     SUPPORTED_AI_PROVIDERS,
     provider_defaults,
 )
-from app.ai.secrets import PROVIDER_ENV_VARS, ProviderCredentialStore
 from app.infrastructure.settings import SettingsManager
 from backend.api.dependencies import (
     close_agent_tool_registry,
@@ -31,23 +28,11 @@ from backend.models.llm_settings import (
     LLMSettingsUpdateRequest,
 )
 
-
 router = APIRouter(prefix="/api/settings/llm", tags=["settings"])
 
 
 def _config_value(settings: SettingsManager, key: str, default: str) -> str:
     return str(settings.get("ai", key, default) or default).strip()
-
-
-def _credential_state(provider: str) -> tuple[bool, str]:
-    try:
-        if ProviderCredentialStore().get(provider):
-            return True, "credential_manager"
-    except AIConfigurationError:
-        pass
-    if os.getenv(PROVIDER_ENV_VARS[provider], "").strip():
-        return True, "environment"
-    return False, "not_configured"
 
 
 def _provider_options() -> list[LLMProviderOption]:
@@ -71,13 +56,10 @@ def _response(settings: SettingsManager) -> LLMSettingsResponse:
     if provider not in SUPPORTED_AI_PROVIDERS:
         provider = DEFAULT_AI_PROVIDER
     default_model, default_base_url = provider_defaults(provider)
-    configured, storage = _credential_state(provider)
     return LLMSettingsResponse(
         provider=provider,
         model=_config_value(settings, "model", default_model),
         base_url=_config_value(settings, "base_url", default_base_url),
-        api_key_configured=configured,
-        credential_storage=storage,
         providers=_provider_options(),
     )
 
@@ -118,21 +100,13 @@ def get_llm_settings() -> LLMSettingsResponse:
 def update_llm_settings(payload: LLMSettingsUpdateRequest) -> LLMSettingsResponse:
     try:
         provider, model, base_url = _validate(payload)
-        if payload.api_key is not None and not payload.api_key.strip() and not payload.clear_api_key:
-            raise ValueError("API Key 不能为空；如需移除，请使用“清除已保存的 Key”。")
 
         settings = SettingsManager()
         settings.save({"ai": {"provider": provider, "model": model, "base_url": base_url}})
 
-        credential_store = ProviderCredentialStore()
-        if payload.clear_api_key:
-            credential_store.delete(provider)
-        elif payload.api_key is not None:
-            credential_store.set(provider, payload.api_key)
-
         _refresh_runtime()
         return _response(SettingsManager())
-    except (AIConfigurationError, OSError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),

@@ -23,8 +23,7 @@ from app.ai.errors import (
     AIResponseError,
     AITimeoutError,
 )
-from app.ai.secrets import get_deepseek_api_key
-
+from app.ai.secrets import ProviderCredentialStore, get_deepseek_api_key
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
@@ -49,13 +48,13 @@ class DeepSeekClient:
 
     def __init__(
         self,
-        api_key: str | None = None,
         *,
         model: str = DEFAULT_DEEPSEEK_MODEL,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
         thinking_enabled: bool = False,
         sdk_client: Any | None = None,
+        credential_store: ProviderCredentialStore | Any | None = None,
     ) -> None:
         self.model = self._validate_model(model)
         self.timeout = self._validate_timeout(timeout)
@@ -66,7 +65,7 @@ class DeepSeekClient:
         if sdk_client is not None:
             self._client = sdk_client
         else:
-            resolved_api_key = get_deepseek_api_key(api_key)
+            resolved_api_key = get_deepseek_api_key(credential_store=credential_store)
             self._client = OpenAI(
                 api_key=resolved_api_key,
                 base_url=DEEPSEEK_BASE_URL,
@@ -216,11 +215,11 @@ class DeepSeekClient:
 
 
 __all__ = [
+    "DEEPSEEK_BASE_URL",
     "DEFAULT_DEEPSEEK_MODEL",
     "DEFAULT_MAX_RETRIES",
     "DEFAULT_TEMPERATURE",
     "DEFAULT_TIMEOUT_SECONDS",
-    "DEEPSEEK_BASE_URL",
-    "DeepSeekClient",
     "SUPPORTED_DEEPSEEK_MODELS",
+    "DeepSeekClient",
 ]

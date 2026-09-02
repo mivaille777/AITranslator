@@ -24,8 +24,7 @@ from app.ai.errors import (
     AITimeoutError,
 )
 from app.ai.provider import DeepSeekTextProvider
-from app.ai.secrets import get_provider_api_key
-
+from app.ai.secrets import ProviderCredentialStore, get_provider_api_key
 
 DEFAULT_COMPATIBLE_TIMEOUT_SECONDS = 15.0
 DEFAULT_COMPATIBLE_MAX_RETRIES = 1
@@ -36,13 +35,13 @@ class OpenAICompatibleClient:
 
     def __init__(
         self,
-        api_key: str | None = None,
         *,
         base_url: str,
         model: str,
         timeout: float = DEFAULT_COMPATIBLE_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_COMPATIBLE_MAX_RETRIES,
         sdk_client: Any | None = None,
+        credential_store: ProviderCredentialStore | Any | None = None,
     ) -> None:
         self.base_url = self._validate_base_url(base_url)
         self.model = self._validate_model(model)
@@ -55,7 +54,7 @@ class OpenAICompatibleClient:
         else:
             resolved_api_key = get_provider_api_key(
                 "openai_compatible",
-                api_key,
+                credential_store=credential_store,
             )
             self._client = OpenAI(
                 api_key=resolved_api_key,

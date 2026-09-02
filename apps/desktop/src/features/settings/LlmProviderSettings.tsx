@@ -8,6 +8,12 @@ import {
   type LlmProviderId,
   type LlmSettings,
 } from "../../api/llm-settings"
+import {
+  deleteLlmCredential,
+  getLlmCredentialStatus,
+  hasTauriCredentialVault,
+  saveLlmCredential,
+} from "../../desktop/tauri/llm-credential-vault"
 import { Button } from "../../shared/ui/Button"
 
 const QUERY_KEY = ["settings", "llm"] as const
@@ -19,6 +25,11 @@ type Draft = {
   apiKey: string
 }
 
+type SaveRequest = {
+  draft: Draft
+  clearApiKey: boolean
+}
+
 function draftFrom(settings: LlmSettings): Draft {
   return {
     provider: settings.provider,
@@ -28,22 +39,50 @@ function draftFrom(settings: LlmSettings): Draft {
   }
 }
 
+function errorMessage(error: unknown): string | null {
+  return error instanceof Error ? error.message : null
+}
+
 export function LlmProviderSettings() {
   const queryClient = useQueryClient()
   const settingsQuery = useQuery({ queryKey: QUERY_KEY, queryFn: getLlmSettings })
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showKey, setShowKey] = useState(false)
+  const desktopVaultAvailable = hasTauriCredentialVault()
+
+  const credentialQuery = useQuery({
+    queryKey: ["settings", "llm", "credential", draft?.provider],
+    queryFn: () => getLlmCredentialStatus(draft!.provider),
+    enabled: desktopVaultAvailable && Boolean(draft),
+  })
 
   useEffect(() => {
     if (settingsQuery.data) setDraft(draftFrom(settingsQuery.data))
   }, [settingsQuery.data])
 
   const mutation = useMutation({
-    mutationFn: updateLlmSettings,
+    mutationFn: async ({ draft: current, clearApiKey }: SaveRequest) => {
+      const settings = await updateLlmSettings({
+        provider: current.provider,
+        model: current.model.trim(),
+        base_url: current.baseUrl.trim(),
+      })
+
+      if (clearApiKey) {
+        if (!desktopVaultAvailable) throw new Error("API Key 只能在 Tauri 桌面应用中保存或移除。")
+        await deleteLlmCredential(current.provider)
+      } else if (current.apiKey.trim()) {
+        if (!desktopVaultAvailable) throw new Error("API Key 只能在 Tauri 桌面应用中保存。")
+        await saveLlmCredential(current.provider, current.apiKey.trim())
+      }
+
+      return settings
+    },
     onSuccess: (settings) => {
       setDraft(draftFrom(settings))
       setShowKey(false)
       queryClient.setQueryData(QUERY_KEY, settings)
+      void queryClient.invalidateQueries({ queryKey: ["settings", "llm", "credential"] })
       void queryClient.invalidateQueries({ queryKey: ["agent", "runtime", "config"] })
     },
   })
@@ -66,17 +105,16 @@ export function LlmProviderSettings() {
     )
   }
 
-  const draftProviderChanged = draft.provider !== settingsQuery.data.provider
-  const configured = !draftProviderChanged && settingsQuery.data.api_key_configured
+  const configured = desktopVaultAvailable && Boolean(credentialQuery.data?.configured)
   const busy = mutation.isPending
-  const error = mutation.error instanceof Error ? mutation.error.message : null
-  const storageLabel = draftProviderChanged
-    ? "Save a key for the selected provider"
-    : settingsQuery.data.credential_storage === "credential_manager"
-    ? "Saved in Windows Credential Manager"
-    : settingsQuery.data.credential_storage === "environment"
-      ? "Using environment variable"
-      : "No API key saved"
+  const error = errorMessage(mutation.error) ?? errorMessage(credentialQuery.error)
+  const storageLabel = !desktopVaultAvailable
+    ? "Open the Tauri desktop app to manage API keys"
+    : credentialQuery.isPending
+      ? "Checking Windows Credential Manager…"
+      : configured
+        ? "Saved in Windows Credential Manager"
+        : "No API key saved"
 
   function chooseProvider(provider: LlmProviderId) {
     const next = settingsQuery.data?.providers.find((option) => option.id === provider)
@@ -86,19 +124,13 @@ export function LlmProviderSettings() {
       provider,
       model: next.default_model || current.model,
       baseUrl: next.default_base_url || current.baseUrl,
+      apiKey: "",
     } : current)
   }
 
   function save(clearApiKey = false) {
-    const current = draft
-    if (!current) return
-    mutation.mutate({
-      provider: current.provider,
-      model: current.model.trim(),
-      base_url: current.baseUrl.trim(),
-      ...(current.apiKey.trim() ? { api_key: current.apiKey.trim() } : {}),
-      ...(clearApiKey ? { clear_api_key: true } : {}),
-    })
+    if (!draft) return
+    mutation.mutate({ draft, clearApiKey })
   }
 
   return (
@@ -141,9 +173,9 @@ export function LlmProviderSettings() {
 
         <aside className="rounded-[17px] border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
           <div className="flex items-center gap-2 text-slate-900"><ShieldCheck size={17} className="text-cyan-700" /><h3 className="text-sm font-semibold">API key vault</h3></div>
-          <p className="mt-2 text-xs leading-5 text-slate-500">The key is sent only to your local backend, saved in Windows Credential Manager, and is never shown again or written to user settings.</p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">The key is sent directly to the desktop credential vault, never to the local backend API. It is not written to user settings or shown again.</p>
           <p className="mt-3 rounded-[10px] bg-white px-3 py-2 text-[11px] font-medium text-slate-500">{storageLabel}</p>
-          <div className="relative mt-4"><input type={showKey ? "text" : "password"} autoComplete="new-password" value={draft.apiKey} disabled={busy} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} className="w-full rounded-[12px] border border-slate-200 bg-white px-3 py-2.5 pr-10 font-mono text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 disabled:bg-slate-50" placeholder={configured ? "Enter a new key to replace" : "Paste API key"} aria-label="API key" /><button type="button" className="absolute right-2 top-2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={() => setShowKey((visible) => !visible)} aria-label={showKey ? "Hide API key" : "Show API key"}>{showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div>
+          <div className="relative mt-4"><input type={showKey ? "text" : "password"} autoComplete="new-password" value={draft.apiKey} disabled={busy || !desktopVaultAvailable} onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })} className="w-full rounded-[12px] border border-slate-200 bg-white px-3 py-2.5 pr-10 font-mono text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 disabled:bg-slate-100" placeholder={configured ? "Enter a new key to replace" : "Paste API key"} aria-label="API key" /><button type="button" disabled={!desktopVaultAvailable} className="absolute right-2 top-2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed" onClick={() => setShowKey((visible) => !visible)} aria-label={showKey ? "Hide API key" : "Show API key"}>{showKey ? <EyeOff size={16} /> : <Eye size={16} />}</button></div>
           {error && <p role="alert" className="mt-3 rounded-[10px] bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-700">{error}</p>}
           <div className="mt-4 flex flex-wrap gap-2"><Button variant="primary" size="sm" disabled={busy || !draft.model.trim()} onClick={() => save()}>{busy ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}{busy ? "Saving…" : "Save connection"}</Button>{configured && <Button variant="ghost" size="sm" disabled={busy} onClick={() => save(true)}>Remove saved key</Button>}</div>
         </aside>

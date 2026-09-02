@@ -1,7 +1,6 @@
 import { apiGet, apiPut } from "./client"
 
 export type LlmProviderId = "deepseek" | "openai_compatible"
-export type CredentialStorage = "credential_manager" | "environment" | "not_configured"
 
 export interface LlmProviderOption {
   id: LlmProviderId
@@ -15,8 +14,6 @@ export interface LlmSettings {
   provider: LlmProviderId
   model: string
   base_url: string
-  api_key_configured: boolean
-  credential_storage: CredentialStorage
   providers: LlmProviderOption[]
 }
 
@@ -24,8 +21,6 @@ export interface LlmSettingsUpdate {
   provider: LlmProviderId
   model: string
   base_url: string
-  api_key?: string
-  clear_api_key?: boolean
 }
 
 const LLM_SETTINGS_PATH = "/api/settings/llm"

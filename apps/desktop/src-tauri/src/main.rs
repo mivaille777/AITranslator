@@ -11,6 +11,142 @@ use tauri::{Manager, PhysicalPosition};
 
 static OVERLAY_MOVE_GENERATION: AtomicU64 = AtomicU64::new(0);
 const OVERLAY_CORNER_RADIUS_CSS_PX: f64 = 24.0;
+const LLM_CREDENTIAL_TARGET_PREFIX: &str = "AITranslator/ai";
+const MAX_LLM_API_KEY_BYTES: usize = 4096;
+
+fn llm_credential_target(provider: &str) -> Result<String, String> {
+    let normalized = provider.trim().to_ascii_lowercase().replace('-', "_");
+    match normalized.as_str() {
+        "deepseek" | "openai_compatible" => {
+            Ok(format!("{LLM_CREDENTIAL_TARGET_PREFIX}/{normalized}"))
+        }
+        _ => Err("Unsupported AI provider credential namespace.".to_string()),
+    }
+}
+
+#[cfg(windows)]
+fn wide_string(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn llm_credential_is_configured(provider: &str) -> Result<bool, String> {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::GetLastError;
+    use windows_sys::Win32::Security::Credentials::{
+        CredFree, CredReadW, CREDENTIALW, CRED_TYPE_GENERIC,
+    };
+
+    let target = wide_string(&llm_credential_target(provider)?);
+    let mut credential: *mut CREDENTIALW = null_mut();
+    let result = unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut credential) };
+    if result == 0 {
+        let error = unsafe { GetLastError() };
+        return match error {
+            1168 => Ok(false),
+            _ => Err("Unable to read the saved AI provider credential.".to_string()),
+        };
+    }
+
+    let configured = unsafe { !credential.is_null() && (*credential).CredentialBlobSize > 0 };
+    unsafe { CredFree(credential.cast()) };
+    Ok(configured)
+}
+
+#[cfg(not(windows))]
+fn llm_credential_is_configured(_provider: &str) -> Result<bool, String> {
+    Err("AI credential storage is available only on Windows.".to_string())
+}
+
+#[cfg(windows)]
+fn save_llm_credential_value(provider: &str, api_key: &str) -> Result<(), String> {
+    use windows_sys::Win32::Security::Credentials::{
+        CredWriteW, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+    };
+
+    let target_name = llm_credential_target(provider)?;
+    let secret = api_key.trim();
+    if secret.is_empty() {
+        return Err("API Key must not be empty.".to_string());
+    }
+    if secret.len() > MAX_LLM_API_KEY_BYTES {
+        return Err("API Key is too long.".to_string());
+    }
+
+    let mut target = wide_string(&target_name);
+    let mut username = wide_string(provider.trim());
+    let mut credential: CREDENTIALW = unsafe { std::mem::zeroed() };
+    credential.Type = CRED_TYPE_GENERIC;
+    credential.TargetName = target.as_mut_ptr();
+    credential.UserName = username.as_mut_ptr();
+    credential.CredentialBlobSize =
+        u32::try_from(secret.len()).map_err(|_| "API Key is too long.".to_string())?;
+    credential.CredentialBlob = secret.as_ptr().cast_mut();
+    credential.Persist = CRED_PERSIST_LOCAL_MACHINE;
+
+    if unsafe { CredWriteW(&credential, 0) } == 0 {
+        return Err("Unable to save the AI provider credential.".to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn save_llm_credential_value(_provider: &str, _api_key: &str) -> Result<(), String> {
+    Err("AI credential storage is available only on Windows.".to_string())
+}
+
+#[cfg(windows)]
+fn delete_llm_credential_value(provider: &str) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::GetLastError;
+    use windows_sys::Win32::Security::Credentials::{CredDeleteW, CRED_TYPE_GENERIC};
+
+    let target = wide_string(&llm_credential_target(provider)?);
+    if unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) } == 0 {
+        let error = unsafe { GetLastError() };
+        if error != 1168 {
+            return Err("Unable to delete the saved AI provider credential.".to_string());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn delete_llm_credential_value(_provider: &str) -> Result<(), String> {
+    Err("AI credential storage is available only on Windows.".to_string())
+}
+
+#[tauri::command]
+fn get_llm_credential_status(provider: String) -> Result<bool, String> {
+    llm_credential_is_configured(&provider)
+}
+
+#[tauri::command]
+fn save_llm_credential(provider: String, api_key: String) -> Result<(), String> {
+    save_llm_credential_value(&provider, &api_key)
+}
+
+#[tauri::command]
+fn delete_llm_credential(provider: String) -> Result<(), String> {
+    delete_llm_credential_value(&provider)
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::llm_credential_target;
+
+    #[test]
+    fn credential_targets_are_limited_to_supported_providers() {
+        assert_eq!(
+            llm_credential_target("deepseek").as_deref(),
+            Ok("AITranslator/ai/deepseek")
+        );
+        assert_eq!(
+            llm_credential_target("openai-compatible").as_deref(),
+            Ok("AITranslator/ai/openai_compatible")
+        );
+        assert!(llm_credential_target("other").is_err());
+    }
+}
 
 #[cfg(windows)]
 fn enforce_overlay_borderless_frame(window: &tauri::WebviewWindow) -> Result<(), String> {
@@ -457,6 +593,9 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            get_llm_credential_status,
+            save_llm_credential,
+            delete_llm_credential,
             animate_overlay_position,
             cancel_overlay_motion,
             window_minimize,

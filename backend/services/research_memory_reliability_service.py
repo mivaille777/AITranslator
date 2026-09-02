@@ -14,14 +14,17 @@ from backend.models.research_memory_reliability import (
     ResearchMemorySourceStatus,
 )
 
+# Keep this list deliberately conservative. These predicates are expected to
+# behave as single-valued assertions for a subject in the structured-memory
+# graph. Taxonomic predicates such as ``is_a`` and multi-label predicates such
+# as ``classified_as`` are intentionally excluded because multiple targets can
+# be simultaneously valid.
 _SINGLE_VALUE_PREDICATES = frozenset(
     {
-        "classified_as",
         "defined_as",
         "equal_to",
         "equals",
         "has_value",
-        "is_a",
     }
 )
 _PREDICATE_SEPARATOR_RE = re.compile(r"[\s\-/]+")
@@ -48,10 +51,12 @@ class ResearchMemoryReliabilityService:
         memory_store: Any,
         research_note_service: Any,
         revision_store: ResearchMemoryReliabilityStore | Any | None = None,
+        workspace_service: Any | None = None,
     ) -> None:
         self._memory_store = memory_store
         self._research_notes = research_note_service
         self._revisions = revision_store or ResearchMemoryReliabilityStore()
+        self._workspaces = workspace_service
 
     def record_source_revision(
         self,
@@ -78,6 +83,12 @@ class ResearchMemoryReliabilityService:
         note = self._research_notes.get(note_id)
         if note is None:
             return "orphaned"
+
+        if self._workspaces is not None:
+            profile = self._workspaces.get(workspace_id)
+            if profile is None or note_id not in set(profile.note_ids):
+                return "detached"
+
         revision = self._revisions.get_source_revision(
             workspace_id=workspace_id,
             note_id=note_id,
@@ -117,8 +128,6 @@ class ResearchMemoryReliabilityService:
             target_ids = sorted({item.target_entity_id for item in relations})
             if len(target_ids) < 2:
                 continue
-            # Entity IDs are workspace-scoped stable identities. Distinct targets on a
-            # whitelisted single-value predicate are a conservative conflict signal.
             payload = "|".join([workspace_id, subject_id, predicate, *target_ids])
             group_id = sha256(payload.encode("utf-8")).hexdigest()[:20]
             groups.append(
@@ -188,6 +197,8 @@ class ResearchMemoryReliabilityService:
             source_status = "legacy_unknown"
         elif "stale" in statuses:
             source_status = "stale"
+        elif "detached" in statuses:
+            source_status = "detached"
         elif "orphaned" in statuses:
             source_status = "orphaned"
         else:
@@ -219,6 +230,8 @@ class ResearchMemoryReliabilityService:
             reasons.append("stale_source_revision")
         if any(status == "orphaned" for status in statuses):
             reasons.append("source_note_missing")
+        if any(status == "detached" for status in statuses):
+            reasons.append("source_note_detached_from_workspace")
         if matching_group_ids:
             reasons.append("conflicting_single_value_relation")
 
@@ -262,6 +275,7 @@ class ResearchMemoryReliabilityService:
         legacy = sum(item.reliability.source_status == "legacy_unknown" for item in results)
         stale = sum(item.reliability.source_status == "stale" for item in results)
         orphaned = sum(item.reliability.source_status == "orphaned" for item in results)
+        detached = sum(item.reliability.source_status == "detached" for item in results)
         conflicted = sum(item.reliability.conflicted for item in results)
         groundable = sum(item.reliability.groundable for item in results)
         provenance = sum(bool(item.reliability.source_note_ids) for item in results)
@@ -272,6 +286,7 @@ class ResearchMemoryReliabilityService:
             legacy_unknown_hit_count=legacy,
             stale_hit_count=stale,
             orphaned_hit_count=orphaned,
+            detached_hit_count=detached,
             conflicted_hit_count=conflicted,
             groundable_hit_count=groundable,
             provenance_resolved_count=provenance,
@@ -280,6 +295,7 @@ class ResearchMemoryReliabilityService:
             conflict_hit_rate=conflicted / denominator if total else 0.0,
             stale_hit_rate=stale / denominator if total else 0.0,
             orphaned_hit_rate=orphaned / denominator if total else 0.0,
+            detached_hit_rate=detached / denominator if total else 0.0,
         )
 
 

@@ -38,6 +38,19 @@ def get_planner_text_service() -> RoutedAITextService:
     global _planner_text_service
     if _planner_text_service is not None:
         return _planner_text_service
+
+
+def reset_llm_dependencies() -> None:
+    """Release cached LLM clients after a local provider configuration update."""
+
+    global _gateway, _planner_text_service
+    with _planner_text_service_lock:
+        planner_service = _planner_text_service
+        _planner_text_service = None
+    if planner_service is not None:
+        planner_service.close()
+    with _gateway_lock:
+        _gateway = None
     with _planner_text_service_lock:
         if _planner_text_service is None:
             _planner_text_service = get_llm_gateway().create_text_service("planner")
@@ -88,4 +101,5 @@ __all__ = [
     "build_routed_quick_action_service",
     "get_llm_gateway",
     "get_planner_text_service",
+    "reset_llm_dependencies",
 ]

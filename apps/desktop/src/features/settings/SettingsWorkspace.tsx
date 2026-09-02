@@ -2,6 +2,7 @@ import OverlayPreferencesPanel from "../../components/OverlayPreferencesPanel"
 import TranslationProviderSelector from "../translation/TranslationProviderSelector"
 import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
 import { LocalModelManager } from "./LocalModelManager"
+import { LlmProviderSettings } from "./LlmProviderSettings"
 
 export default function SettingsWorkspace({
   workspace,
@@ -42,6 +43,10 @@ export default function SettingsWorkspace({
           </div>
         </div>
       </section>
+
+      <div className="border-t border-slate-200/70 px-6 py-6 lg:px-8">
+        <LlmProviderSettings />
+      </div>
 
       <div className="border-t border-slate-200/70 px-6 py-6 lg:px-8">
         <LocalModelManager />

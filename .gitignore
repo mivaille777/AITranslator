@@ -43,6 +43,8 @@ Windows桌面划词翻译软件_架构技术路线与Codex分步提示词.md
 
 data/
 models/
+!backend/models/
+!backend/models/llm_settings.py
 .cache/
 
 # RAG local storage

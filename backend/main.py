@@ -32,6 +32,7 @@ from backend.api.evidence_review import router as evidence_review_router
 from backend.api.evidence_review_dependencies import close_evidence_review_service
 from backend.api.health import router as health_router
 from backend.api.knowledge import router as knowledge_router
+from backend.api.llm_settings import router as llm_settings_router
 from backend.api.knowledge_dependencies import close_rag_runtime
 from backend.api.overlay import router as overlay_router
 from backend.api.quick_actions import router as quick_actions_router
@@ -116,6 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(evidence_ledger_router)
     app.include_router(evidence_review_router)
     app.include_router(knowledge_router)
+    app.include_router(llm_settings_router)
     app.include_router(rag_models_router)
     app.include_router(agent_router)
     app.include_router(agent_observability_router)

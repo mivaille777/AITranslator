@@ -58,6 +58,13 @@ class FakeTextService:
         return None
 
 
+class DefaultSettings:
+    user_data: dict[str, object] = {}
+
+    def get(self, _section: str, _key: str, default=None):
+        return default
+
+
 def test_prompt_registry_rejects_conflicting_same_version() -> None:
     registry = PromptRegistry(
         (PromptSpec("agent.test", "1.0.0", "first", 0.0, 100),)
@@ -86,7 +93,7 @@ def test_context_budget_preserves_high_priority_fields_first() -> None:
 
 
 def test_llm_gateway_routes_roles_through_model_allowlist(monkeypatch) -> None:
-    gateway = LLMGateway()
+    gateway = LLMGateway(settings_factory=DefaultSettings)
 
     assert gateway.route("planner").model == "deepseek-v4-flash"
     assert gateway.route("agent_synthesis").model == "deepseek-v4-pro"
@@ -105,7 +112,7 @@ def test_llm_gateway_service_creation_is_lazy_without_api_key(monkeypatch) -> No
             raise AssertionError("client must not be created until first provider access")
 
     monkeypatch.setattr("app.ai.gateway.DeepSeekClient", ExplodingClient)
-    service = LLMGateway().create_text_service("planner")
+    service = LLMGateway(settings_factory=DefaultSettings).create_text_service("planner")
 
     assert service.provider_name == "deepseek"
     assert service.model == "deepseek-v4-flash"

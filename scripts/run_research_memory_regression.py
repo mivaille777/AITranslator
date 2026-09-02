@@ -16,6 +16,7 @@ from backend.evaluation.research_memory_benchmark import (
 
 DEFAULT_DATASET = "backend/evaluation/datasets/stage17_3_research_memory.jsonl"
 DEFAULT_REPORT = "test-results/research-memory-regression.json"
+EXPECTED_CANONICAL_CASES = 12
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,11 +35,23 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     batch = run_stage17_3_research_memory_benchmark(args.dataset)
-    passed = batch.total_cases > 0 and batch.pass_rate == 1.0
+    canonical_dataset = Path(args.dataset).as_posix() == Path(DEFAULT_DATASET).as_posix()
+    coverage_pass = (
+        batch.total_cases == EXPECTED_CANONICAL_CASES
+        if canonical_dataset
+        else batch.total_cases > 0
+    )
+    passed = coverage_pass and batch.pass_rate == 1.0
     report = {
         "passed": passed,
         "protocol": "stage17.3.research-memory-reliability@1.0.0",
         "dataset": str(args.dataset),
+        "coverage": {
+            "canonical_dataset": canonical_dataset,
+            "expected_cases": EXPECTED_CANONICAL_CASES if canonical_dataset else None,
+            "actual_cases": batch.total_cases,
+            "passed": coverage_pass,
+        },
         "privacy": {
             "raw_note_text_in_report": False,
             "raw_claim_text_in_report": False,

@@ -55,6 +55,7 @@ class ResearchMemoryAgentSearchData(AgentToolModel):
     legacy_unknown_result_count: int = Field(default=0, ge=0)
     stale_result_count: int = Field(default=0, ge=0)
     orphaned_result_count: int = Field(default=0, ge=0)
+    detached_result_count: int = Field(default=0, ge=0)
     conflicted_result_count: int = Field(default=0, ge=0)
     evidence: list[AgentEvidenceItem] = Field(default_factory=list)
     citations: list[AgentCitationRef] = Field(default_factory=list)
@@ -111,6 +112,24 @@ class ResearchMemoryAgentTool:
             return "legacy_unknown"
         return str(getter(workspace_id=workspace_id, note_id=note_id) or "legacy_unknown")
 
+    @staticmethod
+    def _empty_data(*, query: str) -> dict[str, Any]:
+        return {
+            "workspace_id": "",
+            "query": query,
+            "results": [],
+            "count": 0,
+            "grounded_result_count": 0,
+            "fresh_result_count": 0,
+            "legacy_unknown_result_count": 0,
+            "stale_result_count": 0,
+            "orphaned_result_count": 0,
+            "detached_result_count": 0,
+            "conflicted_result_count": 0,
+            "evidence": [],
+            "citations": [],
+        }
+
     def search_research_memory(
         self,
         context: AgentToolInvocationContext,
@@ -125,20 +144,7 @@ class ResearchMemoryAgentTool:
                 output_text="Structured research memory requires an active Research Workspace.",
                 effect="read",
                 request_id=context.request_id,
-                data={
-                    "workspace_id": "",
-                    "query": typed.query,
-                    "results": [],
-                    "count": 0,
-                    "grounded_result_count": 0,
-                    "fresh_result_count": 0,
-                    "legacy_unknown_result_count": 0,
-                    "stale_result_count": 0,
-                    "orphaned_result_count": 0,
-                    "conflicted_result_count": 0,
-                    "evidence": [],
-                    "citations": [],
-                },
+                data=self._empty_data(query=typed.query),
             )
         if service is None:
             raise RuntimeError("Structured research-memory search is unavailable.")
@@ -193,7 +199,7 @@ class ResearchMemoryAgentTool:
                 workspace_id=workspace_id,
                 note_id=source.note_id,
             )
-            if source_status in {"stale", "orphaned"}:
+            if source_status in {"stale", "orphaned", "detached"}:
                 continue
             note = self._research_notes.get(source.note_id)
             if note is None:
@@ -251,6 +257,8 @@ class ResearchMemoryAgentTool:
             if grounded_ids:
                 grounded_result_count += 1
                 groundable = True
+            else:
+                groundable = False
             items.append(
                 {
                     "kind": _bounded(result.kind, 32),
@@ -290,10 +298,10 @@ class ResearchMemoryAgentTool:
                     "\nReliability warning: conflicting single-value structured relations are "
                     "present. Treat them as competing evidence rather than one settled fact."
                 )
-            if status_counts.get("stale", 0) or status_counts.get("orphaned", 0):
+            if any(status_counts.get(name, 0) for name in ("stale", "orphaned", "detached")):
                 output_text += (
-                    "\nReliability warning: stale or orphaned structured hits are not eligible "
-                    "for grounded citations."
+                    "\nReliability warning: stale, orphaned, or Workspace-detached structured "
+                    "hits are not eligible for grounded citations."
                 )
         else:
             output_text = "No matching structured research memory found in the active Workspace."
@@ -313,6 +321,7 @@ class ResearchMemoryAgentTool:
                 "legacy_unknown_result_count": status_counts.get("legacy_unknown", 0),
                 "stale_result_count": status_counts.get("stale", 0),
                 "orphaned_result_count": status_counts.get("orphaned", 0),
+                "detached_result_count": status_counts.get("detached", 0),
                 "conflicted_result_count": conflicted_result_count,
                 "evidence": [item.model_dump(mode="json") for item in evidence],
                 "citations": [item.model_dump(mode="json") for item in citations],
@@ -329,7 +338,8 @@ def build_research_memory_tool_definition(
         description=(
             "Search Claim–Evidence–Entity–Relation memory inside the active Research Workspace. "
             "The runtime supplies the trusted Workspace; the Agent controls only the high-level query. "
-            "Freshness and structured-relation conflicts are evaluated deterministically by the runtime."
+            "Freshness, Workspace membership and structured-relation conflicts are evaluated "
+            "deterministically by the runtime."
         ),
         category="research",
         effect="read",

@@ -53,7 +53,7 @@ function App() {
         <WorkspaceRouteBoundary>
           <Suspense fallback={<WorkspaceRouteFallback />}>
             <Routes>
-              <Route path="/" element={<Navigate to="/translation" replace />} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route
                 path="/translation"
                 element={(
@@ -81,7 +81,7 @@ function App() {
                 element={<ResearchRoute backendState={workspace.backendState} workspace={workspace} />}
               />
               <Route path="/settings" element={<SettingsWorkspace workspace={workspace} />} />
-              <Route path="*" element={<Navigate to="/translation" replace />} />
+              <Route path="*" element={<Navigate to="/chat" replace />} />
             </Routes>
           </Suspense>
         </WorkspaceRouteBoundary>

@@ -21,6 +21,7 @@ class ResearchMemoryEvaluationExpectation:
     min_legacy_unknown_hit_count: int = 0
     min_stale_hit_count: int = 0
     min_orphaned_hit_count: int = 0
+    min_detached_hit_count: int = 0
     min_conflicted_hit_count: int = 0
     require_conflict: bool | None = None
     expected_conflict_group_count: int | None = None
@@ -36,10 +37,12 @@ class ResearchMemoryEvaluationResult:
     conflict_hit_rate: float
     stale_hit_rate: float
     orphaned_hit_rate: float
+    detached_hit_rate: float
     fresh_hit_count: int
     legacy_unknown_hit_count: int
     stale_hit_count: int
     orphaned_hit_count: int
+    detached_hit_count: int
     conflicted_hit_count: int
     conflict_group_count: int
     failures: tuple[str, ...] = ()
@@ -55,6 +58,7 @@ class ResearchMemoryEvaluationBatchResult:
     conflict_case_rate: float
     stale_case_rate: float
     orphaned_case_rate: float
+    detached_case_rate: float
     results: tuple[ResearchMemoryEvaluationResult, ...] = field(default_factory=tuple)
 
 
@@ -130,6 +134,9 @@ def load_research_memory_evaluation_dataset(
                 min_orphaned_hit_count=_nonnegative_int(
                     payload.get("min_orphaned_hit_count"), 0
                 ),
+                min_detached_hit_count=_nonnegative_int(
+                    payload.get("min_detached_hit_count"), 0
+                ),
                 min_conflicted_hit_count=_nonnegative_int(
                     payload.get("min_conflicted_hit_count"), 0
                 ),
@@ -186,6 +193,8 @@ def evaluate_research_memory_case(
         failures.append("stale_hit_count_below_minimum")
     if summary.orphaned_hit_count < expectation.min_orphaned_hit_count:
         failures.append("orphaned_hit_count_below_minimum")
+    if summary.detached_hit_count < expectation.min_detached_hit_count:
+        failures.append("detached_hit_count_below_minimum")
     if summary.conflicted_hit_count < expectation.min_conflicted_hit_count:
         failures.append("conflicted_hit_count_below_minimum")
     if expectation.require_conflict is True and not conflicts:
@@ -207,10 +216,12 @@ def evaluate_research_memory_case(
         conflict_hit_rate=round(summary.conflict_hit_rate, 4),
         stale_hit_rate=round(summary.stale_hit_rate, 4),
         orphaned_hit_rate=round(summary.orphaned_hit_rate, 4),
+        detached_hit_rate=round(summary.detached_hit_rate, 4),
         fresh_hit_count=summary.fresh_hit_count,
         legacy_unknown_hit_count=summary.legacy_unknown_hit_count,
         stale_hit_count=summary.stale_hit_count,
         orphaned_hit_count=summary.orphaned_hit_count,
+        detached_hit_count=summary.detached_hit_count,
         conflicted_hit_count=summary.conflicted_hit_count,
         conflict_group_count=len(conflicts),
         failures=tuple(failures),
@@ -252,6 +263,11 @@ def aggregate_research_memory_results(
         ),
         orphaned_case_rate=(
             round(sum(item.orphaned_hit_count > 0 for item in results) / denominator, 4)
+            if total
+            else 0.0
+        ),
+        detached_case_rate=(
+            round(sum(item.detached_hit_count > 0 for item in results) / denominator, 4)
             if total
             else 0.0
         ),

@@ -111,14 +111,14 @@ export default function TranslationWorkspace({
             <h2 className="mt-2 text-base font-semibold tracking-tight text-slate-950">Result</h2>
           </div>
           <div className="mt-4 flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-[15px] border border-slate-200/70 bg-white">
-            <div className="min-h-0 flex-1 overflow-auto p-5">
+            <div className="ait-scroll-panel min-h-0 flex-1 overflow-y-auto overscroll-contain p-5">
               {workspace.translation ? (
                 <p className="whitespace-pre-wrap text-sm leading-7 text-slate-900">{workspace.translation.translated_text}</p>
               ) : (
                 <p className="text-sm leading-6 text-slate-400">{workspace.autoTranslating ? "The current reading selection is being translated…" : "The translated text will appear here after the backend completes the request."}</p>
               )}
             </div>
-            <div className="flex items-center gap-2 border-t border-slate-100 px-3 py-2.5">
+            <div className="flex shrink-0 items-center gap-2 border-t border-slate-100 px-3 py-2.5">
               <button type="button" disabled={!workspace.translation} onClick={() => void copyResult()} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-35">
                 <Copy size={13} /> Copy
               </button>

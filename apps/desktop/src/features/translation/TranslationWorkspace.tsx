@@ -31,6 +31,18 @@ export default function TranslationWorkspace({
     await navigator.clipboard?.writeText(text)
   }
 
+  function downloadResult() {
+    const text = workspace.translation?.translated_text
+    if (!text) return
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = "translation.txt"
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <section className="overflow-hidden rounded-[18px] border border-slate-200/70 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.045)]">
       <div className="grid min-h-[560px] xl:grid-cols-2">
@@ -110,8 +122,8 @@ export default function TranslationWorkspace({
               <button type="button" disabled={!workspace.translation} onClick={() => void copyResult()} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-35">
                 <Copy size={13} /> Copy
               </button>
-              <button type="button" disabled={!workspace.translation} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-35" title="Export is available through the application workflow">
-                <Download size={13} /> Export
+              <button type="button" disabled={!workspace.translation} onClick={downloadResult} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-35">
+                <Download size={13} /> Download
               </button>
             </div>
           </div>

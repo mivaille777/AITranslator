@@ -145,29 +145,34 @@ button { -webkit-tap-highlight-color:transparent; }
 .ait-scroll-page,
 .ait-scroll-panel,
 .ait-scroll-dark,
-.ait-chat-message-scroll {
+.ait-chat-message-scroll,
+.ait-chat-composer textarea {
   scrollbar-gutter:stable;
   scrollbar-width:thin;
 }
 
 .ait-scroll-page,
-.ait-scroll-panel {
+.ait-scroll-panel,
+.ait-chat-composer textarea {
   scrollbar-color:var(--ait-scroll-thumb) transparent;
 }
 
 .ait-scroll-page::-webkit-scrollbar,
-.ait-scroll-panel::-webkit-scrollbar {
+.ait-scroll-panel::-webkit-scrollbar,
+.ait-chat-composer textarea::-webkit-scrollbar {
   width:8px;
   height:8px;
 }
 
 .ait-scroll-page::-webkit-scrollbar-track,
-.ait-scroll-panel::-webkit-scrollbar-track {
+.ait-scroll-panel::-webkit-scrollbar-track,
+.ait-chat-composer textarea::-webkit-scrollbar-track {
   background:transparent;
 }
 
 .ait-scroll-page::-webkit-scrollbar-thumb,
-.ait-scroll-panel::-webkit-scrollbar-thumb {
+.ait-scroll-panel::-webkit-scrollbar-thumb,
+.ait-chat-composer textarea::-webkit-scrollbar-thumb {
   border:2px solid transparent;
   border-radius:999px;
   background:var(--ait-scroll-thumb);
@@ -175,7 +180,8 @@ button { -webkit-tap-highlight-color:transparent; }
 }
 
 .ait-scroll-page::-webkit-scrollbar-thumb:hover,
-.ait-scroll-panel::-webkit-scrollbar-thumb:hover {
+.ait-scroll-panel::-webkit-scrollbar-thumb:hover,
+.ait-chat-composer textarea::-webkit-scrollbar-thumb:hover {
   background:var(--ait-scroll-thumb-hover);
   background-clip:padding-box;
 }

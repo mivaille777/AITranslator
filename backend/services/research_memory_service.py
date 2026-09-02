@@ -86,6 +86,7 @@ class ResearchMemoryService:
             memory_store=self._store,
             research_note_service=self._research_notes,
             revision_store=reliability_store or _default_reliability_store(self._store),
+            workspace_service=self._workspaces,
         )
 
     def _workspace_note(self, workspace_id: str, note_id: str) -> ResearchNote:
@@ -111,8 +112,6 @@ class ResearchMemoryService:
                 source_fingerprint=str(getattr(note, "fingerprint", "") or ""),
             )
         except RuntimeError:
-            # Reliability metadata is derived. Failure degrades to legacy_unknown
-            # instead of failing the primary structured-memory write.
             return
 
     def persist_extraction(

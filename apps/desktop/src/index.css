@@ -143,11 +143,66 @@ button { -webkit-tap-highlight-color:transparent; }
 .ait-chat-shell > * { min-width:0; }
 .ait-chat-shell textarea { resize:none; }
 
-/* Scrollbars stay quiet until needed. */
+/*
+ * The conversation viewport owns scrolling. Reserving the scrollbar gutter
+ * prevents the message column from shifting when a long response starts to
+ * overflow, while the composer remains a separate fixed grid row.
+ */
+.ait-chat-message-scroll {
+  min-height:0;
+  overflow-y:scroll;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(71,85,105,.56) rgba(241,245,249,.78);
+}
+
+.ait-chat-message-scroll::-webkit-scrollbar {
+  width:10px;
+}
+
+.ait-chat-message-scroll::-webkit-scrollbar-track {
+  background:rgba(241,245,249,.78);
+  border-left:1px solid rgba(226,232,240,.72);
+}
+
+.ait-chat-message-scroll::-webkit-scrollbar-thumb {
+  min-height:44px;
+  border:2px solid rgba(241,245,249,.78);
+  border-radius:999px;
+  background:rgba(71,85,105,.5);
+}
+
+.ait-chat-message-scroll::-webkit-scrollbar-thumb:hover {
+  background:rgba(51,65,85,.7);
+}
+
+.ait-chat-composer {
+  min-height:96px;
+  box-shadow:0 -8px 22px rgba(15,23,42,.035);
+}
+
+/* Secondary scroll regions remain visually quiet. */
 * { scrollbar-width:thin; scrollbar-color:rgba(100,116,139,.38) transparent; }
 *::-webkit-scrollbar { width:8px; height:8px; }
 *::-webkit-scrollbar-thumb { background:rgba(100,116,139,.3); border-radius:999px; }
 *::-webkit-scrollbar-track { background:transparent; }
+
+/* Re-assert the chat scrollbar after the generic scrollbar rules above. */
+.ait-chat-message-scroll {
+  scrollbar-color:rgba(71,85,105,.56) rgba(241,245,249,.78);
+}
+.ait-chat-message-scroll::-webkit-scrollbar { width:10px; }
+.ait-chat-message-scroll::-webkit-scrollbar-track {
+  background:rgba(241,245,249,.78);
+  border-left:1px solid rgba(226,232,240,.72);
+}
+.ait-chat-message-scroll::-webkit-scrollbar-thumb {
+  min-height:44px;
+  border:2px solid rgba(241,245,249,.78);
+  border-radius:999px;
+  background:rgba(71,85,105,.5);
+}
 
 @media(max-width:767px){
   .ait-global-nav { display:none; }

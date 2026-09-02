@@ -4,18 +4,27 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from backend.api.evidence_review_dependencies import get_evidence_review_service
+from backend.api.evidence_review_dependencies import (
+    get_agent_literature_synthesis_service,
+    get_evidence_review_service,
+)
 from backend.models.evidence_review import (
+    AgentLiteratureSynthesisResponse,
     EvidenceReviewSnapshot,
     EvidenceReviewUpdateRequest,
     LiteratureSynthesisPlan,
     LiteratureSynthesisRequest,
     ReviewedEvidenceLedgerItem,
 )
+from backend.services.agent_literature_synthesis_service import AgentLiteratureSynthesisService
 from backend.services.evidence_review_service import EvidenceReviewService
 
 router = APIRouter(prefix="/api/research", tags=["evidence-review"])
 EvidenceReviewDependency = Annotated[EvidenceReviewService, Depends(get_evidence_review_service)]
+AgentLiteratureSynthesisDependency = Annotated[
+    AgentLiteratureSynthesisService,
+    Depends(get_agent_literature_synthesis_service),
+]
 
 
 def _raise_review_error(exc: Exception) -> None:
@@ -72,6 +81,24 @@ def synthesize_literature(
     try:
         return service.synthesize(workspace_id=workspace_id, query=payload.query)
     except Exception as exc:  # noqa: BLE001
+        _raise_review_error(exc)
+        raise AssertionError("unreachable")
+
+
+@router.post(
+    "/workspaces/{workspace_id}/literature-synthesis/agent",
+    response_model=AgentLiteratureSynthesisResponse,
+)
+def synthesize_literature_with_agent(
+    workspace_id: str,
+    payload: LiteratureSynthesisRequest,
+    service: AgentLiteratureSynthesisDependency,
+) -> AgentLiteratureSynthesisResponse:
+    """Generate a verified natural-language synthesis from Review Gate evidence only."""
+
+    try:
+        return service.generate(workspace_id=workspace_id, query=payload.query)
+    except Exception as exc:  # noqa: BLE001 - provider errors already degrade in service
         _raise_review_error(exc)
         raise AssertionError("unreachable")
 

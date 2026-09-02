@@ -1,5 +1,6 @@
 export type EvidenceReviewStatus = "unreviewed" | "accepted" | "rejected" | "needs_review"
 export type EvidenceMachineStatus = "supported" | "contested" | "insufficient" | "stale"
+export type AgentLiteratureSynthesisStatus = "completed" | "fallback" | "no_evidence"
 
 export interface EvidenceLedgerLink {
   evidence_id: string
@@ -60,4 +61,34 @@ export interface LiteratureSynthesisPlan {
   disagreements: LiteratureSynthesisItem[]
   excluded: LiteratureSynthesisItem[]
   draft_markdown: string
+}
+
+export interface AgentLiteratureSynthesisVerification {
+  passed: boolean
+  claim_count: number
+  cited_claim_count: number
+  supported_claim_count: number
+  unsupported_claim_count: number
+  invalid_citation_count: number
+  citation_coverage: number
+  support_rate: number
+  reason_codes: string[]
+}
+
+export interface AgentLiteratureSynthesisResponse {
+  workspace_id: string
+  query: string
+  status: AgentLiteratureSynthesisStatus
+  output_text: string
+  provider: string
+  model: string
+  prompt_id: string
+  included_count: number
+  excluded_count: number
+  evidence_count: number
+  citation_count: number
+  fallback_applied: boolean
+  fallback_reason: string
+  verification: AgentLiteratureSynthesisVerification | null
+  plan: LiteratureSynthesisPlan
 }

@@ -1,10 +1,11 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { BookOpenCheck, Check, CircleAlert, FileSearch, X } from "lucide-react"
+import { BookOpenCheck, Check, CircleAlert, FileSearch, Sparkles, X } from "lucide-react"
 
 import {
   getEvidenceReview,
   synthesizeLiterature,
+  synthesizeLiteratureWithAgent,
   updateEvidenceReview,
 } from "../../api/evidence-review"
 import type { TranslationWorkspaceController } from "../translation/useTranslationWorkspace"
@@ -37,6 +38,10 @@ export default function EvidenceReviewPanel({
     mutationFn: () => synthesizeLiterature(workspaceId, focus.trim()),
   })
 
+  const agentSynthesisMutation = useMutation({
+    mutationFn: () => synthesizeLiteratureWithAgent(workspaceId, focus.trim()),
+  })
+
   if (!workspaceId) {
     return (
       <section className="ait-surface px-5 py-4">
@@ -49,6 +54,7 @@ export default function EvidenceReviewPanel({
   }
 
   const snapshot = reviewQuery.data
+  const agentResult = agentSynthesisMutation.data
 
   return (
     <section className="ait-surface overflow-hidden">
@@ -58,10 +64,10 @@ export default function EvidenceReviewPanel({
             <BookOpenCheck size={17} />
           </div>
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-slate-400">Stage 20 · Evidence review</p>
-            <h2 className="mt-1 text-sm font-semibold text-slate-900">Review machine-grounded claims before synthesis</h2>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-slate-400">Stage 20.1 · Evidence review</p>
+            <h2 className="mt-1 text-sm font-semibold text-slate-900">Review evidence first, then let the Agent synthesize it</h2>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Human judgement and machine provenance status stay separate. Accepted claims can still be excluded later if their sources become stale.
+              The Agent receives only accepted, currently valid Evidence Ledger provenance. Generated claims are verified again before they are shown.
             </p>
           </div>
         </div>
@@ -74,7 +80,7 @@ export default function EvidenceReviewPanel({
         ) : null}
       </div>
 
-      <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
+      <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <div className="min-h-0 space-y-3">
           {reviewQuery.isLoading ? <p className="text-xs text-slate-400">Loading Evidence Ledger…</p> : null}
           {reviewQuery.isError ? <p className="text-xs text-rose-600">Unable to load Evidence Review.</p> : null}
@@ -130,7 +136,7 @@ export default function EvidenceReviewPanel({
             <p className="text-xs font-semibold">Literature synthesis</p>
           </div>
           <p className="mt-2 text-[11px] leading-5 text-slate-500">
-            Only Accepted + currently Supported claims enter consensus. Accepted + Contested claims remain explicit disagreements.
+            Accepted + Supported claims enter consensus. Accepted + Contested claims stay explicit disagreements. Everything else is excluded before model generation.
           </p>
           <input
             value={focus}
@@ -141,22 +147,62 @@ export default function EvidenceReviewPanel({
           />
           <button
             type="button"
+            onClick={() => agentSynthesisMutation.mutate()}
+            disabled={agentSynthesisMutation.isPending}
+            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-slate-700 disabled:opacity-40"
+          >
+            <Sparkles size={13} />
+            {agentSynthesisMutation.isPending ? "Generating grounded synthesis…" : "Generate grounded synthesis"}
+          </button>
+          <button
+            type="button"
             onClick={() => synthesisMutation.mutate()}
             disabled={synthesisMutation.isPending}
-            className="mt-3 w-full rounded-lg bg-slate-900 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-slate-700 disabled:opacity-40"
+            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-40"
           >
-            {synthesisMutation.isPending ? "Building synthesis…" : "Build reviewed synthesis"}
+            {synthesisMutation.isPending ? "Building plan…" : "Preview deterministic evidence plan"}
           </button>
-          {synthesisMutation.data ? (
+
+          {agentSynthesisMutation.isError ? (
+            <p className="mt-3 text-[11px] leading-5 text-rose-600">Unable to generate reviewed synthesis.</p>
+          ) : null}
+
+          {agentResult ? (
             <div className="mt-4">
-              <div className="mb-2 flex gap-2 text-[10px] text-slate-500">
+              <div className="mb-2 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                <Badge>{agentResult.status.replace("_", " ")}</Badge>
+                <Badge>{agentResult.included_count} included</Badge>
+                <Badge>{agentResult.evidence_count} evidence</Badge>
+                {agentResult.verification ? (
+                  <Badge>{Math.round(agentResult.verification.support_rate * 100)}% supported</Badge>
+                ) : null}
+              </div>
+              {agentResult.fallback_applied ? (
+                <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-4 text-amber-700">
+                  Agent generation was not released because the model or grounding verification failed. The deterministic reviewed synthesis is shown instead.
+                </div>
+              ) : null}
+              <pre className="max-h-[460px] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-white p-3 font-sans text-[11px] leading-5 text-slate-600">
+                {agentResult.output_text}
+              </pre>
+              <p className="mt-2 text-[10px] text-slate-400">
+                {agentResult.provider} · {agentResult.model}
+                {agentResult.fallback_reason ? ` · ${agentResult.fallback_reason}` : ""}
+              </p>
+            </div>
+          ) : null}
+
+          {synthesisMutation.data ? (
+            <details className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+              <summary className="cursor-pointer text-[11px] font-semibold text-slate-600">Deterministic evidence plan</summary>
+              <div className="mt-3 mb-2 flex gap-2 text-[10px] text-slate-500">
                 <Badge>{synthesisMutation.data.included_count} included</Badge>
                 <Badge>{synthesisMutation.data.excluded_count} excluded</Badge>
               </div>
-              <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-white p-3 font-sans text-[11px] leading-5 text-slate-600">
+              <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap font-sans text-[11px] leading-5 text-slate-600">
                 {synthesisMutation.data.draft_markdown}
               </pre>
-            </div>
+            </details>
           ) : null}
         </aside>
       </div>

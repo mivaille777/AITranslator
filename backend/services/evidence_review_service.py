@@ -124,19 +124,20 @@ class EvidenceReviewService:
             evidence_ids=sorted({link.evidence_id for link in links}),
         )
 
-    def synthesize(
-        self,
-        *,
-        workspace_id: str,
-        query: str = "",
-        limit: int = 100,
-    ) -> LiteratureSynthesisPlan:
-        snapshot = self.snapshot(workspace_id=workspace_id, query=query, limit=limit)
+    @classmethod
+    def build_synthesis_plan(cls, snapshot: EvidenceReviewSnapshot) -> LiteratureSynthesisPlan:
+        """Build a deterministic plan from one already-revalidated review snapshot.
+
+        Stage 20.1 reuses this method so the LLM sees exactly the same review and
+        machine-status decision that the user sees, instead of re-reading a
+        potentially different ledger snapshot between policy and generation.
+        """
+
         consensus: list[LiteratureSynthesisItem] = []
         disagreements: list[LiteratureSynthesisItem] = []
         excluded: list[LiteratureSynthesisItem] = []
         for reviewed in snapshot.items:
-            item = self._synthesis_item(reviewed)
+            item = cls._synthesis_item(reviewed)
             if item.bucket == "consensus":
                 consensus.append(item)
             elif item.bucket == "disagreement":
@@ -148,8 +149,8 @@ class EvidenceReviewService:
             return ", ".join(f"doc:{document_id}" for document_id in item.document_ids) or "source unavailable"
 
         lines = ["# Evidence-reviewed literature synthesis", ""]
-        if query.strip():
-            lines.extend([f"Focus: {query.strip()}", ""])
+        if snapshot.query.strip():
+            lines.extend([f"Focus: {snapshot.query.strip()}", ""])
         lines.append("## Consensus")
         if consensus:
             lines.extend(f"- {item.statement} [{source_label(item)}]" for item in consensus)
@@ -168,8 +169,8 @@ class EvidenceReviewService:
             ])
 
         return LiteratureSynthesisPlan(
-            workspace_id=workspace_id,
-            query=query,
+            workspace_id=snapshot.workspace_id,
+            query=snapshot.query,
             included_count=len(consensus) + len(disagreements),
             excluded_count=len(excluded),
             consensus=consensus,
@@ -177,6 +178,16 @@ class EvidenceReviewService:
             excluded=excluded,
             draft_markdown="\n".join(lines),
         )
+
+    def synthesize(
+        self,
+        *,
+        workspace_id: str,
+        query: str = "",
+        limit: int = 100,
+    ) -> LiteratureSynthesisPlan:
+        snapshot = self.snapshot(workspace_id=workspace_id, query=query, limit=limit)
+        return self.build_synthesis_plan(snapshot)
 
 
 __all__ = ["EvidenceReviewService"]

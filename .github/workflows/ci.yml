@@ -67,6 +67,10 @@ jobs:
         shell: pwsh
         run: python scripts/run_evidence_review_regression.py --report test-results/evidence-review-regression.json
 
+      - name: Run Agent literature synthesis regression
+        shell: pwsh
+        run: python scripts/run_agent_literature_synthesis_regression.py --report test-results/agent-literature-synthesis-regression.json
+
       - name: Run Agent regression benchmark
         shell: pwsh
         run: python scripts/run_agent_regression_benchmark.py --report test-results/agent-regression.json
@@ -95,6 +99,7 @@ jobs:
             test-results/cross-document-research-regression.json
             test-results/evidence-ledger-regression.json
             test-results/evidence-review-regression.json
+            test-results/agent-literature-synthesis-regression.json
             test-results/agent-regression.json
             test-results/agent-quality-protocol.json
           if-no-files-found: warn

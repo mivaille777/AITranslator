@@ -1,5 +1,6 @@
 import { apiGet, apiPatch, apiPost } from "./client"
 import type {
+  AgentLiteratureSynthesisResponse,
   EvidenceReviewSnapshot,
   EvidenceReviewStatus,
   LiteratureSynthesisPlan,
@@ -35,6 +36,16 @@ export function synthesizeLiterature(
 ): Promise<LiteratureSynthesisPlan> {
   return apiPost<LiteratureSynthesisPlan, { query: string }>(
     `/api/research/workspaces/${encodeURIComponent(workspaceId)}/literature-synthesis`,
+    { query },
+  )
+}
+
+export function synthesizeLiteratureWithAgent(
+  workspaceId: string,
+  query = "",
+): Promise<AgentLiteratureSynthesisResponse> {
+  return apiPost<AgentLiteratureSynthesisResponse, { query: string }>(
+    `/api/research/workspaces/${encodeURIComponent(workspaceId)}/literature-synthesis/agent`,
     { query },
   )
 }

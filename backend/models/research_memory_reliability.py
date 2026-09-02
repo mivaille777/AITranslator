@@ -11,6 +11,7 @@ ResearchMemorySourceStatus = Literal[
     "legacy_unknown",
     "stale",
     "orphaned",
+    "detached",
 ]
 
 
@@ -49,6 +50,7 @@ class ResearchMemoryReliabilitySummary(ResearchMemoryReliabilityContract):
     legacy_unknown_hit_count: int = Field(default=0, ge=0)
     stale_hit_count: int = Field(default=0, ge=0)
     orphaned_hit_count: int = Field(default=0, ge=0)
+    detached_hit_count: int = Field(default=0, ge=0)
     conflicted_hit_count: int = Field(default=0, ge=0)
     groundable_hit_count: int = Field(default=0, ge=0)
     provenance_resolved_count: int = Field(default=0, ge=0)
@@ -57,6 +59,7 @@ class ResearchMemoryReliabilitySummary(ResearchMemoryReliabilityContract):
     conflict_hit_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     stale_hit_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     orphaned_hit_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    detached_hit_rate: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 __all__ = [

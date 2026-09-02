@@ -114,7 +114,7 @@ def _prepare_fixture(
     workspaces, notes, memory, revisions = _services(root)
     workspace_id = workspaces.create(name=case.case_id).workspace.workspace_id
 
-    if case.fixture in {"fresh", "legacy", "stale", "orphaned", "no_match"}:
+    if case.fixture in {"fresh", "legacy", "stale", "orphaned", "detached", "no_match"}:
         note = _persist_relation(
             notes=notes,
             memory=memory,
@@ -135,40 +135,31 @@ def _prepare_fixture(
             )
         elif case.fixture == "orphaned":
             notes.delete(note.note_id)
+        elif case.fixture == "detached":
+            workspaces.detach_note(workspace_id, note.note_id)
         return memory, workspace_id
 
     if case.fixture == "single_value_conflict":
-        _persist_relation(
-            notes=notes,
-            memory=memory,
-            workspace_id=workspace_id,
-            predicate="defined_as",
-            target="Method A",
-        )
-        _persist_relation(
-            notes=notes,
-            memory=memory,
-            workspace_id=workspace_id,
-            predicate="defined_as",
-            target="Method B",
-        )
+        for target in ("Method A", "Method B"):
+            _persist_relation(
+                notes=notes,
+                memory=memory,
+                workspace_id=workspace_id,
+                predicate="defined_as",
+                target=target,
+            )
         return memory, workspace_id
 
-    if case.fixture == "multi_value":
-        _persist_relation(
-            notes=notes,
-            memory=memory,
-            workspace_id=workspace_id,
-            predicate="uses",
-            target="Method A",
-        )
-        _persist_relation(
-            notes=notes,
-            memory=memory,
-            workspace_id=workspace_id,
-            predicate="uses",
-            target="Method B",
-        )
+    if case.fixture in {"multi_value", "taxonomic_multi_value"}:
+        predicate = "uses" if case.fixture == "multi_value" else "is_a"
+        for target in ("Method A", "Method B"):
+            _persist_relation(
+                notes=notes,
+                memory=memory,
+                workspace_id=workspace_id,
+                predicate=predicate,
+                target=target,
+            )
         return memory, workspace_id
 
     if case.fixture == "entity_only":

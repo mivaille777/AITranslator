@@ -69,12 +69,12 @@ export default function AcademicDocumentWorkspacePanel({
         </div>
       </div>
 
-      <div className="grid min-h-[420px] xl:grid-cols-[260px_minmax(240px,0.75fr)_minmax(0,1.25fr)]">
-        <aside className="border-b border-slate-200/70 bg-slate-50/45 p-4 xl:border-b-0 xl:border-r">
-          <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+      <div className="grid min-h-[420px] xl:h-[clamp(480px,58vh,660px)] xl:min-h-0 xl:grid-cols-[260px_minmax(240px,0.75fr)_minmax(0,1.25fr)] xl:grid-rows-[minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col border-b border-slate-200/70 bg-slate-50/45 p-4 xl:border-b-0 xl:border-r">
+          <p className="shrink-0 px-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
             Documents · {documents.length}
           </p>
-          <div className="mt-3 space-y-1.5">
+          <div className="ait-scroll-panel mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
             {documents.length === 0 ? (
               <p className="rounded-xl border border-dashed border-slate-200 bg-white/60 p-3 text-xs leading-5 text-slate-500">
                 Import a PDF, Word, text, Markdown, or HTML document to start an academic workspace.
@@ -108,8 +108,8 @@ export default function AcademicDocumentWorkspacePanel({
           </div>
         </aside>
 
-        <aside className="border-b border-slate-200/70 p-4 xl:border-b-0 xl:border-r">
-          <div className="flex items-center justify-between gap-3 px-2">
+        <aside className="flex min-h-0 flex-col border-b border-slate-200/70 p-4 xl:border-b-0 xl:border-r">
+          <div className="flex shrink-0 items-center justify-between gap-3 px-2">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
               Outline
             </p>
@@ -119,7 +119,7 @@ export default function AcademicDocumentWorkspacePanel({
               </span>
             )}
           </div>
-          <div className="mt-3 max-h-[520px] space-y-1 overflow-y-auto pr-1">
+          <div className="ait-scroll-panel mt-3 max-h-[420px] min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1 xl:max-h-none">
             {!activeDocument ? (
               <p className="px-2 text-xs leading-5 text-slate-500">Choose a document first.</p>
             ) : activeDocument.status !== "ready" ? (
@@ -147,10 +147,10 @@ export default function AcademicDocumentWorkspacePanel({
           </div>
         </aside>
 
-        <div className="p-5 lg:p-6">
+        <div className="flex min-h-0 flex-col p-5 lg:p-6">
           {activeDocument && sectionQuery.data ? (
             <>
-              <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                     Section preview
@@ -177,21 +177,21 @@ export default function AcademicDocumentWorkspacePanel({
                 </button>
               </div>
 
-              <div className="mt-4 max-h-[420px] overflow-y-auto rounded-[18px] border border-slate-200/70 bg-slate-50/65 p-4.5">
+              <div className="ait-scroll-panel mt-4 max-h-[420px] min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-[18px] border border-slate-200/70 bg-slate-50/65 p-4.5 xl:max-h-none">
                 <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700">
                   {sectionQuery.data.text || "This section contains no extractable text."}
                 </p>
               </div>
-              <p className="mt-3 text-[11px] leading-5 text-slate-400">
+              <p className="mt-3 shrink-0 text-[11px] leading-5 text-slate-400">
                 Agent context is bounded separately from this preview. Very long sections attach only a safe leading window and are marked as incomplete context.
               </p>
             </>
           ) : sectionQuery.isPending && activeDocument?.status === "ready" ? (
-            <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-slate-500">
+            <div className="flex min-h-48 flex-1 items-center justify-center gap-2 text-sm text-slate-500">
               <LoaderCircle size={16} className="animate-spin" /> Loading section preview…
             </div>
           ) : (
-            <div className="flex min-h-48 items-center justify-center rounded-[18px] border border-dashed border-slate-200 bg-slate-50/45 p-6 text-center">
+            <div className="flex min-h-48 flex-1 items-center justify-center rounded-[18px] border border-dashed border-slate-200 bg-slate-50/45 p-6 text-center">
               <div>
                 <FileText size={24} className="mx-auto text-slate-300" />
                 <p className="mt-3 text-sm font-medium text-slate-700">Choose a ready document section.</p>

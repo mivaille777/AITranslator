@@ -45,12 +45,12 @@ export default function WorkspaceShell({ children, backendState, backendService,
 
   return (
     <WindowFrame>
-      <div className="ait-app-shell grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent text-slate-950 md:grid-cols-[208px_minmax(0,1fr)]">
+      <div className="ait-app-shell grid h-full min-h-0 grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent text-slate-950 md:grid-cols-[176px_minmax(0,1fr)] xl:grid-cols-[208px_minmax(0,1fr)]">
         <aside className="ait-global-nav min-h-0 overflow-hidden p-3 pr-0">
           <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-white/[0.08] bg-[#07101f] text-slate-200 shadow-[0_18px_48px_rgba(15,23,42,0.18)]">
             <div className="shrink-0 px-4 pb-4 pt-5">
               <div className="flex items-center gap-2.5">
-                <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-white text-sm font-semibold text-slate-950">A</span>
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-white text-sm font-semibold text-slate-950">A</span>
                 <div className="min-w-0">
                   <p className="text-[9px] font-semibold uppercase tracking-[0.22em] text-slate-500">AITranslator</p>
                   <p className="truncate text-sm font-semibold text-white">WebReBuild</p>
@@ -58,7 +58,7 @@ export default function WorkspaceShell({ children, backendState, backendService,
               </div>
             </div>
 
-            <nav className="ait-scroll-dark min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 pb-2">
+            <nav className="ait-scroll-dark min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 pb-2" aria-label="Workspace navigation">
               <div className="flex min-h-max flex-col gap-1">
                 {workspaceRoutes.map((route) => {
                   const Icon = icons[route.path]
@@ -116,7 +116,7 @@ export default function WorkspaceShell({ children, backendState, backendService,
                   : "ait-scroll-page overflow-y-auto overflow-x-hidden overscroll-contain"
               }`}
             >
-              <div className={fixedHeightRoute ? "h-full min-h-0 overflow-hidden" : "px-5 py-5 lg:px-6 lg:py-6"}>
+              <div className={fixedHeightRoute ? "h-full min-h-0 overflow-hidden" : "px-4 py-4 lg:px-5 lg:py-5 xl:px-6 xl:py-6"}>
                 {children}
               </div>
             </main>

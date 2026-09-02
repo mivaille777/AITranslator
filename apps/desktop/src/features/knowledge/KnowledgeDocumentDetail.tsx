@@ -8,7 +8,7 @@ import type { KnowledgeDocument } from "./knowledge-types"
 export function KnowledgeDocumentDetail({ document, reindexing, onClose, onReindex, onRemove }: { document: KnowledgeDocument; reindexing: boolean; onClose: () => void; onReindex: () => void; onRemove: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/25 backdrop-blur-[2px]" role="presentation" onMouseDown={onClose}>
-      <aside className="h-full w-full max-w-md overflow-y-auto border-l border-white/60 bg-white/95 p-5 shadow-[-24px_0_70px_rgba(15,23,42,0.18)]" role="dialog" aria-modal="true" aria-label={`Document details ${document.title}`} onMouseDown={(event) => event.stopPropagation()}>
+      <aside className="ait-scroll-panel h-full w-full max-w-md overflow-y-auto overscroll-contain border-l border-white/60 bg-white/95 p-5 shadow-[-24px_0_70px_rgba(15,23,42,0.18)]" role="dialog" aria-modal="true" aria-label={`Document details ${document.title}`} onMouseDown={(event) => event.stopPropagation()}>
         <header className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4"><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Knowledge document</p><h3 className="mt-1.5 truncate text-lg font-semibold text-slate-950">{document.title}</h3></div><Button variant="ghost" size="xs" aria-label="Close document details" onClick={onClose}><X size={16} /></Button></header>
         <div className="mt-5"><Badge tone={knowledgeStatusTone(document.status)}>{knowledgeStatusLabel(document.status)}</Badge></div>
         <dl className="mt-6 space-y-5">

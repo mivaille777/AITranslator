@@ -46,6 +46,7 @@ _GROUNDED_RETRIEVAL_TOOLS = frozenset(
         "search_research_notes",
         "search_research_memory",
         "analyze_cross_document_research",
+        "search_evidence_ledger",
     }
 )
 

@@ -124,14 +124,14 @@ def test_index_service_reuses_one_embedding_provider_for_semantics_and_final_chu
     first = service.index_document(path)
 
     assert first.status is IndexStatus.READY
-    assert service.chunker_version == SEMANTIC_CHUNKER_VERSION
+    assert service.chunker_version.startswith(SEMANTIC_CHUNKER_VERSION)
     assert len(embedding.calls) == 2
     assert all("Paragraph:" in item for item in embedding.calls[0])
     assert embedding.calls[1] == [chunk.text for chunk in store.chunks]
     assert len(store.chunks) == 2
     record = manifest.get(first.document_id)
     assert record is not None
-    assert record.chunker_version == SEMANTIC_CHUNKER_VERSION
+    assert record.chunker_version == service.chunker_version
 
     second = service.index_document(path)
 

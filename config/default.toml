@@ -129,6 +129,14 @@ max_pages_per_document = 64
 max_visual_items_per_document = 96
 text_candidate_pool = 20
 visual_top_k = 12
+# Stage 3.1: first retrieve a wider candidate pool with an L2-normalized
+# centroid vector, then apply ColQwen/ColPali MaxSim only to that pool.
+# Disable prefetch_enabled to recover the exact Stage 3 full-MaxSim path.
+prefetch_enabled = true
+prefetch_top_k = 48
+# If the two-stage Query API fails, retry one direct MaxSim search before
+# degrading to text-only retrieval.
+prefetch_fallback_to_full_scan = true
 fusion_top_k = 20
 rrf_k = 60
 text_weight = 1.0

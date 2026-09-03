@@ -31,6 +31,7 @@ from backend.rag.vision import (
     VisualDescriptionProvider,
     create_visual_description_provider,
 )
+from backend.rag.visual_prefetch import create_visual_vector_store
 from backend.rag.visual_retrieval import (
     QdrantVisualMultiVectorStore,
     VisualAwareIndexService,
@@ -219,7 +220,7 @@ def _build_runtime() -> RagRuntime:
             dimension=config.embedding.dimension,
             client=shared_qdrant_client,
         )
-        visual_vector_store = QdrantVisualMultiVectorStore(
+        visual_vector_store = create_visual_vector_store(
             visual_retrieval,
             client=shared_qdrant_client,
         )

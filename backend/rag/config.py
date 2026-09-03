@@ -128,7 +128,8 @@ class RagVisualRetrievalConfig(RagConfigModel):
 
     This path is isolated from the text collection. ColQwen/ColPali token
     embeddings are stored in a dedicated Qdrant MaxSim multivector collection
-    and fused with the established text pipeline only at query time.
+    and fused with the established text pipeline only at query time. Stage 3.1
+    can prefetch with a cheap pooled vector before applying MaxSim.
     """
 
     enabled: bool = False
@@ -152,6 +153,9 @@ class RagVisualRetrievalConfig(RagConfigModel):
     max_visual_items_per_document: int = Field(default=96, ge=1, le=1024)
     text_candidate_pool: int = Field(default=20, ge=1, le=200)
     visual_top_k: int = Field(default=12, ge=1, le=200)
+    prefetch_enabled: bool = True
+    prefetch_top_k: int = Field(default=48, ge=1, le=2000)
+    prefetch_fallback_to_full_scan: bool = True
     fusion_top_k: int = Field(default=20, ge=1, le=200)
     rrf_k: int = Field(default=60, ge=1, le=1000)
     text_weight: float = Field(default=1.0, gt=0.0, le=10.0)
@@ -197,6 +201,15 @@ class RagVisualRetrievalConfig(RagConfigModel):
         if normalized not in {"dot", "cosine"}:
             raise ValueError("visual retrieval distance must be one of: dot, cosine")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_prefetch_bounds(self) -> "RagVisualRetrievalConfig":
+        if self.prefetch_enabled and self.prefetch_top_k < self.visual_top_k:
+            raise ValueError(
+                "prefetch_top_k must be greater than or equal to visual_top_k "
+                "when visual prefetch is enabled"
+            )
+        return self
 
 
 class RagEmbeddingConfig(RagConfigModel):

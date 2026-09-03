@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.rag.config import RagConfig
 from backend.rag.index_manifest import IndexManifest, IndexManifestRecord, IndexStatus
 from backend.services.knowledge_library_service import KnowledgeLibraryService
 
@@ -30,7 +31,7 @@ def test_academic_workspace_builds_outline_and_section_preview(tmp_path) -> None
     service = KnowledgeLibraryService(
         index_service=object(),  # type: ignore[arg-type]
         manifest=manifest,
-        config=object(),  # type: ignore[arg-type]
+        config=RagConfig(),
         embedding_provider=object(),  # type: ignore[arg-type]
         allowed_roots=(tmp_path,),
     )
@@ -59,7 +60,7 @@ def test_academic_workspace_returns_none_for_unknown_document(tmp_path) -> None:
     service = KnowledgeLibraryService(
         index_service=object(),  # type: ignore[arg-type]
         manifest=IndexManifest(tmp_path / "manifest.json"),
-        config=object(),  # type: ignore[arg-type]
+        config=RagConfig(),
         embedding_provider=object(),  # type: ignore[arg-type]
         allowed_roots=(tmp_path,),
     )

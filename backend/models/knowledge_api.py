@@ -29,6 +29,9 @@ class KnowledgeDocumentResponse(KnowledgeApiModel):
     chunker_version: str = ""
     embedding_model: str = ""
     embedding_dimension: int = Field(default=0, ge=0)
+    structure_quality: str = "unknown"
+    section_count: int = Field(default=0, ge=0)
+    reindex_recommended: bool = False
 
 
 class KnowledgeDocumentListResponse(KnowledgeApiModel):

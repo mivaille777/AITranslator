@@ -123,6 +123,8 @@ class CompanionChatService:
                             "final_top_k": structural_intent.final_top_k,
                         }
                     )
+                    if structural_intent.name == "bibliography":
+                        retrieve_kwargs["include_references"] = True
                 retrievals.append(
                     self._retrieval_service.retrieve(
                         retrieval_query,

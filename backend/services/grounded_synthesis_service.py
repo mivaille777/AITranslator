@@ -17,6 +17,31 @@ GROUNDING_VERIFICATION_FALLBACK_PREFIX = (
 )
 
 
+def evidence_only_grounding_fallback(
+    *,
+    evidence: list[AgentEvidenceItem],
+    citations: list[AgentCitationRef],
+) -> str:
+    """Return a source-owned fallback safe for both Agent and Companion chat."""
+
+    citation_by_evidence: dict[str, str] = {}
+    for citation in citations:
+        for evidence_id in citation.evidence_ids:
+            citation_by_evidence.setdefault(evidence_id, citation.label)
+
+    lines = [GROUNDING_VERIFICATION_FALLBACK_PREFIX]
+    for item in evidence[:5]:
+        excerpt = " ".join(item.excerpt.strip().split())
+        if not excerpt:
+            continue
+        label = citation_by_evidence.get(item.evidence_id, "")
+        location = f"（{item.location}）" if item.location else ""
+        lines.append(f"- {excerpt}{location} {label}".rstrip())
+    if len(lines) == 1:
+        return NO_KNOWLEDGE_EVIDENCE_MESSAGE
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedGroundedSynthesisResult:
     answer: CompanionChatResult
@@ -92,22 +117,10 @@ class GroundedSynthesisService:
         evidence: list[AgentEvidenceItem],
         citations: list[AgentCitationRef],
     ) -> str:
-        citation_by_evidence: dict[str, str] = {}
-        for citation in citations:
-            for evidence_id in citation.evidence_ids:
-                citation_by_evidence.setdefault(evidence_id, citation.label)
-
-        lines = [GROUNDING_VERIFICATION_FALLBACK_PREFIX]
-        for item in evidence[:5]:
-            excerpt = " ".join(item.excerpt.strip().split())
-            if not excerpt:
-                continue
-            label = citation_by_evidence.get(item.evidence_id, "")
-            location = f"（{item.location}）" if item.location else ""
-            lines.append(f"- {excerpt}{location} {label}".rstrip())
-        if len(lines) == 1:
-            return NO_KNOWLEDGE_EVIDENCE_MESSAGE
-        return "\n".join(lines)
+        return evidence_only_grounding_fallback(
+            evidence=evidence,
+            citations=citations,
+        )
 
     def send_verified(
         self,
@@ -198,6 +211,7 @@ class GroundedSynthesisService:
 __all__ = [
     "GROUNDING_VERIFICATION_FALLBACK_PREFIX",
     "NO_KNOWLEDGE_EVIDENCE_MESSAGE",
+    "evidence_only_grounding_fallback",
     "GroundedSynthesisService",
     "VerifiedGroundedSynthesisResult",
 ]

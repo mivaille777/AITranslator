@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Protocol
 
 from backend.rag.config import RagAdvancedParsingConfig
@@ -54,7 +56,7 @@ class DefaultDoclingBackend:
                 "dependency to enable advanced parsing"
             ) from exc
 
-        try:
+        def convert_path(input_path: Path):
             pipeline_options = PdfPipelineOptions(
                 do_table_structure=config.table_enabled,
                 do_ocr=config.ocr_enabled,
@@ -69,7 +71,30 @@ class DefaultDoclingBackend:
                     )
                 }
             )
-            document = converter.convert(path).document
+            return converter.convert(input_path).document
+
+        try:
+            document = convert_path(path)
+        except Exception as primary_error:
+            # Some Docling/PDF-backend combinations on Windows reject an
+            # otherwise valid source solely because its path contains Unicode
+            # characters. Stage a byte-identical copy under an ASCII filename
+            # before declaring the document unparsable.
+            if path.as_posix().isascii():
+                raise RagParsingError(
+                    f"Docling failed to parse document: {path}"
+                ) from primary_error
+            try:
+                with TemporaryDirectory(prefix="aitrans-docling-") as temporary:
+                    staged_path = Path(temporary) / "document.pdf"
+                    shutil.copy2(path, staged_path)
+                    document = convert_path(staged_path)
+            except Exception as staging_error:
+                raise RagParsingError(
+                    f"Docling failed to parse document: {path}"
+                ) from staging_error
+
+        try:
             if not config.layout_enabled:
                 return DoclingConversion(text=str(document.export_to_text()))
 

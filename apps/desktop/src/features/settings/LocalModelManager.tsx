@@ -67,12 +67,13 @@ function ModelRow({ model, downloading, verifying, removing, confirmRemove, onDo
       </div>
       {busy && <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100" aria-label={`Downloading ${model.display_name}`}><span className="block h-full w-1/2 animate-pulse rounded-full bg-cyan-500" /></div>}
       {model.state === "invalid" && <p className="mt-3 rounded-[12px] bg-amber-50 px-3 py-2 text-xs text-amber-700">{model.source === "huggingface_cache" ? "The Hugging Face cache is incomplete. Download a verified AITrans copy to continue." : "The managed files failed verification. Remove the invalid directory before downloading again."} {model.error}</p>}
+      {model.installed && !model.runtime_ready && model.runtime_error && <p className="mt-3 rounded-[12px] bg-amber-50 px-3 py-2 text-xs text-amber-700">Files are present, but the backend runtime probe failed: {model.runtime_error}</p>}
     </article>
   )
 }
 
 function modelTone(model: RagModelStatus): BadgeTone {
-  if (model.state === "installed" && model.verified) return "success"
+  if (model.state === "installed" && model.verified && model.runtime_ready) return "success"
   if (model.state === "downloading") return "info"
   if (model.state === "invalid") return "danger"
   return "neutral"
@@ -80,7 +81,8 @@ function modelTone(model: RagModelStatus): BadgeTone {
 
 function modelLabel(model: RagModelStatus, busy: boolean): string {
   if (busy) return "Downloading"
-  if (model.state === "installed" && model.verified) return "Ready"
+  if (model.state === "installed" && model.verified && model.runtime_ready) return "Runtime ready"
+  if (model.state === "installed" && model.verified) return "Files ready"
   if (model.state === "invalid") return "Invalid"
   return "Not installed"
 }

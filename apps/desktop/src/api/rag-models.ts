@@ -15,6 +15,8 @@ export interface RagModelStatus {
   removable: boolean
   path: string
   disk_usage_bytes: number
+  runtime_ready?: boolean
+  runtime_error?: string
   error: string
 }
 

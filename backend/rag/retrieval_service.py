@@ -37,6 +37,7 @@ class RetrievalService:
         filters: VectorSearchFilter | None = None,
         section_hints: tuple[str, ...] = (),
         final_top_k: int | None = None,
+        include_references: bool = False,
     ) -> RetrievalResult:
         if not query or not query.strip():
             raise RagRetrievalError("retrieval query must not be empty")
@@ -45,6 +46,12 @@ class RetrievalService:
             raise ValueError("final_top_k must be positive")
 
         started = perf_counter()
+        effective_filters = filters or VectorSearchFilter()
+        if include_references and effective_filters.exclude_references:
+            effective_filters = effective_filters.model_copy(
+                update={"exclude_references": False}
+            )
+
         dense: list[RetrievalCandidate] = []
         sparse: list[RetrievalCandidate] = []
         structural: list[RetrievalCandidate] = []
@@ -61,7 +68,7 @@ class RetrievalService:
             dense = self._vector_store.search(
                 vector,
                 top_k=self._config.dense_top_k,
-                filters=filters,
+                filters=effective_filters,
             )
             dense_ms = (perf_counter() - dense_started) * 1000
         except Exception as exc:  # noqa: BLE001 - intentional degraded retrieval
@@ -72,7 +79,7 @@ class RetrievalService:
             sparse = self._sparse.search(
                 query,
                 self._config.sparse_top_k,
-                filters,
+                effective_filters,
             )
         except Exception as exc:  # noqa: BLE001 - intentional degraded retrieval
             sparse_error = str(exc) or exc.__class__.__name__
@@ -86,7 +93,7 @@ class RetrievalService:
                 structural = search_sections(
                     section_hints,
                     max(self._config.fusion_top_k, desired_top_k),
-                    filters,
+                    effective_filters,
                 )
             except Exception as exc:  # noqa: BLE001 - structural recall is additive
                 structural_error = str(exc) or exc.__class__.__name__

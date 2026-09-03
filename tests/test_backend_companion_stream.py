@@ -70,6 +70,9 @@ class GroundedStreamingCompanionChatService(StubStreamingCompanionChatService):
             tool_context="[1] GP anchors localize the search.",
         )
 
+    def stream(self, **_kwargs):
+        yield "GP anchors localize the search [1]."
+
 
 class SlowStreamingCompanionChatService:
     provider_name = "stub-ai"
@@ -150,10 +153,11 @@ def test_companion_websocket_persists_completed_knowledge_grounding(tmp_path) ->
         with client.websocket_connect("/ws/companion/chat") as websocket:
             websocket.send_json({"type": "start", "request": payload})
             accepted = websocket.receive_json()
-            websocket.receive_json()
-            websocket.receive_json()
+            delta = websocket.receive_json()
             done = websocket.receive_json()
 
+    assert delta["type"] == "delta"
+    assert delta["accumulated_text"] == "GP anchors localize the search [1]."
     assert done["type"] == "done"
     assert done["knowledge_enabled"] is True
     assert done["citations"][0]["label"] == "[1]"
@@ -163,6 +167,7 @@ def test_companion_websocket_persists_completed_knowledge_grounding(tmp_path) ->
     assert grounding.knowledge_enabled is True
     assert grounding.evidence[0].evidence_id == "evidence-1"
     assert grounding.citations[0].label == "[1]"
+    assert done["grounding_verification"]["passed"] is True
 
 
 def test_companion_websocket_cancel_commits_terminal_cancelled_message(tmp_path) -> None:

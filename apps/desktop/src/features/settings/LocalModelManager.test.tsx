@@ -60,7 +60,7 @@ describe("Local model manager", () => {
     vi.stubGlobal("fetch", fetchMock)
     renderManager()
 
-    expect(await screen.findByText("Ready")).not.toBeNull()
+    expect(await screen.findByText("Files ready")).not.toBeNull()
     expect(screen.getByText("1.0 GB · Hugging Face cache")).not.toBeNull()
     expect(screen.getByRole("button", { name: "Verify" })).not.toBeNull()
     expect(screen.queryByRole("button", { name: "Remove" })).toBeNull()

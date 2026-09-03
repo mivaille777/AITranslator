@@ -27,6 +27,8 @@ from backend.services.companion_ownership_service import (
 )
 from backend.services.conversation_grounding_service import save_message_grounding
 from backend.services.conversation_store_service import ConversationStoreService
+from backend.services.agent_claim_evidence_verifier import AgentClaimEvidenceVerifier
+from backend.services.grounded_synthesis_service import evidence_only_grounding_fallback
 
 router = APIRouter(tags=["companion-stream"])
 CompanionChatServiceDependency = Annotated[
@@ -336,6 +338,11 @@ async def stream_companion_chat(
                     )
                     accumulated.append(delta)
                     text = "".join(accumulated)
+                    # Knowledge answers are held until citations and evidence
+                    # support have been checked; emitting first would make an
+                    # unsupported statement impossible to retract from the UI.
+                    if payload.knowledge_enabled:
+                        continue
                     update_latest(text)
                     now = monotonic()
                     if (
@@ -367,6 +374,51 @@ async def stream_companion_chat(
                 )
                 grounding_evidence = tuple(getattr(grounding, "evidence", ()) or ())
                 grounding_citations = tuple(getattr(grounding, "citations", ()) or ())
+                verification_payload: dict[str, Any] | None = None
+                if payload.knowledge_enabled:
+                    verification = AgentClaimEvidenceVerifier().verify(
+                        output_text=text,
+                        evidence=grounding_evidence,
+                        citations=grounding_citations,
+                    )
+                    verification_payload = {
+                        "passed": verification.passed,
+                        "claim_count": verification.claim_count,
+                        "cited_claim_count": verification.cited_claim_count,
+                        "supported_claim_count": verification.supported_claim_count,
+                        "unsupported_claim_count": verification.unsupported_claim_count,
+                        "invalid_citation_count": verification.invalid_citation_count,
+                        "citation_coverage": verification.citation_coverage,
+                        "support_rate": verification.support_rate,
+                        "reason_codes": list(verification.reason_codes),
+                    }
+                    if not verification.passed:
+                        text = evidence_only_grounding_fallback(
+                            evidence=list(grounding_evidence),
+                            citations=list(grounding_citations),
+                        )
+                        grounding_fallback = "; ".join(
+                            part
+                            for part in (
+                                grounding_fallback,
+                                "grounding_verification_failed:",
+                                ",".join(verification.reason_codes),
+                            )
+                            if part
+                        )
+                    update_latest(text)
+                    store.update_stream(assistant_message_id, text)
+                    if text:
+                        emit(
+                            {
+                                "type": "delta",
+                                "request_id": request_id,
+                                "conversation_id": conversation_id,
+                                "message_id": assistant_message_id,
+                                "delta": text,
+                                "accumulated_text": text,
+                            }
+                        )
                 commit_terminal(
                     "complete",
                     content=text,
@@ -405,6 +457,7 @@ async def stream_companion_chat(
                         "citations": [
                             item.model_dump(mode="json") for item in grounding_citations
                         ],
+                        "grounding_verification": verification_payload,
                     }
                 )
             except Exception as exc:

@@ -21,6 +21,9 @@ export interface KnowledgeDocument {
   chunker_version: string
   embedding_model: string
   embedding_dimension: number
+  structure_quality?: string
+  section_count?: number
+  reindex_recommended?: boolean
 }
 
 export interface KnowledgeDocumentListResponse {

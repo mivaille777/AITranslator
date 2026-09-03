@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from threading import Lock
 
 from backend.rag.model_manager import ModelManager
 
 _model_manager: ModelManager | None = None
 _model_manager_lock = Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class RagModelRuntimeHealth:
+    ready: bool = False
+    error: str = ""
+
+
+_runtime_health: dict[str, RagModelRuntimeHealth] = {}
+_runtime_health_lock = Lock()
 
 
 def get_rag_model_manager() -> ModelManager:
@@ -24,4 +35,27 @@ def close_rag_model_manager() -> None:
         _model_manager = None
 
 
-__all__ = ["close_rag_model_manager", "get_rag_model_manager"]
+def get_rag_model_runtime_health(model_id: str) -> RagModelRuntimeHealth:
+    with _runtime_health_lock:
+        return _runtime_health.get(model_id, RagModelRuntimeHealth())
+
+
+def set_rag_model_runtime_health(
+    model_id: str,
+    *,
+    ready: bool,
+    error: str = "",
+) -> RagModelRuntimeHealth:
+    health = RagModelRuntimeHealth(ready=ready, error=error[:500])
+    with _runtime_health_lock:
+        _runtime_health[model_id] = health
+    return health
+
+
+__all__ = [
+    "RagModelRuntimeHealth",
+    "close_rag_model_manager",
+    "get_rag_model_manager",
+    "get_rag_model_runtime_health",
+    "set_rag_model_runtime_health",
+]

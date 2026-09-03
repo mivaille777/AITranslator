@@ -36,6 +36,11 @@ class RagModelStatusResponse(RagRuntimeContract):
     removable: bool = False
     path: str = ""
     disk_usage_bytes: int = Field(default=0, ge=0)
+    # ``verified`` means the model artifacts are complete. ``runtime_ready``
+    # is set only after this backend process has loaded the model and run a
+    # minimal inference probe.
+    runtime_ready: bool = False
+    runtime_error: str = ""
     error: str = ""
 
 

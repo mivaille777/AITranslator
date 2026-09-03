@@ -11,7 +11,7 @@ from qdrant_client.http import models as qdrant_models
 from backend.rag.config import RagVectorStoreConfig
 from backend.rag.exceptions import RagConfigurationError, RagVectorStoreError
 from backend.rag.models import DocumentChunk, RetrievalCandidate
-from backend.rag.stores.base import VectorSearchFilter
+from backend.rag.stores.base import VectorSearchFilter, is_reference_chunk
 
 _DISTANCES = {
     "cosine": qdrant_models.Distance.COSINE,
@@ -125,7 +125,10 @@ class QdrantLocalVectorStore:
                 collection_name=self.collection_name,
                 query=query_vector,
                 query_filter=self._build_filter(filters),
-                limit=top_k,
+                # Older indexes predate ``section_kind``. Fetch a bounded
+                # surplus so the in-process legacy safeguard can still return
+                # the requested number of non-reference candidates.
+                limit=top_k * 3 if filters and filters.exclude_references else top_k,
                 with_payload=True,
                 with_vectors=False,
             )
@@ -133,15 +136,19 @@ class QdrantLocalVectorStore:
             raise RagVectorStoreError("failed to search Qdrant collection") from exc
 
         candidates: list[RetrievalCandidate] = []
-        for rank, point in enumerate(response.points, start=1):
+        for point in response.points:
             chunk = self._chunk_from_payload(point.payload)
+            if filters and filters.exclude_references and is_reference_chunk(chunk):
+                continue
             candidates.append(
                 RetrievalCandidate(
                     chunk=chunk,
                     dense_score=float(point.score),
-                    rank=rank,
+                    rank=len(candidates) + 1,
                 )
             )
+            if len(candidates) >= top_k:
+                break
         return candidates
 
     def delete_document(self, document_id: str) -> None:
@@ -256,6 +263,7 @@ class QdrantLocalVectorStore:
         if filters is None:
             return None
         conditions: list[qdrant_models.FieldCondition] = []
+        must_not: list[qdrant_models.FieldCondition] = []
         if filters.document_ids:
             conditions.append(
                 qdrant_models.FieldCondition(
@@ -284,7 +292,18 @@ class QdrantLocalVectorStore:
                     match=qdrant_models.MatchValue(value=value),
                 )
             )
-        return qdrant_models.Filter(must=conditions) if conditions else None
+        if filters.exclude_references:
+            must_not.append(
+                qdrant_models.FieldCondition(
+                    key="metadata.section_kind",
+                    match=qdrant_models.MatchValue(value="references"),
+                )
+            )
+        return (
+            qdrant_models.Filter(must=conditions, must_not=must_not)
+            if conditions or must_not
+            else None
+        )
 
 
 __all__ = ["QdrantLocalVectorStore"]

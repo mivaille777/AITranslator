@@ -697,6 +697,11 @@ class StructureAwareChunker:
             "chunk_type": span.chunk_type,
             "block_types": list(span.block_types),
             "special_labels": list(span.special_labels),
+            "section_kind": (
+                "references"
+                if bool(span.section.metadata.get("reference_section"))
+                else "content"
+            ),
         }
         if span.chunk_type == "reference_group":
             metadata["reference_entry_count"] = len(span.special_labels)

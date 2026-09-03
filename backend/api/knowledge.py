@@ -50,6 +50,9 @@ def _document(record: IndexManifestRecord) -> KnowledgeDocumentResponse:
         chunker_version=record.chunker_version,
         embedding_model=record.embedding_model,
         embedding_dimension=record.embedding_dimension,
+        structure_quality=record.structure_quality,
+        section_count=record.section_count,
+        reindex_recommended=record.reindex_recommended,
     )
 
 

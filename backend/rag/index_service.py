@@ -130,6 +130,7 @@ class IndexService:
             )
             content_hash = normalized.document.content_hash
             parser_version = str(normalized.metadata.get("parser_version", ""))
+            structure_quality, reindex_recommended = self._structure_quality(normalized)
 
             if (
                 not force
@@ -183,6 +184,9 @@ class IndexService:
                 embedding_model=self._embedding_provider.model_name,
                 embedding_dimension=self._embedding_provider.dimension,
                 chunk_ids=new_chunk_ids,
+                structure_quality=structure_quality,
+                section_count=len(normalized.sections),
+                reindex_recommended=reindex_recommended,
             )
             self._manifest.upsert(record)
             return self._result(
@@ -222,6 +226,20 @@ class IndexService:
             and record.embedding_model == self._embedding_provider.model_name
             and record.embedding_dimension == self._embedding_provider.dimension
         )
+
+    @staticmethod
+    def _structure_quality(document: NormalizedDocument) -> tuple[str, bool]:
+        """Expose parsing quality instead of silently treating PDF fallback as equal."""
+
+        parser_version = str(document.metadata.get("parser_version", "")).casefold()
+        fallback = bool(document.metadata.get("advanced_parser_fallback"))
+        is_pdf = document.document.source_kind.casefold() == "pdf"
+        headings = sum(1 for section in document.sections if section.heading.strip())
+        if is_pdf and (fallback or parser_version.startswith("pypdf")):
+            return "basic", True
+        if is_pdf and headings == 0:
+            return "degraded", True
+        return "structured", False
 
     @staticmethod
     def _result(

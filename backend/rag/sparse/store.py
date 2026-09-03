@@ -11,7 +11,7 @@ from backend.rag.exceptions import RagInvariantError
 from backend.rag.models import DocumentChunk, RetrievalCandidate
 from backend.rag.sparse.bm25 import BM25Index
 from backend.rag.sparse.tokenizer import SparseTokenizer
-from backend.rag.stores.base import VectorSearchFilter
+from backend.rag.stores.base import VectorSearchFilter, is_reference_chunk
 from backend.rag.structure_retrieval import section_match_priority
 
 
@@ -110,9 +110,17 @@ class BM25SparseRetriever:
         if not any(str(item).strip() for item in headings):
             return []
 
+        normalized_headings = " ".join(headings).casefold()
+        effective_filters = filters
+        if "reference" in normalized_headings or "bibliography" in normalized_headings:
+            if filters is not None and filters.exclude_references:
+                effective_filters = filters.model_copy(
+                    update={"exclude_references": False}
+                )
+
         matches: list[tuple[int, DocumentChunk]] = []
         for chunk in self._data.chunks.values():
-            if not self._matches_filter(chunk, filters):
+            if not self._matches_filter(chunk, effective_filters):
                 continue
             priority = section_match_priority(
                 RetrievalCandidate(chunk=chunk),
@@ -229,6 +237,8 @@ class BM25SparseRetriever:
         ):
             return False
         if filters.language and chunk.language != filters.language:
+            return False
+        if filters.exclude_references and is_reference_chunk(chunk):
             return False
         return all(
             chunk.metadata.get(key) == value for key, value in filters.metadata.items()

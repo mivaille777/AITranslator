@@ -238,7 +238,13 @@ class KnowledgeLibraryService:
             return record, cached[1], cached[2]
 
         path = self.validate_source_path(self._path_from_file_uri(record.source_uri))
-        normalized = parse_document(path)
+        # The outline must use the same immutable parsing profile as indexing;
+        # otherwise a Docling-indexed PDF is misleadingly displayed as one
+        # synthetic pypdf section in the desktop UI.
+        normalized = parse_document(
+            path,
+            advanced_config=self._config.advanced_parsing,
+        )
         normalized = normalized.model_copy(
             update={
                 "document": normalized.document.model_copy(

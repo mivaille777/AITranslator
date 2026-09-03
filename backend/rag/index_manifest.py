@@ -43,6 +43,9 @@ class IndexManifestRecord(BaseModel):
     chunker_version: str = ""
     embedding_model: str = ""
     embedding_dimension: int = Field(default=0, ge=0)
+    structure_quality: str = "unknown"
+    section_count: int = Field(default=0, ge=0)
+    reindex_recommended: bool = False
     chunk_ids: list[str] = Field(default_factory=list)
     status: IndexStatus = IndexStatus.PENDING
     indexed_at: datetime | None = None
@@ -205,6 +208,9 @@ def ready_manifest_record(
     embedding_model: str,
     embedding_dimension: int,
     chunk_ids: list[str],
+    structure_quality: str = "unknown",
+    section_count: int = 0,
+    reindex_recommended: bool = False,
 ) -> IndexManifestRecord:
     return IndexManifestRecord(
         document_id=document_id,
@@ -215,6 +221,9 @@ def ready_manifest_record(
         chunker_version=chunker_version,
         embedding_model=embedding_model,
         embedding_dimension=embedding_dimension,
+        structure_quality=structure_quality,
+        section_count=section_count,
+        reindex_recommended=reindex_recommended,
         chunk_ids=chunk_ids,
         status=IndexStatus.READY,
         indexed_at=datetime.now(UTC),

@@ -24,19 +24,15 @@ chat_selection_capture_enabled = true
 
 [google_web]
 enabled = true
-# Browser-facing Google Translate only; no Google Cloud/API endpoint is used.
 endpoint = "https://translate.google.com/translate_a/single"
 timeout_ms = 8000
-# One bounded retry absorbs stale sessions and short 429/5xx bursts.
 max_retries = 1
-# Keep automatic/manual live translation from creating back-to-back web hits.
 min_interval_ms = 120
 
 [youdao_web]
 enabled = true
 endpoint = "https://dict.youdao.com/webtranslate"
 timeout_ms = 8000
-# Current WebFanyi keys are fetched lazily from /webtranslate/key.
 max_retries = 1
 min_interval_ms = 200
 
@@ -65,7 +61,6 @@ uia_timeout_ms = 250
 position_mode = "desktop_lyrics_bottom"
 font_family = "Segoe UI"
 font_size = 24
-# Legacy single-opacity key; new settings use the two fields below.
 opacity = 1.0
 background_opacity = 1.0
 text_opacity = 1.0
@@ -83,11 +78,6 @@ mouse_offset_y = 16
 enabled = true
 
 [rag.advanced_parsing]
-# Prefer structure-aware scientific PDF ingestion in the product runtime.
-# If Docling is not installed or cannot parse a PDF, indexing safely falls
-# back to the basic pypdf text-layer parser instead of failing the document.
-# Keep Docling on CPU so the laptop GPU remains available to Qwen embedding
-# and reranking immediately after document parsing.
 enabled = true
 provider = "docling"
 device = "cpu"
@@ -98,13 +88,7 @@ formula_enabled = false
 document_timeout_seconds = 120.0
 
 [rag.visual_understanding]
-# Stage 2: optional figure-to-text enrichment for retrieval. It is disabled by
-# default so missing cloud credentials or a non-vision chat model can never
-# block text RAG. When enabled, an OpenAI-compatible VLM produces a factual
-# retrieval-oriented description that is appended to the caption surrogate.
-# The existing openai_compatible credential namespace is reused. Empty model
-# and base_url values may inherit the current [ai] settings only when that
-# provider is also openai_compatible.
+# Stage 2: optional figure-to-text enrichment for the existing text RAG path.
 enabled = false
 provider = "openai_compatible"
 model = ""
@@ -115,13 +99,42 @@ timeout_seconds = 30.0
 max_retries = 1
 max_images_per_document = 24
 max_asset_bytes = 8388608
-# Omit max_tokens by default for broad OpenAI-compatible model compatibility.
-# Set a positive integer when the selected VLM supports that parameter.
-# max_output_tokens = 384
+
+[rag.visual_retrieval]
+# Stage 3: native late-interaction retrieval over rendered PDF pages / DOCX
+# pictures. Disabled by default so the existing Qwen3 + BM25 text pipeline and
+# its dependency footprint are unchanged unless explicitly enabled.
+enabled = false
+provider = "colpali_engine"
+model_family = "colqwen2_5"
+# Multilingual default suits mixed Chinese/English literature. It is loaded
+# lazily only after Stage 3 is enabled and the first visual encode is required.
+model = "tsystems/colqwen2.5-3b-multilingual-v1.0"
+model_path = ""
+device = "auto"
+precision = "default"
+dimension = 128
+batch_size = 1
+local_files_only = false
+# Preserve the training-time prefix for ColQwen2.5 checkpoints that expect it.
+query_prefix = "Query: "
+# Separate collection: never mutate the established dense-text collection.
+collection_name = "aitrans_knowledge_visual"
+storage_path = "config/rag/qdrant"
+distance = "dot"
+on_disk = false
+asset_storage_path = "config/rag/visual_pages"
+render_dpi = 144
+max_pages_per_document = 64
+max_visual_items_per_document = 96
+text_candidate_pool = 20
+visual_top_k = 12
+fusion_top_k = 20
+rrf_k = 60
+text_weight = 1.0
+visual_weight = 1.0
 
 [rag.chunking]
-# Hard structure first: section/subsection and academic special blocks define
-# non-crossable boundaries. Token values are only soft/preferred/hard guards.
 target_tokens = 420
 preferred_max_tokens = 550
 hard_max_tokens = 750
@@ -129,8 +142,6 @@ overlap_tokens = 80
 minimum_tokens = 80
 
 [rag.semantic_chunking]
-# Semantic paragraph grouping is applied only inside ordinary prose regions.
-# Table/Figure/Equation/References keep their dedicated structural strategies.
 enabled = true
 merge_similarity = 0.72
 strong_merge_similarity = 0.82
@@ -140,8 +151,6 @@ adaptive_threshold_enabled = true
 adaptive_std_factor = 1.0
 min_paragraphs_for_adaptive = 4
 centroid_window = 4
-# First production version keeps the proven sentence/token fallback from the
-# structural chunker. Sentence-level semantic fallback is a later optimization.
 semantic_sentence_fallback = false
 
 [rag.embedding]
@@ -169,9 +178,6 @@ sparse_top_k = 30
 fusion_top_k = 20
 final_top_k = 8
 fusion = "rrf"
-# Small-to-Big retrieval keeps ranked child chunks as the only true hits, then
-# expands only the top ordinary prose hits with bounded same-section neighbors
-# for synthesis. Special blocks are already self-contained and are not expanded.
 small_to_big_enabled = true
 small_to_big_top_k = 4
 small_to_big_neighbor_radius = 1

@@ -10,8 +10,6 @@ class RagConfigModel(BaseModel):
 
 
 class RagChunkingConfig(RagConfigModel):
-    # target_tokens is now a soft paragraph-group target. Structural boundaries
-    # take precedence and token limits are only used to bound grouping/fallback.
     target_tokens: int = Field(default=512, ge=1)
     preferred_max_tokens: int | None = Field(default=None, ge=1)
     hard_max_tokens: int | None = Field(default=None, ge=1)
@@ -58,17 +56,11 @@ class RagSemanticChunkingConfig(RagConfigModel):
     @model_validator(mode="after")
     def validate_semantic_thresholds(self) -> "RagSemanticChunkingConfig":
         if self.strong_split_similarity > self.merge_similarity:
-            raise ValueError(
-                "strong_split_similarity must not exceed merge_similarity"
-            )
+            raise ValueError("strong_split_similarity must not exceed merge_similarity")
         if self.merge_similarity > self.strong_merge_similarity:
-            raise ValueError(
-                "merge_similarity must not exceed strong_merge_similarity"
-            )
+            raise ValueError("merge_similarity must not exceed strong_merge_similarity")
         if self.merge_similarity > self.small_chunk_merge_similarity:
-            raise ValueError(
-                "merge_similarity must not exceed small_chunk_merge_similarity"
-            )
+            raise ValueError("merge_similarity must not exceed small_chunk_merge_similarity")
         return self
 
 
@@ -100,12 +92,7 @@ class RagAdvancedParsingConfig(RagConfigModel):
 
 
 class RagVisualUnderstandingConfig(RagConfigModel):
-    """Optional retrieval-oriented figure understanding.
-
-    This stage intentionally produces text descriptions for the existing text
-    retrieval stack. Native visual embeddings/multivectors belong to the next
-    retrieval stage and are not enabled here.
-    """
+    """Optional retrieval-oriented figure understanding."""
 
     enabled: bool = False
     provider: str = "openai_compatible"
@@ -133,6 +120,82 @@ class RagVisualUnderstandingConfig(RagConfigModel):
         normalized = value.strip().lower()
         if normalized not in {"auto", "low", "high"}:
             raise ValueError("visual understanding detail must be one of: auto, low, high")
+        return normalized
+
+
+class RagVisualRetrievalConfig(RagConfigModel):
+    """Optional native page/image late-interaction retrieval.
+
+    This path is isolated from the text collection. ColQwen/ColPali token
+    embeddings are stored in a dedicated Qdrant MaxSim multivector collection
+    and fused with the established text pipeline only at query time.
+    """
+
+    enabled: bool = False
+    provider: str = "colpali_engine"
+    model_family: str = "colqwen2_5"
+    model: str = "tsystems/colqwen2.5-3b-multilingual-v1.0"
+    model_path: str = ""
+    device: str = "auto"
+    precision: str = "default"
+    dimension: int = Field(default=128, ge=1)
+    batch_size: int = Field(default=1, ge=1, le=16)
+    local_files_only: bool = False
+    query_prefix: str = "Query: "
+    collection_name: str = Field(default="aitrans_knowledge_visual", min_length=1)
+    storage_path: str = "config/rag/qdrant"
+    distance: str = "dot"
+    on_disk: bool = False
+    asset_storage_path: str = "config/rag/visual_pages"
+    render_dpi: int = Field(default=144, ge=72, le=300)
+    max_pages_per_document: int = Field(default=64, ge=1, le=512)
+    max_visual_items_per_document: int = Field(default=96, ge=1, le=1024)
+    text_candidate_pool: int = Field(default=20, ge=1, le=200)
+    visual_top_k: int = Field(default=12, ge=1, le=200)
+    fusion_top_k: int = Field(default=20, ge=1, le=200)
+    rrf_k: int = Field(default=60, ge=1, le=1000)
+    text_weight: float = Field(default=1.0, gt=0.0, le=10.0)
+    visual_weight: float = Field(default=1.0, gt=0.0, le=10.0)
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        normalized = value.strip().lower().replace("-", "_")
+        if normalized != "colpali_engine":
+            raise ValueError("visual retrieval provider must be colpali_engine")
+        return normalized
+
+    @field_validator("model_family")
+    @classmethod
+    def validate_model_family(cls, value: str) -> str:
+        normalized = value.strip().lower().replace("-", "_").replace(".", "_")
+        aliases = {"colqwen2_5": "colqwen2_5", "colqwen25": "colqwen2_5", "colqwen2": "colqwen2", "colpali": "colpali"}
+        if normalized not in aliases:
+            raise ValueError("visual retrieval model_family must be one of: colqwen2_5, colqwen2, colpali")
+        return aliases[normalized]
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"auto", "cuda", "cpu", "mps"}:
+            raise ValueError("visual retrieval device must be one of: auto, cuda, cpu, mps")
+        return normalized
+
+    @field_validator("precision")
+    @classmethod
+    def validate_precision(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"default", "fp16", "bf16"}:
+            raise ValueError("visual retrieval precision must be one of: default, fp16, bf16")
+        return normalized
+
+    @field_validator("distance")
+    @classmethod
+    def validate_distance(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"dot", "cosine"}:
+            raise ValueError("visual retrieval distance must be one of: dot, cosine")
         return normalized
 
 
@@ -211,16 +274,11 @@ class RagRerankerConfig(RagConfigModel):
 
 class RagConfig(RagConfigModel):
     enabled: bool = True
-    advanced_parsing: RagAdvancedParsingConfig = Field(
-        default_factory=RagAdvancedParsingConfig
-    )
-    visual_understanding: RagVisualUnderstandingConfig = Field(
-        default_factory=RagVisualUnderstandingConfig
-    )
+    advanced_parsing: RagAdvancedParsingConfig = Field(default_factory=RagAdvancedParsingConfig)
+    visual_understanding: RagVisualUnderstandingConfig = Field(default_factory=RagVisualUnderstandingConfig)
+    visual_retrieval: RagVisualRetrievalConfig = Field(default_factory=RagVisualRetrievalConfig)
     chunking: RagChunkingConfig = Field(default_factory=RagChunkingConfig)
-    semantic_chunking: RagSemanticChunkingConfig = Field(
-        default_factory=RagSemanticChunkingConfig
-    )
+    semantic_chunking: RagSemanticChunkingConfig = Field(default_factory=RagSemanticChunkingConfig)
     embedding: RagEmbeddingConfig = Field(default_factory=RagEmbeddingConfig)
     vector_store: RagVectorStoreConfig = Field(default_factory=RagVectorStoreConfig)
     retrieval: RagRetrievalConfig = Field(default_factory=RagRetrievalConfig)
@@ -236,5 +294,6 @@ __all__ = [
     "RagRetrievalConfig",
     "RagSemanticChunkingConfig",
     "RagVectorStoreConfig",
+    "RagVisualRetrievalConfig",
     "RagVisualUnderstandingConfig",
 ]

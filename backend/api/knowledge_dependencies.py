@@ -7,11 +7,17 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
+from qdrant_client import QdrantClient
+
 from app.infrastructure.paths import data_root
 from app.infrastructure.settings import SettingsManager
 from backend.api.rag_model_dependencies import get_rag_model_manager
 from backend.rag.chunking import StructureAwareChunker
-from backend.rag.config import RagConfig, RagVisualUnderstandingConfig
+from backend.rag.config import (
+    RagConfig,
+    RagVisualRetrievalConfig,
+    RagVisualUnderstandingConfig,
+)
 from backend.rag.embeddings import EmbeddingProvider, create_embedding_provider
 from backend.rag.index_manifest import IndexManifest
 from backend.rag.index_service import IndexService
@@ -24,6 +30,14 @@ from backend.rag.stores import QdrantLocalVectorStore
 from backend.rag.vision import (
     VisualDescriptionProvider,
     create_visual_description_provider,
+)
+from backend.rag.visual_retrieval import (
+    QdrantVisualMultiVectorStore,
+    VisualAwareIndexService,
+    VisualEmbeddingProvider,
+    VisualIndexCoordinator,
+    VisualRetrievalService,
+    create_visual_embedding_provider,
 )
 from backend.services.knowledge_library_service import (
     DEFAULT_KNOWLEDGE_MAX_FILE_BYTES,
@@ -38,10 +52,13 @@ class RagRuntime:
     vector_store: QdrantLocalVectorStore
     sparse_retriever: BM25SparseRetriever
     manifest: IndexManifest
-    retrieval_service: RetrievalService
-    index_service: IndexService
+    retrieval_service: RetrievalService | VisualRetrievalService
+    index_service: IndexService | VisualAwareIndexService
     library_service: KnowledgeLibraryService
     visual_description_provider: VisualDescriptionProvider | None = None
+    visual_embedding_provider: VisualEmbeddingProvider | None = None
+    visual_vector_store: QdrantVisualMultiVectorStore | None = None
+    shared_qdrant_client: QdrantClient | None = None
 
 
 _runtime: RagRuntime | None = None
@@ -63,21 +80,12 @@ def _allowed_roots() -> tuple[Path, ...]:
 def _max_file_bytes() -> int:
     configured = os.getenv("AITRANS_KNOWLEDGE_MAX_FILE_BYTES", "").strip()
     try:
-        return (
-            max(1, int(configured)) if configured else DEFAULT_KNOWLEDGE_MAX_FILE_BYTES
-        )
+        return max(1, int(configured)) if configured else DEFAULT_KNOWLEDGE_MAX_FILE_BYTES
     except ValueError:
         return DEFAULT_KNOWLEDGE_MAX_FILE_BYTES
 
 
 def _resolve_runtime_storage_path(configured_path: str | Path) -> Path:
-    """Resolve RAG state independently of the process working directory.
-
-    Development launches the backend from ``apps/desktop`` while packaged
-    builds can start from arbitrary working directories. Relative RAG paths
-    therefore belong under the application's writable data root, not cwd.
-    """
-
     candidate = Path(configured_path).expanduser()
     if candidate.is_absolute():
         return candidate.resolve()
@@ -85,13 +93,6 @@ def _resolve_runtime_storage_path(configured_path: str | Path) -> Path:
 
 
 def _build_document_parser(config: RagConfig):
-    """Bind document parsing to the immutable runtime parsing profile.
-
-    ``parse_document`` keeps safe library defaults, while the product runtime can
-    opt into Docling for PDF layout/section recovery. A deep copy prevents later
-    settings mutation from changing an active indexing run halfway through.
-    """
-
     advanced_config = config.advanced_parsing.model_copy(deep=True)
     return partial(parse_document, advanced_config=advanced_config)
 
@@ -148,43 +149,93 @@ def _resolve_visual_understanding_config(
     return resolved.model_copy(update=inherited, deep=True)
 
 
+def _resolve_visual_retrieval_config(
+    config: RagVisualRetrievalConfig,
+) -> RagVisualRetrievalConfig:
+    """Resolve native visual retrieval overrides without loading the model."""
+
+    updates: dict[str, Any] = {}
+    env_enabled = _env_bool("AITRANS_RAG_VISUAL_RETRIEVAL_ENABLED")
+    if env_enabled is not None:
+        updates["enabled"] = env_enabled
+    for env_name, field in (
+        ("AITRANS_RAG_VISUAL_MODEL", "model"),
+        ("AITRANS_RAG_VISUAL_MODEL_PATH", "model_path"),
+        ("AITRANS_RAG_VISUAL_DEVICE", "device"),
+    ):
+        value = os.getenv(env_name, "").strip()
+        if value:
+            updates[field] = value
+    return config.model_copy(update=updates, deep=True)
+
+
 def _build_runtime() -> RagRuntime:
     settings = SettingsManager().data
     raw_rag = settings.get("rag", {})
     config = RagConfig.model_validate(raw_rag if isinstance(raw_rag, dict) else {})
-    visual_config = _resolve_visual_understanding_config(
+
+    visual_understanding = _resolve_visual_understanding_config(
         config.visual_understanding,
         settings,
     )
-    config = config.model_copy(
-        update={"visual_understanding": visual_config},
-        deep=True,
-    )
-    visual_provider = create_visual_description_provider(visual_config)
+    visual_retrieval = _resolve_visual_retrieval_config(config.visual_retrieval)
 
-    model_manager = get_rag_model_manager()
-    embedding = create_embedding_provider(
-        config.embedding,
-        model_manager=model_manager,
-    )
-    resolved_storage_path = _resolve_runtime_storage_path(
-        config.vector_store.storage_path
-    )
+    resolved_storage_path = _resolve_runtime_storage_path(config.vector_store.storage_path)
     vector_store_config = config.vector_store.model_copy(
         update={"storage_path": str(resolved_storage_path)}
     )
-    vector_store = QdrantLocalVectorStore(
-        vector_store_config,
-        dimension=config.embedding.dimension,
+    visual_retrieval = visual_retrieval.model_copy(
+        update={
+            "storage_path": str(resolved_storage_path),
+            "asset_storage_path": str(
+                _resolve_runtime_storage_path(visual_retrieval.asset_storage_path)
+            ),
+        },
+        deep=True,
     )
+    config = config.model_copy(
+        update={
+            "visual_understanding": visual_understanding,
+            "visual_retrieval": visual_retrieval,
+            "vector_store": vector_store_config,
+        },
+        deep=True,
+    )
+
+    visual_description_provider = create_visual_description_provider(visual_understanding)
+    visual_embedding_provider = create_visual_embedding_provider(visual_retrieval)
+
+    model_manager = get_rag_model_manager()
+    embedding = create_embedding_provider(config.embedding, model_manager=model_manager)
+
+    shared_qdrant_client: QdrantClient | None = None
+    visual_vector_store: QdrantVisualMultiVectorStore | None = None
+    if visual_retrieval.enabled:
+        # Qdrant Local permits one storage owner. Share one client across the
+        # text and native-visual collections only when Stage 3 is enabled.
+        shared_qdrant_client = QdrantClient(path=str(resolved_storage_path))
+        vector_store = QdrantLocalVectorStore(
+            vector_store_config,
+            dimension=config.embedding.dimension,
+            client=shared_qdrant_client,
+        )
+        visual_vector_store = QdrantVisualMultiVectorStore(
+            visual_retrieval,
+            client=shared_qdrant_client,
+        )
+    else:
+        # Preserve the pre-Stage-3 object lifecycle exactly when disabled.
+        vector_store = QdrantLocalVectorStore(
+            vector_store_config,
+            dimension=config.embedding.dimension,
+        )
+
     state_directory = resolved_storage_path.parent
     sparse = BM25SparseRetriever(state_directory / "bm25_index.json")
     manifest = IndexManifest(state_directory / "index_manifest.json")
-    # Index operations are not backed by a durable worker queue. Any persisted
-    # parsing/chunking/embedding/indexing state loaded by a fresh backend is an
-    # interrupted operation and must not be exposed as permanently active.
     manifest.recover_interrupted_operations()
-    retrieval = RetrievalService(
+
+    base_retrieval = RetrievalService(
         embedding_provider=embedding,
         vector_store=vector_store,
         sparse_retriever=sparse,
@@ -194,24 +245,44 @@ def _build_runtime() -> RagRuntime:
             model_manager=model_manager,
         ),
     )
+    retrieval: RetrievalService | VisualRetrievalService = base_retrieval
+    if visual_retrieval.enabled and visual_embedding_provider and visual_vector_store:
+        retrieval = VisualRetrievalService(
+            base=base_retrieval,
+            provider=visual_embedding_provider,
+            store=visual_vector_store,
+            config=visual_retrieval,
+            default_final_top_k=config.retrieval.final_top_k,
+        )
+
     structural_chunker = StructureAwareChunker(config.chunking)
     chunker = SemanticStructureAwareChunker(
         base_chunker=structural_chunker,
         semantic_config=config.semantic_chunking,
         embedding_provider=embedding,
     )
-    index = IndexService(
+    base_index = IndexService(
         chunker=chunker,
         embedding_provider=embedding,
         vector_store=vector_store,
         sparse_retriever=sparse,
         manifest=manifest,
         parser=_build_document_parser(config),
-        visual_description_provider=visual_provider,
-        visual_understanding_config=visual_config,
+        visual_description_provider=visual_description_provider,
+        visual_understanding_config=visual_understanding,
     )
+    index: IndexService | VisualAwareIndexService = base_index
+    if visual_retrieval.enabled and visual_embedding_provider and visual_vector_store:
+        coordinator = VisualIndexCoordinator(
+            config=visual_retrieval,
+            provider=visual_embedding_provider,
+            store=visual_vector_store,
+            manifest=manifest,
+        )
+        index = VisualAwareIndexService(base_index, coordinator, manifest)
+
     library = KnowledgeLibraryService(
-        index_service=index,
+        index_service=index,  # type: ignore[arg-type] - protocol-compatible sidecar wrapper
         manifest=manifest,
         config=config,
         embedding_provider=embedding,
@@ -227,7 +298,10 @@ def _build_runtime() -> RagRuntime:
         retrieval_service=retrieval,
         index_service=index,
         library_service=library,
-        visual_description_provider=visual_provider,
+        visual_description_provider=visual_description_provider,
+        visual_embedding_provider=visual_embedding_provider,
+        visual_vector_store=visual_vector_store,
+        shared_qdrant_client=shared_qdrant_client,
     )
 
 
@@ -241,7 +315,7 @@ def get_rag_runtime() -> RagRuntime:
         return _runtime
 
 
-def get_retrieval_service() -> RetrievalService:
+def get_retrieval_service() -> RetrievalService | VisualRetrievalService:
     return get_rag_runtime().retrieval_service
 
 
@@ -254,10 +328,20 @@ def close_rag_runtime() -> None:
     with _runtime_lock:
         runtime = _runtime
         _runtime = None
-    if runtime is not None:
-        close = getattr(runtime.visual_description_provider, "close", None)
+    if runtime is None:
+        return
+
+    for provider in (
+        runtime.visual_description_provider,
+        runtime.visual_embedding_provider,
+    ):
+        close = getattr(provider, "close", None)
         if callable(close):
             close()
+
+    if runtime.shared_qdrant_client is not None:
+        runtime.shared_qdrant_client.close()
+    else:
         close = getattr(runtime.vector_store, "close", None)
         if callable(close):
             close()

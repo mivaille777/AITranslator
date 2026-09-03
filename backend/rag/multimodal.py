@@ -40,9 +40,23 @@ def _source_uri(source: str | Path) -> str:
     return Path(value).expanduser().resolve().as_uri()
 
 
-def _asset_directory(source: str | Path, asset_root: str | Path | None = None) -> Path:
+def _document_asset_root(
+    source: str | Path,
+    asset_root: str | Path | None = None,
+) -> Path:
     identity = sha256(_source_uri(source).casefold().encode("utf-8")).hexdigest()[:24]
     return _asset_root(asset_root) / f"doc_{identity}"
+
+
+def _asset_directory(
+    source: str | Path,
+    asset_root: str | Path | None = None,
+    *,
+    content_hash: str = "",
+) -> Path:
+    root = _document_asset_root(source, asset_root)
+    fingerprint = (content_hash or "unversioned").strip()[:24]
+    return root / fingerprint
 
 
 def _safe_extension(name: str, *, fallback: str = ".bin") -> str:
@@ -289,14 +303,19 @@ def extract_visual_elements(
     path = Path(source).expanduser().resolve()
     if path.suffix.lower() not in {".pdf", ".docx"}:
         return []
-    directory = _asset_directory(path, asset_root)
-    shutil.rmtree(directory, ignore_errors=True)
+    directory = _asset_directory(
+        path,
+        asset_root,
+        content_hash=document.document.content_hash,
+    )
     try:
         if path.suffix.lower() == ".pdf":
             return _extract_pdf_elements(path, document, directory)
         return _extract_docx_elements(path, document, directory)
     except Exception:
-        shutil.rmtree(directory, ignore_errors=True)
+        # Keep the previously committed content-addressed assets intact. A
+        # failed extraction must not invalidate visual evidence referenced by
+        # the last successful index.
         return []
 
 
@@ -419,7 +438,7 @@ def delete_document_assets(
 ) -> None:
     """Remove persisted visual assets for one indexed source."""
 
-    shutil.rmtree(_asset_directory(source, asset_root), ignore_errors=True)
+    shutil.rmtree(_document_asset_root(source, asset_root), ignore_errors=True)
 
 
 __all__ = [

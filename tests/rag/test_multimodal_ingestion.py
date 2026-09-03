@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
+import pytest
 from docx import Document
 from docx.shared import Inches
 
@@ -135,3 +136,36 @@ def test_augmentation_keeps_text_contract_and_marks_visual_mode(tmp_path: Path) 
     assert augmented.metadata["multimodal_extraction_enabled"] is True
     assert augmented.metadata["visual_content_mode"] == "surrogate_text_and_asset"
     assert augmented.metadata["image_understanding_enabled"] is False
+
+
+def test_failed_extraction_preserves_last_committed_asset(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.rag import multimodal as multimodal_module
+
+    source = tmp_path / "paper.docx"
+    source.write_bytes(b"broken-on-purpose")
+    normalized = _normalized(source, source_kind="docx")
+    asset_dir = multimodal_module._asset_directory(
+        source,
+        tmp_path / "assets",
+        content_hash=normalized.document.content_hash,
+    )
+    asset_dir.mkdir(parents=True)
+    previous_asset = asset_dir / "element_previous.png"
+    previous_asset.write_bytes(_TINY_PNG)
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("synthetic extraction failure")
+
+    monkeypatch.setattr(multimodal_module, "_extract_docx_elements", fail)
+
+    elements = extract_visual_elements(
+        source,
+        normalized,
+        asset_root=tmp_path / "assets",
+    )
+
+    assert elements == []
+    assert previous_asset.exists()

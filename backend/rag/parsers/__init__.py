@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.rag.config import RagAdvancedParsingConfig
 from backend.rag.exceptions import UnsupportedDocumentTypeError
 from backend.rag.models import NormalizedDocument
+from backend.rag.multimodal import augment_document_with_visual_elements
 from backend.rag.parsers.base import DocumentParser
 from backend.rag.parsers.docling import (
     AdvancedParserWithFallback,
@@ -48,7 +49,8 @@ def parse_document(
     *,
     advanced_config: RagAdvancedParsingConfig | None = None,
 ) -> NormalizedDocument:
-    return get_parser_for_path(source, advanced_config=advanced_config).parse(source)
+    parsed = get_parser_for_path(source, advanced_config=advanced_config).parse(source)
+    return augment_document_with_visual_elements(parsed, source)
 
 
 __all__ = [

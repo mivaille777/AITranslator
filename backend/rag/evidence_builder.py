@@ -68,6 +68,7 @@ def build_evidence_item(
     """Map one retrieval candidate to a stable Agent evidence contract."""
 
     chunk = candidate.chunk
+    modality = str(chunk.metadata.get("modality", "text") or "text")
     metadata = _json_safe(
         {
             "retrieval_strategy": retrieval_strategy,
@@ -76,6 +77,14 @@ def build_evidence_item(
             "rank": candidate.rank,
             "page_number": chunk.page_number,
             "section_heading": chunk.section_heading,
+            "modality": modality,
+            "element_id": chunk.metadata.get("element_id", ""),
+            "asset_uri": chunk.metadata.get("asset_uri", ""),
+            "bbox": chunk.metadata.get("bbox"),
+            "caption": chunk.metadata.get("caption", ""),
+            "visual_grounding_available": bool(
+                chunk.metadata.get("visual_grounding_available", False)
+            ),
             "scores": {
                 "rerank": candidate.rerank_score,
                 "fusion": candidate.fusion_score,

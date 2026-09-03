@@ -20,6 +20,11 @@ from backend.rag.index_manifest import (
     ready_manifest_record,
 )
 from backend.rag.models import NormalizedDocument
+from backend.rag.multimodal import (
+    MULTIMODAL_INDEX_VERSION,
+    build_multimodal_chunks,
+    delete_document_assets,
+)
 from backend.rag.parsers import parse_document
 from backend.rag.sparse.store import SparseRetriever
 from backend.rag.stores.base import VectorStore
@@ -62,7 +67,8 @@ class IndexService:
     @property
     def chunker_version(self) -> str:
         configured = str(getattr(self._chunker, "version", "") or "").strip()
-        return configured or CHUNKER_VERSION
+        base_version = configured or CHUNKER_VERSION
+        return f"{base_version}+{MULTIMODAL_INDEX_VERSION}"
 
     def index_document(self, path: str | Path) -> IndexDocumentResult:
         return self._index_document(path, force=False)
@@ -90,6 +96,8 @@ class IndexService:
         self._vector_store.delete_document(document_id)
         if self._sparse_retriever is not None:
             self._sparse_retriever.delete_document(document_id)
+        if record.source_uri:
+            delete_document_assets(record.source_uri)
         self._manifest.delete(document_id)
         return True
 
@@ -125,7 +133,11 @@ class IndexService:
                             "document_id": document_id,
                             "source_uri": source_uri,
                         }
-                    )
+                    ),
+                    "elements": [
+                        element.model_copy(update={"document_id": document_id})
+                        for element in normalized.elements
+                    ],
                 }
             )
             content_hash = normalized.document.content_hash
@@ -148,7 +160,13 @@ class IndexService:
                 )
 
             self._manifest.mark_status(document_id, IndexStatus.CHUNKING)
-            chunks = self._chunker.chunk(normalized)
+            text_chunks = self._chunker.chunk(normalized)
+            multimodal_chunks = build_multimodal_chunks(
+                normalized,
+                start_index=len(text_chunks),
+                chunker_version=self.chunker_version,
+            )
+            chunks = [*text_chunks, *multimodal_chunks]
             if not chunks:
                 raise ValueError("document produced no indexable chunks")
 

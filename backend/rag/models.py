@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from hashlib import sha256
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -55,11 +55,37 @@ class DocumentPage(RagContractModel):
         return self
 
 
+DocumentModality = Literal["text", "picture", "table", "formula", "page"]
+
+
+class DocumentElement(RagContractModel):
+    """One addressable multimodal element extracted from a source document.
+
+    ``surrogate_text`` is the retrieval representation. ``asset_uri`` points to
+    the original visual evidence and is deliberately kept out of vector payload
+    bytes so Qdrant stores only metadata, never encoded images.
+    """
+
+    element_id: str = Field(min_length=1)
+    document_id: str = Field(min_length=1)
+    modality: DocumentModality
+    surrogate_text: str = Field(min_length=1)
+    page_number: int | None = Field(default=None, ge=1)
+    bbox: tuple[float, float, float, float] | None = None
+    section_path: list[str] = Field(default_factory=list)
+    caption: str = ""
+    asset_uri: str = ""
+    parent_id: str = ""
+    related_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class NormalizedDocument(RagContractModel):
     document: KnowledgeDocument
     text: str = ""
     sections: list[DocumentSection] = Field(default_factory=list)
     pages: list[DocumentPage] = Field(default_factory=list)
+    elements: list[DocumentElement] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -174,6 +200,8 @@ def build_stable_chunk_id(
 
 __all__ = [
     "DocumentChunk",
+    "DocumentElement",
+    "DocumentModality",
     "DocumentPage",
     "DocumentSection",
     "KnowledgeDocument",

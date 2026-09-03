@@ -58,6 +58,8 @@ from backend.rag.model_manager import (
 )
 from backend.rag.models import (
     DocumentChunk,
+    DocumentElement,
+    DocumentModality,
     DocumentPage,
     DocumentSection,
     KnowledgeDocument,
@@ -66,6 +68,12 @@ from backend.rag.models import (
     RetrievalContextWindow,
     RetrievalResult,
     build_stable_chunk_id,
+)
+from backend.rag.multimodal import (
+    MULTIMODAL_INDEX_VERSION,
+    augment_document_with_visual_elements,
+    build_multimodal_chunks,
+    extract_visual_elements,
 )
 from backend.rag.parsers import (
     AdvancedParserWithFallback,
@@ -100,12 +108,15 @@ __all__ = [
     "BASELINE_VARIANT",
     "CHUNKER_VERSION",
     "EMBEDDING_MODEL_ID",
+    "MULTIMODAL_INDEX_VERSION",
     "RERANKER_MODEL_ID",
     "SEMANTIC_CHUNKER_VERSION",
     "AdvancedParserWithFallback",
     "CitationService",
     "DoclingDocumentParser",
     "DocumentChunk",
+    "DocumentElement",
+    "DocumentModality",
     "DocumentPage",
     "DocumentParagraphNode",
     "DocumentSection",
@@ -164,10 +175,12 @@ __all__ = [
     "TokenCounter",
     "TransformersTokenCounter",
     "UnsupportedDocumentTypeError",
+    "augment_document_with_visual_elements",
     "benchmark_embedding_batches",
     "build_agent_evidence",
     "build_evidence_citations",
     "build_evidence_item",
+    "build_multimodal_chunks",
     "build_stable_chunk_id",
     "chunk_document",
     "compare_performance_candidates",
@@ -175,6 +188,7 @@ __all__ = [
     "create_embedding_provider",
     "default_models_root",
     "evaluate_rag",
+    "extract_visual_elements",
     "get_parser_for_path",
     "load_evaluation_dataset",
     "load_evaluation_predictions",

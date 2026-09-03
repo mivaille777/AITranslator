@@ -99,6 +99,43 @@ class RagAdvancedParsingConfig(RagConfigModel):
         return normalized
 
 
+class RagVisualUnderstandingConfig(RagConfigModel):
+    """Optional retrieval-oriented figure understanding.
+
+    This stage intentionally produces text descriptions for the existing text
+    retrieval stack. Native visual embeddings/multivectors belong to the next
+    retrieval stage and are not enabled here.
+    """
+
+    enabled: bool = False
+    provider: str = "openai_compatible"
+    model: str = ""
+    base_url: str = ""
+    inherit_ai_settings: bool = True
+    detail: str = "auto"
+    timeout_seconds: float = Field(default=30.0, gt=0.0, le=300.0)
+    max_retries: int = Field(default=1, ge=0, le=5)
+    max_images_per_document: int = Field(default=24, ge=1, le=256)
+    max_asset_bytes: int = Field(default=8 * 1024 * 1024, ge=1024)
+    max_output_tokens: int | None = Field(default=None, ge=1, le=4096)
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value: str) -> str:
+        normalized = value.strip().lower().replace("-", "_")
+        if normalized != "openai_compatible":
+            raise ValueError("visual understanding provider must be openai_compatible")
+        return normalized
+
+    @field_validator("detail")
+    @classmethod
+    def validate_detail(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"auto", "low", "high"}:
+            raise ValueError("visual understanding detail must be one of: auto, low, high")
+        return normalized
+
+
 class RagEmbeddingConfig(RagConfigModel):
     provider: str = "qwen3"
     model: str = "Qwen/Qwen3-Embedding-0.6B"
@@ -177,6 +214,9 @@ class RagConfig(RagConfigModel):
     advanced_parsing: RagAdvancedParsingConfig = Field(
         default_factory=RagAdvancedParsingConfig
     )
+    visual_understanding: RagVisualUnderstandingConfig = Field(
+        default_factory=RagVisualUnderstandingConfig
+    )
     chunking: RagChunkingConfig = Field(default_factory=RagChunkingConfig)
     semantic_chunking: RagSemanticChunkingConfig = Field(
         default_factory=RagSemanticChunkingConfig
@@ -196,4 +236,5 @@ __all__ = [
     "RagRetrievalConfig",
     "RagSemanticChunkingConfig",
     "RagVectorStoreConfig",
+    "RagVisualUnderstandingConfig",
 ]

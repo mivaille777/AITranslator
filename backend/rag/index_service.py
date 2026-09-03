@@ -12,6 +12,7 @@ from urllib.request import url2pathname
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.rag.chunking import CHUNKER_VERSION, StructureAwareChunker
+from backend.rag.config import RagVisualUnderstandingConfig
 from backend.rag.embeddings.base import EmbeddingProvider
 from backend.rag.index_manifest import (
     IndexManifest,
@@ -28,6 +29,11 @@ from backend.rag.multimodal import (
 from backend.rag.parsers import parse_document
 from backend.rag.sparse.store import SparseRetriever
 from backend.rag.stores.base import VectorStore
+from backend.rag.vision import (
+    VisualDescriptionProvider,
+    enrich_document_with_visual_descriptions,
+    visual_description_index_version,
+)
 
 ParseDocument = Callable[[str | Path], NormalizedDocument]
 
@@ -45,7 +51,7 @@ class IndexDocumentResult(BaseModel):
 
 
 class IndexService:
-    """Coordinate parse, chunk, embedding, and persistent vector indexing."""
+    """Coordinate parse, visual enrichment, chunking, embedding, and indexing."""
 
     def __init__(
         self,
@@ -56,6 +62,8 @@ class IndexService:
         manifest: IndexManifest,
         parser: ParseDocument = parse_document,
         sparse_retriever: SparseRetriever | None = None,
+        visual_description_provider: VisualDescriptionProvider | None = None,
+        visual_understanding_config: RagVisualUnderstandingConfig | None = None,
     ) -> None:
         self._chunker = chunker
         self._embedding_provider = embedding_provider
@@ -63,12 +71,21 @@ class IndexService:
         self._manifest = manifest
         self._parser = parser
         self._sparse_retriever = sparse_retriever
+        self._visual_description_provider = visual_description_provider
+        self._visual_understanding_config = (
+            visual_understanding_config.model_copy(deep=True)
+            if visual_understanding_config is not None
+            else RagVisualUnderstandingConfig()
+        )
 
     @property
     def chunker_version(self) -> str:
         configured = str(getattr(self._chunker, "version", "") or "").strip()
         base_version = configured or CHUNKER_VERSION
-        return f"{base_version}+{MULTIMODAL_INDEX_VERSION}"
+        visual_version = visual_description_index_version(
+            self._visual_understanding_config
+        )
+        return f"{base_version}+{MULTIMODAL_INDEX_VERSION}+{visual_version}"
 
     def index_document(self, path: str | Path) -> IndexDocumentResult:
         return self._index_document(path, force=False)
@@ -158,6 +175,15 @@ class IndexService:
                     content_hash=content_hash,
                     reused_existing=True,
                 )
+
+            # VLM work is deliberately after the reuse check: unchanged documents
+            # must not pay for repeated image descriptions. Each image degrades
+            # independently to its caption-based surrogate on provider failure.
+            normalized = enrich_document_with_visual_descriptions(
+                normalized,
+                config=self._visual_understanding_config,
+                provider=self._visual_description_provider,
+            )
 
             self._manifest.mark_status(document_id, IndexStatus.CHUNKING)
             text_chunks = self._chunker.chunk(normalized)

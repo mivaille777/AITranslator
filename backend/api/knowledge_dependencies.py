@@ -5,12 +5,13 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from threading import Lock
+from typing import Any
 
 from app.infrastructure.paths import data_root
 from app.infrastructure.settings import SettingsManager
 from backend.api.rag_model_dependencies import get_rag_model_manager
 from backend.rag.chunking import StructureAwareChunker
-from backend.rag.config import RagConfig
+from backend.rag.config import RagConfig, RagVisualUnderstandingConfig
 from backend.rag.embeddings import EmbeddingProvider, create_embedding_provider
 from backend.rag.index_manifest import IndexManifest
 from backend.rag.index_service import IndexService
@@ -20,6 +21,10 @@ from backend.rag.retrieval_service import RetrievalService
 from backend.rag.semantic_chunking import SemanticStructureAwareChunker
 from backend.rag.sparse import BM25SparseRetriever
 from backend.rag.stores import QdrantLocalVectorStore
+from backend.rag.vision import (
+    VisualDescriptionProvider,
+    create_visual_description_provider,
+)
 from backend.services.knowledge_library_service import (
     DEFAULT_KNOWLEDGE_MAX_FILE_BYTES,
     KnowledgeLibraryService,
@@ -36,6 +41,7 @@ class RagRuntime:
     retrieval_service: RetrievalService
     index_service: IndexService
     library_service: KnowledgeLibraryService
+    visual_description_provider: VisualDescriptionProvider | None = None
 
 
 _runtime: RagRuntime | None = None
@@ -90,10 +96,72 @@ def _build_document_parser(config: RagConfig):
     return partial(parse_document, advanced_config=advanced_config)
 
 
+def _env_bool(name: str) -> bool | None:
+    value = os.getenv(name, "").strip().casefold()
+    if not value:
+        return None
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _resolve_visual_understanding_config(
+    config: RagVisualUnderstandingConfig,
+    settings: dict[str, Any],
+) -> RagVisualUnderstandingConfig:
+    """Resolve optional VLM settings without coupling RAG to the chat provider."""
+
+    updates: dict[str, Any] = {}
+    env_enabled = _env_bool("AITRANS_RAG_VLM_ENABLED")
+    if env_enabled is not None:
+        updates["enabled"] = env_enabled
+
+    env_model = os.getenv("AITRANS_RAG_VLM_MODEL", "").strip()
+    env_base_url = os.getenv("AITRANS_RAG_VLM_BASE_URL", "").strip()
+    if env_model:
+        updates["model"] = env_model
+    if env_base_url:
+        updates["base_url"] = env_base_url
+
+    resolved = config.model_copy(update=updates, deep=True)
+    if not resolved.enabled or not resolved.inherit_ai_settings:
+        return resolved
+
+    ai_settings = settings.get("ai")
+    if not isinstance(ai_settings, dict):
+        return resolved
+    provider = str(ai_settings.get("provider", "") or "").strip().lower().replace("-", "_")
+    if provider != "openai_compatible":
+        return resolved
+
+    inherited: dict[str, Any] = {}
+    if not resolved.model.strip():
+        inherited_model = str(ai_settings.get("model", "") or "").strip()
+        if inherited_model:
+            inherited["model"] = inherited_model
+    if not resolved.base_url.strip():
+        inherited_base_url = str(ai_settings.get("base_url", "") or "").strip()
+        if inherited_base_url:
+            inherited["base_url"] = inherited_base_url
+    return resolved.model_copy(update=inherited, deep=True)
+
+
 def _build_runtime() -> RagRuntime:
     settings = SettingsManager().data
     raw_rag = settings.get("rag", {})
     config = RagConfig.model_validate(raw_rag if isinstance(raw_rag, dict) else {})
+    visual_config = _resolve_visual_understanding_config(
+        config.visual_understanding,
+        settings,
+    )
+    config = config.model_copy(
+        update={"visual_understanding": visual_config},
+        deep=True,
+    )
+    visual_provider = create_visual_description_provider(visual_config)
+
     model_manager = get_rag_model_manager()
     embedding = create_embedding_provider(
         config.embedding,
@@ -139,6 +207,8 @@ def _build_runtime() -> RagRuntime:
         sparse_retriever=sparse,
         manifest=manifest,
         parser=_build_document_parser(config),
+        visual_description_provider=visual_provider,
+        visual_understanding_config=visual_config,
     )
     library = KnowledgeLibraryService(
         index_service=index,
@@ -157,6 +227,7 @@ def _build_runtime() -> RagRuntime:
         retrieval_service=retrieval,
         index_service=index,
         library_service=library,
+        visual_description_provider=visual_provider,
     )
 
 
@@ -184,6 +255,9 @@ def close_rag_runtime() -> None:
         runtime = _runtime
         _runtime = None
     if runtime is not None:
+        close = getattr(runtime.visual_description_provider, "close", None)
+        if callable(close):
+            close()
         close = getattr(runtime.vector_store, "close", None)
         if callable(close):
             close()

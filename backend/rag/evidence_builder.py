@@ -69,6 +69,9 @@ def build_evidence_item(
 
     chunk = candidate.chunk
     modality = str(chunk.metadata.get("modality", "text") or "text")
+    element_metadata = chunk.metadata.get("element_metadata")
+    if not isinstance(element_metadata, Mapping):
+        element_metadata = {}
     metadata = _json_safe(
         {
             "retrieval_strategy": retrieval_strategy,
@@ -84,6 +87,19 @@ def build_evidence_item(
             "caption": chunk.metadata.get("caption", ""),
             "visual_grounding_available": bool(
                 chunk.metadata.get("visual_grounding_available", False)
+            ),
+            "visual_description": element_metadata.get("visual_description", ""),
+            "visual_description_status": element_metadata.get(
+                "visual_description_status", ""
+            ),
+            "visual_description_provider": element_metadata.get(
+                "visual_description_provider", ""
+            ),
+            "visual_description_model": element_metadata.get(
+                "visual_description_model", ""
+            ),
+            "visual_description_prompt_id": element_metadata.get(
+                "visual_description_prompt_id", ""
             ),
             "scores": {
                 "rerank": candidate.rerank_score,

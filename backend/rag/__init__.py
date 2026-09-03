@@ -11,6 +11,7 @@ from backend.rag.config import (
     RagRetrievalConfig,
     RagSemanticChunkingConfig,
     RagVectorStoreConfig,
+    RagVisualUnderstandingConfig,
 )
 from backend.rag.context_builder import GroundedContext, GroundedContextBuilder
 from backend.rag.document_tree import (
@@ -103,6 +104,16 @@ from backend.rag.tokenization import (
     TokenCounter,
     TransformersTokenCounter,
 )
+from backend.rag.vision import (
+    OpenAICompatibleVisualDescriptionProvider,
+    VISUAL_DESCRIPTION_INDEX_VERSION,
+    VISUAL_DESCRIPTION_PROMPT_ID,
+    VisualDescriptionProvider,
+    VisualDescriptionStats,
+    create_visual_description_provider,
+    enrich_document_with_visual_descriptions,
+    visual_description_index_version,
+)
 
 __all__ = [
     "BASELINE_VARIANT",
@@ -111,6 +122,8 @@ __all__ = [
     "MULTIMODAL_INDEX_VERSION",
     "RERANKER_MODEL_ID",
     "SEMANTIC_CHUNKER_VERSION",
+    "VISUAL_DESCRIPTION_INDEX_VERSION",
+    "VISUAL_DESCRIPTION_PROMPT_ID",
     "AdvancedParserWithFallback",
     "CitationService",
     "DoclingDocumentParser",
@@ -137,6 +150,7 @@ __all__ = [
     "KnowledgeDocument",
     "ModelManager",
     "NormalizedDocument",
+    "OpenAICompatibleVisualDescriptionProvider",
     "Qwen3EmbeddingProvider",
     "RagAdvancedParsingConfig",
     "RagChunkingConfig",
@@ -166,6 +180,7 @@ __all__ = [
     "RagSemanticChunkingConfig",
     "RagVectorStoreConfig",
     "RagVectorStoreError",
+    "RagVisualUnderstandingConfig",
     "RetrievalCandidate",
     "RetrievalContextWindow",
     "RetrievalResult",
@@ -175,6 +190,8 @@ __all__ = [
     "TokenCounter",
     "TransformersTokenCounter",
     "UnsupportedDocumentTypeError",
+    "VisualDescriptionProvider",
+    "VisualDescriptionStats",
     "augment_document_with_visual_elements",
     "benchmark_embedding_batches",
     "build_agent_evidence",
@@ -186,7 +203,9 @@ __all__ = [
     "compare_performance_candidates",
     "config_for_variant",
     "create_embedding_provider",
+    "create_visual_description_provider",
     "default_models_root",
+    "enrich_document_with_visual_descriptions",
     "evaluate_rag",
     "extract_visual_elements",
     "get_parser_for_path",
@@ -195,4 +214,5 @@ __all__ = [
     "merge_query_results",
     "parse_document",
     "performance_sweeps",
+    "visual_description_index_version",
 ]

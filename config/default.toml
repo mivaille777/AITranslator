@@ -97,6 +97,28 @@ ocr_enabled = false
 formula_enabled = false
 document_timeout_seconds = 120.0
 
+[rag.visual_understanding]
+# Stage 2: optional figure-to-text enrichment for retrieval. It is disabled by
+# default so missing cloud credentials or a non-vision chat model can never
+# block text RAG. When enabled, an OpenAI-compatible VLM produces a factual
+# retrieval-oriented description that is appended to the caption surrogate.
+# The existing openai_compatible credential namespace is reused. Empty model
+# and base_url values may inherit the current [ai] settings only when that
+# provider is also openai_compatible.
+enabled = false
+provider = "openai_compatible"
+model = ""
+base_url = ""
+inherit_ai_settings = true
+detail = "auto"
+timeout_seconds = 30.0
+max_retries = 1
+max_images_per_document = 24
+max_asset_bytes = 8388608
+# Omit max_tokens by default for broad OpenAI-compatible model compatibility.
+# Set a positive integer when the selected VLM supports that parameter.
+# max_output_tokens = 384
+
 [rag.chunking]
 # Hard structure first: section/subsection and academic special blocks define
 # non-crossable boundaries. Token values are only soft/preferred/hard guards.
